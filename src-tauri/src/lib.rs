@@ -1,4 +1,5 @@
 mod app_paths;
+mod audio_devices;
 
 use tauri::Manager;
 
@@ -17,7 +18,10 @@ pub fn run() {
             app_paths::prepare_app_data(&root)?;
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            audio_devices::list_input_devices
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

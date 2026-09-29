@@ -10,6 +10,7 @@ Windows desktop speaking-practice app: Tauri 2 + React 19 + TypeScript + Vite + 
 - `npm run dev`: frontend only in a browser, backed by the mock IPC client (sample data)
 - `npm run tauri dev`: the full desktop app (needs Rust + MSVC + Windows SDK)
 - `npm test` · `npm run typecheck` · `npm run build`
+- On this laptop's PowerShell, if Vitest workers stall, use `npm.cmd test -- --pool=threads --maxWorkers=1 --isolate=false`.
 - Rust: `cargo build` / `cargo test` in `src-tauri/`. In PowerShell, prepend `$env:USERPROFILE\.cargo\bin` to PATH if cargo isn't found. In Git Bash, `link` resolves to GNU coreutils, so run cargo from PowerShell.
 
 ## Conventions

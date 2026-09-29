@@ -10,6 +10,7 @@ describe("mock IPC client", () => {
     await expect(ipc.getTodayPlan("standard")).resolves.toBeTruthy();
     await expect(ipc.listSessions()).resolves.toHaveLength(sessions.length);
     await expect(ipc.getProgress("unfamiliar")).resolves.toBeTruthy();
+    await expect(ipc.listInputDevices()).resolves.toHaveLength(2);
   });
 
   it("keeps sample annotations inside their segment text", async () => {

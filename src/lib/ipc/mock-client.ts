@@ -119,8 +119,14 @@ export function createMockClient(): IpcClient {
 
     listInputDevices: () =>
       respond(S.InputDevice.array(), [
-        { id: "dev-default", name: "Microphone Array (Realtek Audio)", isDefault: true, available: true },
-        { id: "dev-usb", name: "USB Headset Microphone", isDefault: false, available: false },
+        {
+          id: "dev-default",
+          name: "Microphone Array (Realtek Audio)",
+          isDefault: true,
+          available: true,
+          supportedConfigs: [{ channels: 2, minSampleRate: 44100, maxSampleRate: 48000, sampleFormat: "F32" }],
+        },
+        { id: "dev-usb", name: "USB Headset Microphone", isDefault: false, available: false, supportedConfigs: [] },
       ]),
   };
 }

@@ -21,7 +21,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 | Active milestone | M0 Feasibility (M1 shell is functionally done; remaining items are listed below) |
 | Last updated | 2026-09-29 |
 | Repository | Initial commit includes the M0 scaffold, M1 sample-data shell, lockfiles, and Git/editor configuration |
-| Next action | M0 audio spike: 0.4 CPAL device list → 0.5–0.9 chunked capture + kill test. Then benchmark the existing Whisper model alongside smaller candidates |
+| Next action | M0 audio spike: 0.5–0.9 chunked capture, recovery, level meter, and kill test. Then benchmark the existing Whisper model alongside smaller candidates |
 | Blockers | None for recording. Choose and validate the OpenAI model before the API spike; request a model download only if the existing packs cannot answer the benchmark question |
 
 ---
@@ -94,7 +94,7 @@ Goal: prove recording durability, Whisper on this laptop, and one bounded API ca
 - [x] 0.3 Resolve the app-local data root through the Tauri path API at startup; create `database/`, `recordings/`, `imports/`, `models/`, `cache/`, `recovery/` (§12). Rust test verifies creation and repeat startup
 
 **Audio spike (§9)**
-- [ ] 0.4 `list_input_devices` command using CPAL: name, default flag, supported configs
+- [x] 0.4 `list_input_devices` command using CPAL: stable ID, name, default flag, supported configs. Live Windows smoke test found three inputs with six format ranges each; native UI wiring follows with the IPC client
 - [ ] 0.5 Open the device at its native rate/format; real-time callback → bounded queue, no blocking I/O in the callback
 - [ ] 0.6 Writer thread: downmix to mono, write 16-bit PCM chunk files, flush at least every 2 s
 - [ ] 0.7 Recovery manifest written before the mic opens; on Stop, concatenate chunks → WAV, verify, atomic rename
@@ -309,6 +309,8 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 ---
 
 ## Notes & findings
+
+- 2026-09-29: M0 0.4 pins CPAL 0.18.2 and adds a native `list_input_devices` command with stable device IDs and supported input format ranges. A live WASAPI smoke test returned three devices and six ranges per device without opening a stream. `cargo test --locked --offline` passed (one regular test; the hardware smoke test is ignored by default and passed when run explicitly). Frontend typecheck and 15/15 Vitest tests passed with a single reused worker. The desktop UI still shows mock devices until the native IPC client is connected.
 
 - 2026-09-29: M0 0.3 now resolves Tauri's `app_local_data_dir()` on startup and creates the six planned subdirectories. `cargo fmt --check` and `cargo test --locked --offline` passed (one new Rust test checks directory creation and repeat startup). The desktop startup itself has not been manually launched in this session.
 

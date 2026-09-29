@@ -266,10 +266,19 @@ export const SearchHit = z.object({
 export type SearchHit = z.infer<typeof SearchHit>;
 
 // ── Audio devices (§6 Settings / onboarding) ─────────────────────────────────
+export const InputConfig = z.object({
+  channels: z.number().int().positive(),
+  minSampleRate: z.number().int().positive(),
+  maxSampleRate: z.number().int().positive(),
+  sampleFormat: z.string().min(1),
+});
+export type InputConfig = z.infer<typeof InputConfig>;
+
 export const InputDevice = z.object({
   id: Id,
   name: z.string(),
   isDefault: z.boolean(),
   available: z.boolean(),
+  supportedConfigs: z.array(InputConfig),
 });
 export type InputDevice = z.infer<typeof InputDevice>;
