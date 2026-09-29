@@ -21,8 +21,8 @@ This file tracks *how far we are*. Section references like **§9** point into th
 | Active milestone | M0 Feasibility (M1 shell is functionally done; remaining items are listed below) |
 | Last updated | 2026-09-29 |
 | Repository | Initial commit includes the M0 scaffold, M1 sample-data shell, lockfiles, and Git/editor configuration |
-| Next action | M0 audio spike: 0.3 data dirs → 0.4 CPAL device list → 0.5–0.9 chunked capture + kill test. In parallel, the user picks the API provider (D-6) |
-| Blockers | None. Decisions D-6, D-7, D-8, D-10, D-11 are needed before M0 API work and before M2 backups |
+| Next action | M0 audio spike: 0.4 CPAL device list → 0.5–0.9 chunked capture + kill test. Then benchmark the existing Whisper model alongside smaller candidates |
+| Blockers | None for recording. Choose and validate the OpenAI model before the API spike; request a model download only if the existing packs cannot answer the benchmark question |
 
 ---
 
@@ -55,14 +55,14 @@ Resolves the hardware open questions in §10 and §18.
 | D-1 | Stack: Tauri 2 + React + TS + Vite + Tailwind 4 + shadcn/ui (Radix) (§8) | Confirmed by blueprint | 2026-09-29 |
 | D-2 | Package manager: npm (already installed; lockfile committed) | Chosen | 2026-09-29 |
 | D-3 | Target: Windows 11 x64 only, single user | Confirmed by blueprint | 2026-09-29 |
-| D-4 | Transcription default: base.en vs small.en → decided by M0 benchmark | **Open** | |
+| D-4 | Transcription default: existing large-v3-turbo-q5_0 vs smaller packs → decided by M0 benchmark | **Open** | |
 | D-5 | Whisper backend: CPU vs CUDA build → decided by M0 benchmark | **Open** | |
-| D-6 | Initial hosted API provider + model (§18) | **Open**, user to choose | |
-| D-7 | Monthly API spending warning/stop limit (§16) | **Open**, user to choose | |
-| D-8 | Practice language(s): English only, or also another language (§18) | **Open** | |
-| D-9 | Interface language: English; dates formatted with `en-GB` regardless of the Windows locale (`UI_LOCALE` in src/lib/format.ts) | Assumed, confirm | 2026-09-29 |
-| D-10 | Backup destination and audio retention policy (§18) | **Open** | |
-| D-11 | One-time model download acceptable? (§18) | **Open** | |
+| D-6 | Initial hosted coaching provider: OpenAI API; choose a configurable model after feedback quality and cost checks | Provider chosen, model pending | 2026-09-29 |
+| D-7 | Stop new app coaching requests at USD 5/month; warn at USD 4 by default (adjustable) (§16) | USD 5 limit confirmed; USD 4 warning assumed | 2026-09-29 |
+| D-8 | English practice for the first release; German may follow later (§18) | Confirmed | 2026-09-29 |
+| D-9 | English interface; dates formatted with `en-GB` regardless of Windows locale (`UI_LOCALE` in src/lib/format.ts) | Confirmed | 2026-09-29 |
+| D-10 | Keep backups locally in a user-selected folder; retain original recordings until explicit deletion (§18) | Confirmed; exact backup folder selected in the app | 2026-09-29 |
+| D-11 | Reuse existing local Whisper packs first; decide on any additional one-time download after benchmarking | Existing pack found; download decision deferred | 2026-09-29 |
 | D-12 | Audio resampling crate (rubato vs alternative) → M0 spike | **Open** | |
 | D-14 | shadcn preset `radix-nova`; primitives customised in place (buttons ≥ 40 px, sidebar 216 px, `nav` breakpoint 800 px, CommandDialog a11y fix) | Chosen | 2026-09-29 |
 | D-15 | Until native commands exist, the UI runs on `createMockClient()`, which parses through the same Zod schemas as the future Tauri client | Chosen | 2026-09-29 |
@@ -70,6 +70,7 @@ Resolves the hardware open questions in §10 and §18.
 | D-17 | Pitch tracker for prosody (YIN / pYIN / McLeod vs. CREPE-tiny) → decided by P.1 | **Open** | |
 | D-18 | Mood/emotion detection from voice: **not built**. Acted-emotion training data makes it unreliable for second-language speech; self-reported ease + energy/pitch-range measures cover the need. Revisit only as a local experiment | Deferred | 2026-09-29 |
 | D-13 | Whisper integration: sidecar `whisper-cli`/server exe vs `whisper-rs` bindings (§9: blueprint prefers a worker process) | **Open**, leaning toward a sidecar process | |
+| D-19 | Content focus: explaining complex topics, debating, and teaching; subject pool includes sport, economics, religion, crypto, programming, anime, and books | Confirmed | 2026-09-29 |
 
 ---
 
@@ -90,7 +91,7 @@ Goal: prove recording durability, Whisper on this laptop, and one bounded API ca
 **Scaffold**
 - [x] 0.1 Scaffold the Tauri 2 + React + TS + Vite app in the repo root (`src/`, `src-tauri/`)
 - [~] 0.2 Pin exact dependency versions, commit lockfiles (§8). npm deps pinned exactly; Cargo.lock exists; Cargo.toml still uses `"2"` ranges
-- [ ] 0.3 Set the app data root through the Tauri path API; create the subdirs `database/`, `recordings/`, `imports/`, `models/`, `cache/`, `recovery/` (§12)
+- [x] 0.3 Resolve the app-local data root through the Tauri path API at startup; create `database/`, `recordings/`, `imports/`, `models/`, `cache/`, `recovery/` (§12). Rust test verifies creation and repeat startup
 
 **Audio spike (§9)**
 - [ ] 0.4 `list_input_devices` command using CPAL: name, default flag, supported configs
@@ -103,9 +104,9 @@ Goal: prove recording durability, Whisper on this laptop, and one bounded API ca
 
 **Whisper spike (§10)**
 - [ ] 0.11 Obtain pinned whisper.cpp Windows binaries (CPU + CUDA) — record version, source, checksums
-- [ ] 0.12 Download `ggml-base.en` and `ggml-small.en`, verify SHA
+- [ ] 0.12 Inventory and verify existing `ggml-base` and `ggml-large-v3-turbo-q5_0` packs; obtain `ggml-base.en`/`ggml-small.en` only if a controlled comparison still needs them
 - [ ] 0.13 Sidecar worker invocation with JSON output, progress, cancel (→ D-13)
-- [ ] 0.14 Benchmark script: 60 s personal sample × {base.en, small.en} × {CPU, CUDA}: 1 cold + 3 warm runs, median, range, peak RAM/VRAM
+- [ ] 0.14 Benchmark script: 60 s personal sample × {existing base, existing large-v3-turbo-q5_0, English baselines if obtained} × {CPU, CUDA}: 1 cold + 3 warm runs, median, range, peak RAM/VRAM
 
 *Filler-aware transcription (→ D-16). Whisper tends to drop "um"/"uh" and smooth over restarts (§11)*
 - [ ] 0.14a Make a verbatim reference for the benchmark sample(s): hand-mark every filler, repetition, and restart with approximate times. Without this, filler recall can't be measured
@@ -308,6 +309,10 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 ---
 
 ## Notes & findings
+
+- 2026-09-29: M0 0.3 now resolves Tauri's `app_local_data_dir()` on startup and creates the six planned subdirectories. `cargo fmt --check` and `cargo test --locked --offline` passed (one new Rust test checks directory creation and repeat startup). The desktop startup itself has not been manually launched in this session.
+
+- 2026-09-29: Found an existing `ggml-large-v3-turbo-q5_0.bin` (574,041,195 bytes; SHA-256 `394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2`) in `../Jellzfin Server/data/WhisperSubs/whisper/models/`. That folder also has `ggml-base.bin`; `../whispercpp/` has a `whisper-cli.exe`. These are outside this repository. Check model/binary provenance and benchmark them before choosing the default; do not copy model weights into Git.
 
 - 2026-09-29: Initial commit verification: `npm.cmd run typecheck` and `npm.cmd run build` passed; `npm.cmd test -- --pool=threads --maxWorkers=1` passed 15/15 tests. Default Vitest worker startup timed out in this environment, so use one worker for repeatable checks here. `cargo fmt --check` and `cargo test --locked --offline` passed; the Rust scaffold currently defines no tests.
 
