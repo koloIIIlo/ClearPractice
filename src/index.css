@@ -1,0 +1,188 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+
+/* Dark mode is applied by ThemeProvider (src/app/theme.tsx) as a class on <html>. */
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * ClearPractice design tokens — blueprint §4.
+ * Product tokens (--cp-*) are the source of truth; shadcn's semantic
+ * variables below are mapped onto them so library components match.
+ */
+:root {
+  --cp-app-bg: #f6f7f4;
+  --cp-surface: #ffffff;
+  --cp-surface-2: #edf1ed;
+  --cp-text: #18251f;
+  --cp-text-2: #526159;
+  --cp-accent: #176a50;
+  --cp-on-accent: #ffffff;
+  --cp-border: #d6ded7;
+  --cp-highlight: #fff0c2;
+  --cp-error: #a32d35;
+
+  --background: var(--cp-app-bg);
+  --foreground: var(--cp-text);
+  --card: var(--cp-surface);
+  --card-foreground: var(--cp-text);
+  --popover: var(--cp-surface);
+  --popover-foreground: var(--cp-text);
+  --primary: var(--cp-accent);
+  --primary-foreground: var(--cp-on-accent);
+  --secondary: var(--cp-surface-2);
+  --secondary-foreground: var(--cp-text);
+  --muted: var(--cp-surface-2);
+  --muted-foreground: var(--cp-text-2);
+  --accent: var(--cp-surface-2);
+  --accent-foreground: var(--cp-text);
+  --destructive: var(--cp-error);
+  --border: var(--cp-border);
+  --input: var(--cp-border);
+  --ring: var(--cp-accent);
+  --highlight: var(--cp-highlight);
+  --highlight-foreground: var(--cp-text);
+
+  --chart-1: var(--cp-accent);
+  --chart-2: #6b8f7d;
+  --chart-3: #b08a2e;
+  --chart-4: #526159;
+  --chart-5: #a32d35;
+
+  /* 8px for controls; panels use --radius-panel (12px). */
+  --radius: 0.5rem;
+
+  --sidebar: var(--cp-app-bg);
+  --sidebar-foreground: var(--cp-text);
+  --sidebar-primary: var(--cp-accent);
+  --sidebar-primary-foreground: var(--cp-on-accent);
+  --sidebar-accent: var(--cp-surface-2);
+  --sidebar-accent-foreground: var(--cp-text);
+  --sidebar-border: var(--cp-border);
+  --sidebar-ring: var(--cp-accent);
+}
+
+.dark {
+  --cp-app-bg: #111816;
+  --cp-surface: #19221f;
+  --cp-surface-2: #222e28;
+  --cp-text: #edf4ef;
+  --cp-text-2: #afbeb5;
+  --cp-accent: #8ed8b5;
+  --cp-on-accent: #102219;
+  --cp-border: #3a4a40;
+  --cp-highlight: #43391c;
+  --cp-error: #ffb4b9;
+
+  --chart-2: #9fbcad;
+  --chart-3: #e0c070;
+  --chart-4: #afbeb5;
+  --chart-5: #ffb4b9;
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-heading: var(--font-sans);
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-highlight: var(--highlight);
+  --color-highlight-foreground: var(--highlight-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.5);
+  --radius-2xl: calc(var(--radius) * 2);
+  --radius-panel: 0.75rem;
+
+  /* Type scale — blueprint §4: body 15–16, metadata 13–14, transcript 18/1.6, titles 28–32. */
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.5;
+  --text-meta: 0.8125rem;
+  --text-meta--line-height: 1.4;
+  --text-transcript: 1.125rem;
+  --text-transcript--line-height: 1.6;
+  --text-title: 1.75rem;
+  --text-title--line-height: 1.2;
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Compact navigation below 800px (§4); used by the sidebar. Keep in sync with use-mobile.ts. */
+  --breakpoint-nav: 50rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    font-feature-settings: "cv11";
+  }
+  body {
+    @apply bg-background text-foreground text-body antialiased;
+  }
+  /* Visible focus for keyboard users on every interactive element (§14). */
+  :where(a, button, [role="button"], input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .transition-quiet {
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-standard);
+  }
+}
+
+/* Respect reduced motion: set by the OS or forced by the in-app setting (§5, §14). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+  scroll-behavior: auto !important;
+}

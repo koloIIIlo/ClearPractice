@@ -1,0 +1,119 @@
+/**
+ * TanStack Query hooks over the IPC client. The query cache is disposable;
+ * SQLite in the native core stays authoritative (blueprint §8).
+ */
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIpc, type SessionFilter } from "./index";
+import type { PhraseRating, ProgressView, SessionLength } from "./schemas";
+
+export const keys = {
+  status: ["status"] as const,
+  today: (length: SessionLength) => ["today", length] as const,
+  exercises: ["exercises"] as const,
+  prompts: ["prompts"] as const,
+  guides: ["guides"] as const,
+  sessions: (filter: SessionFilter) => ["sessions", filter] as const,
+  session: (id: string) => ["session", id] as const,
+  review: (attemptId: string) => ["review", attemptId] as const,
+  phrases: ["phrases"] as const,
+  progress: (view: ProgressView) => ["progress", view] as const,
+  search: (q: string) => ["search", q] as const,
+  devices: ["devices"] as const,
+};
+
+export function useServiceStatus() {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.status, queryFn: () => ipc.getServiceStatus() });
+}
+
+export function useTodayPlan(length: SessionLength) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.today(length), queryFn: () => ipc.getTodayPlan(length) });
+}
+
+export function useExercises() {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.exercises, queryFn: () => ipc.listExercises() });
+}
+
+export function usePrompts() {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.prompts, queryFn: () => ipc.listPrompts() });
+}
+
+export function useGuides() {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.guides, queryFn: () => ipc.listGuides() });
+}
+
+export function useSetPromptFavorite() {
+  const ipc = useIpc();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ promptId, favorite }: { promptId: string; favorite: boolean }) =>
+      ipc.setPromptFavorite(promptId, favorite),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.prompts }),
+  });
+}
+
+export function useSessions(filter: SessionFilter) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.sessions(filter), queryFn: () => ipc.listSessions(filter) });
+}
+
+export function useSession(id: string | undefined) {
+  const ipc = useIpc();
+  return useQuery({
+    queryKey: keys.session(id ?? ""),
+    queryFn: () => ipc.getSession(id!),
+    enabled: !!id,
+    retry: false,
+  });
+}
+
+export function useAttemptReview(attemptId: string | undefined) {
+  const ipc = useIpc();
+  return useQuery({
+    queryKey: keys.review(attemptId ?? ""),
+    queryFn: () => ipc.getAttemptReview(attemptId!),
+    enabled: !!attemptId,
+  });
+}
+
+export function usePhrases() {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.phrases, queryFn: () => ipc.listPhrases() });
+}
+
+export function useReviewPhrase() {
+  const ipc = useIpc();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ phraseId, rating }: { phraseId: string; rating: PhraseRating }) =>
+      ipc.reviewPhrase(phraseId, rating),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.phrases });
+      qc.invalidateQueries({ queryKey: ["today"] });
+    },
+  });
+}
+
+export function useProgress(view: ProgressView) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.progress(view), queryFn: () => ipc.getProgress(view) });
+}
+
+export function useSearch(query: string) {
+  const ipc = useIpc();
+  return useQuery({
+    queryKey: keys.search(query),
+    queryFn: () => ipc.searchContent(query),
+    enabled: query.trim().length > 0,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useInputDevices() {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.devices, queryFn: () => ipc.listInputDevices() });
+}

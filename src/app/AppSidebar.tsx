@@ -1,0 +1,65 @@
+import { Link, useLocation } from "react-router";
+import { AudioLines } from "lucide-react";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  useSidebar,
+} from "@/components/ui/sidebar";
+import { PRIMARY_NAV, SETTINGS_NAV, activeSection, type NavItem } from "./nav";
+
+function NavEntry({ item, active }: { item: NavItem; active: boolean }) {
+  const { isMobile, setOpenMobile } = useSidebar();
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={active} tooltip={item.label} size="lg" className="h-10 text-body">
+        <Link
+          to={item.to}
+          aria-current={active ? "page" : undefined}
+          onClick={() => isMobile && setOpenMobile(false)}
+        >
+          <item.icon aria-hidden className="size-[18px]" />
+          <span>{item.label}</span>
+        </Link>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+}
+
+export function AppSidebar() {
+  const location = useLocation();
+  const current = activeSection(location.pathname, (location.state as { section?: string } | null)?.section);
+
+  return (
+    <Sidebar collapsible="icon" aria-label="Main navigation">
+      <SidebarHeader className="h-14 justify-center border-b">
+        <Link to="/" className="flex items-center gap-2 px-2 font-semibold tracking-tight">
+          <AudioLines aria-hidden className="size-5 shrink-0 text-primary" />
+          <span className="truncate group-data-[collapsible=icon]:hidden">ClearPractice</span>
+        </Link>
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {PRIMARY_NAV.map((item) => (
+                <NavEntry key={item.id} item={item} active={current === item.id} />
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+      <SidebarFooter>
+        <SidebarMenu>
+          <NavEntry item={SETTINGS_NAV} active={current === "settings"} />
+        </SidebarMenu>
+      </SidebarFooter>
+    </Sidebar>
+  );
+}
