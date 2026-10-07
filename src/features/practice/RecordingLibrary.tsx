@@ -5,24 +5,36 @@ import { Panel } from "@/components/page";
 import { useIpc } from "@/lib/ipc";
 import { formatClock, UI_LOCALE } from "@/lib/format";
 import type { SavedRecording } from "@/lib/ipc/schemas";
+import { WaveformPlayer } from "@/features/review/WaveformPlayer";
 
 export function SavedAudio({ recording }: { recording: SavedRecording }) {
   const ipc = useIpc();
   const [opened, setOpened] = useState(false);
+  const enabled = opened && ipc.recordingMode === "native";
   const playback = useQuery({
     queryKey: ["recording-playback", recording.assetId],
     queryFn: () => ipc.getRecordingPlaybackUrl(recording.assetId),
-    enabled: opened && ipc.recordingMode === "native",
+    enabled,
     retry: false,
   });
+  const waveform = useQuery({
+    queryKey: ["recording-waveform", recording.assetId, recording.sha256],
+    queryFn: () => ipc.getRecordingWaveform(recording.assetId),
+    enabled,
+    retry: false,
+    staleTime: Infinity,
+  });
   if (ipc.recordingMode !== "native") return null;
+  const error = playback.error ?? waveform.error;
   return (
     <div className="space-y-2">
       {!opened && <Button variant="outline" onClick={() => setOpened(true)}>Listen to recording</Button>}
-      {opened && playback.isPending && <p role="status" className="text-meta text-muted-foreground">Opening recording…</p>}
-      {playback.error && <p role="alert" className="text-meta text-destructive">{playback.error.message}</p>}
-      {playback.data && (
-        <audio className="w-full" controls preload="metadata" src={playback.data} aria-label={`Recording: ${recording.title}`} />
+      {opened && !error && (playback.isPending || waveform.isPending) && (
+        <p role="status" className="text-meta text-muted-foreground">Opening recording…</p>
+      )}
+      {error && <p role="alert" className="text-meta text-destructive">{error.message}</p>}
+      {playback.data && waveform.data && (
+        <WaveformPlayer url={playback.data} peaks={waveform.data} label={recording.title || "recording"} />
       )}
     </div>
   );

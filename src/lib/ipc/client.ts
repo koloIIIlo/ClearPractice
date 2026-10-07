@@ -20,6 +20,7 @@ import type {
   SessionSummary,
   TodayPlan,
   SavedRecording,
+  WaveformPeaks,
   RecoverableRecording,
   RecordingStatus,
   CredentialStatus,
@@ -75,6 +76,7 @@ export interface IpcClient {
   listRecoverableRecordings(): Promise<RecoverableRecording[]>;
   recoverRecording(attemptId: string): Promise<SavedRecording>;
   getRecordingPlaybackUrl(assetId: string): Promise<string>;
+  getRecordingWaveform(assetId: string): Promise<WaveformPeaks>;
   getApiKeyStatus(): Promise<CredentialStatus>;
   storeApiKey(key: string): Promise<CredentialStatus>;
   removeApiKey(): Promise<CredentialStatus>;

@@ -55,6 +55,7 @@ export function createNativeClient(): IpcClient {
     listRecoverableRecordings: () => command("list_recoverable_recordings", S.RecoverableRecording.array()),
     recoverRecording: (attemptId) => command("recover_recording", S.SavedRecording, { attemptId }),
     getRecordingPlaybackUrl: async (assetId) => convertFileSrc(await command("get_recording_playback_path", S.Id, { assetId })),
+    getRecordingWaveform: (assetId) => command("get_recording_waveform", S.WaveformPeaks, { assetId }),
   };
 }
 

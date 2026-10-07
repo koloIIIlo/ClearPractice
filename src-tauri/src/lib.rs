@@ -295,6 +295,19 @@ async fn get_recording_playback_path(
 }
 
 #[tauri::command]
+async fn get_recording_waveform(
+    storage: State<'_, Arc<SessionStorage>>,
+    asset_id: String,
+) -> Result<audio::peaks::WaveformPeaks, String> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        storage.0.as_ref().map_err(Clone::clone)?.waveform(&asset_id)
+    })
+    .await
+    .map_err(|_| "Recording storage failed.".to_string())?
+}
+
+#[tauri::command]
 fn close_after_recording(
     app: tauri::AppHandle,
     service: State<'_, Arc<CaptureService>>,
@@ -367,6 +380,7 @@ pub fn run() {
             list_recoverable_recordings,
             recover_recording,
             get_recording_playback_path,
+            get_recording_waveform,
             close_after_recording
         ])
         .run(tauri::generate_context!())

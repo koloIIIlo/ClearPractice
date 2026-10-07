@@ -20,9 +20,9 @@ This file tracks *how far we are*. Section references like **§9** point into th
 | | |
 | --- | --- |
 | Active milestone | M2 Durable practice; core M0 exit gate passed. M1 manual keyboard/compact checks remain separate |
-| Last updated | 2026-10-07 |
-| Repository | Baseline commits include scaffold, app folders, and device enumeration. The recording slice described below is implemented and verified locally; its changes are uncommitted |
-| Next action | Finish M2 reconciliation/recovery presentation, recording failure/manual close checks, waveform playback, Trash and complete backup/export/restore. Native SQLite v1, legacy receipt import, staged reference commits and real session history are implemented; verify and record the latest checks below. Product transcription/job integration follows in M3 |
+| Last updated | 2026-10-08 |
+| Repository | M0 and first M2 work committed on `main` (19ec999, fca3234, 45d19d8). Waveform player + native peaks cache (2026-10-08) are uncommitted |
+| Next action | Manual desktop pass of the new waveform player (2.14). Then Trash (2.17), backup/export/restore (2.18–2.22), M2 reconciliation/recovery presentation and recording failure/manual close checks. Native SQLite v1, legacy receipt import, staged reference commits and real session history are implemented; verify and record the latest checks below. Product transcription/job integration follows in M3 |
 | Scope update | User-approved live text coaching succeeded and its saved receipt/shared ledger were verified: 291 input + 163 output tokens, USD 0.000227 estimated. Public benchmark replaces personal speech (D-24). CUDA turbo with filler prompt is selected. Optional audio API remains disabled behind its separate approval/enablement gate |
 | Blockers | No core M0 blocker. Do not request the completed text test or a personal sample again. API audio still needs separate approved requests. Native tests require normal Windows filesystem access; no validation was weakened. Desktop executable must be rebuilt/reopened for newly added commands; avoid interrupting active recording or concurrent user input |
 
@@ -180,9 +180,9 @@ These API transcription items add an estimated 1–2 days to feasibility if cred
 - [ ] 2.12 Microphone picker + 5-second test with playback (onboarding step 2)
 
 **Playback & history**
-- [ ] 2.13 Scoped asset protocol for playback by trusted ID
-- [ ] 2.14 WaveSurfer player: seek, speed, loop region, keyboard alternative (start/end fields, skip)
-- [ ] 2.15 Waveform peaks cache
+- [x] 2.13 Scoped asset protocol for playback by trusted ID. `get_recording_playback_path` resolves only committed, checksum-verified assets; asset scope is limited to `$APPLOCALDATA/recordings/*/audio.wav`
+- [~] 2.14 WaveSurfer player: seek, speed, loop region, keyboard alternative (start/end fields, skip). `WaveformPlayer` replaces the plain `<audio>` for all native takes: drag or typed loop range, Start/End here, 0.75/1/1.25× pitch-preserving rate, position slider, ±5 s, one active player app-wide. Unit/component tests pass; manual desktop pass (audible loop, drag-select, theme switch) remains
+- [x] 2.15 Waveform peaks cache. Native `get_recording_waveform` streams the verified WAV once into ≤20 000 bucket maxima (100/s) cached at `cache/peaks/<id>.json`, keyed by SHA-256; changed/corrupt caches regenerate, unwritable cache is non-fatal. WaveSurfer receives peaks + duration + media, so it never fetches/decodes the WAV and the CSP stays unchanged. Rust tests pass
 - [~] 2.16 Real native session list, title/note/tag/favorite search and editor connected. Edits persist through restart and retain original audio identity; failed-save UI keeps edits and never claims success. Manual full-app pass remains
 - [ ] 2.17 Trash with 30-day retention and restore; delete dialog states which audio/analysis is included
 
@@ -341,6 +341,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Resumed from the Codex thread of 4–7 Oct (Claude Code session). Per the user's request there, testing is now targeted: run only the touched Rust module / Vitest files while iterating, full suites at milestone boundaries. Added 2.14/2.15: `src-tauri/src/audio/peaks.rs` (+2 tests), `get_recording_waveform` command, `WaveformPeaks` Zod schema/IPC method, `src/features/review/WaveformPlayer.tsx` + `waveform.ts` helpers (+5 tests). Checks run: `cargo test --lib audio::peaks` 2/2, `tsc --noEmit` clean, Vitest waveform + ipc + sessions + practice files 18/18. Desktop app not relaunched; browser preview can't show this (mock client has no saved audio).
 - 2026-10-07: Core M0 closed. Six profiles × four public trials are published in bench/results-2026-10.json/.md; selected CUDA turbo + exact filler prompt has warm worker median 11.532 s, total median 14.022 s, peak working set 380.2 MiB, 3/194 verbatim edits, 13/14 UH/UM retained and zero insertions in all trials. Initial cache state and per-process VRAM are unknown; older JFK GPU slowness was not reproduced and has no proven cause. CrisperWhisper adapter/weights experiment deferred, not benchmarked. Portable setup selects CUDA or explicit CPU base without automatic fallback.
 - 2026-10-07: User supplied one successful, explicitly approved in-app GPT-6 Luna feedback result. Agent verified saved feedback metadata and the shared ledger without reading credentials: 291 input / 163 output tokens, estimated USD 0.000227, settled. Suggestions preserve meaning and label natural comparative phrasing as optional style. No audio upload or extra paid request. Broader coaching quality and optional audio API gates remain separate.
 - 2026-10-07: Started M2 with rusqlite 0.40.2 bundled SQLite, single connection owner, WAL/FK/FULL sync, transactional v1 schema, online pre-migration snapshots, native history/edit commands and staged capture references. Legacy receipts import idempotently; missing audio stays flagged, task details unknown, and user edits survive restart. Native Review/Compare play real recordings and bypass simulated observations. Recorder events announce Saved only after SQLite commit; failed references leave files/receipts recoverable. Full ZIP backup/restore, Trash, waveform controls and comprehensive recovery/manual acceptance remain unfinished. API usage remains in its locked JSON owner; migrate later without dropping the live charge.

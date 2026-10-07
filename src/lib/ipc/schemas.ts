@@ -302,6 +302,18 @@ export const SavedRecording = z.object({
 });
 export type SavedRecording = z.infer<typeof SavedRecording>;
 
+/** Native peaks cache (plan 2.15): bucket maxima 0–32767 for one verified take. */
+export const WaveformPeaks = z.object({
+  version: z.number().int().positive(),
+  assetId: Id,
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  sampleRate: z.number().int().positive(),
+  durationMs: z.number().int().nonnegative(),
+  samplesPerPeak: z.number().int().positive(),
+  peaks: z.array(z.number().int().min(0).max(32767)),
+});
+export type WaveformPeaks = z.infer<typeof WaveformPeaks>;
+
 export const RecoverableRecording = z.object({
   attemptId: Id,
   title: z.string(),

@@ -193,5 +193,6 @@ export function createMockClient(): IpcClient {
     listRecoverableRecordings: async () => [],
     recoverRecording: async () => { throw new IpcError("unavailable", "Recovery is available in the desktop app."); },
     getRecordingPlaybackUrl: async () => { throw new IpcError("unavailable", "Simulated takes contain no audio."); },
+    getRecordingWaveform: async () => { throw new IpcError("unavailable", "Simulated takes contain no audio."); },
   };
 }

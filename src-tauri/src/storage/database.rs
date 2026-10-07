@@ -309,6 +309,11 @@ impl DatabaseOwner {
         Ok(self.root.join("recordings").join(id).join("audio.wav"))
     }
 
+    pub fn waveform(&self, id: &str) -> Result<crate::audio::peaks::WaveformPeaks> {
+        let saved = self.checked_recording(id)?;
+        crate::audio::peaks::load_or_build(&self.root, &saved)
+    }
+
     pub fn list_sessions(
         &self,
         query: Option<&str>,
