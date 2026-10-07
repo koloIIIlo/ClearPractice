@@ -228,8 +228,10 @@ export function createMockClient(): IpcClient {
     },
     getRecordingStatus: async () => recording ? S.RecordingStatus.parse(recording) : null,
     onRecordingEvent: async (listener) => {
-      recordingListeners.add(listener);
-      return () => { recordingListeners.delete(listener); };
+      // Wrap so registering the same function twice gives two independent registrations.
+      const registration = (status: S.RecordingStatus) => listener(status);
+      recordingListeners.add(registration);
+      return () => { recordingListeners.delete(registration); };
     },
     onRecordingCloseRequested: async () => () => {},
     closeAfterRecording: async () => {},

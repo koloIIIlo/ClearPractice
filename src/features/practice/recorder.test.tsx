@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { IpcContext, IpcError } from "@/lib/ipc";
@@ -67,6 +68,39 @@ describe("recording lifecycle", () => {
     // The event adapter may independently report interruption; it must stay unsaved.
     act(() => listener({ attemptId: "unrelated", phase: "saved", elapsedMs: 0, monotonicMs: 0, level: 0, clipping: false, error: null, asset: null }));
     expect(result.current.phase).toBe("interrupted");
+  });
+
+  it("keeps receiving level events under StrictMode, even from a client that tracks listeners by identity", async () => {
+    const client = createMockClient();
+    // Identity-keyed registry: registering the same function twice yields one entry.
+    const listeners = new Set<(status: RecordingStatus) => void>();
+    client.onRecordingEvent = async (callback) => {
+      listeners.add(callback);
+      return () => { listeners.delete(callback); };
+    };
+    let attemptId = "";
+    client.startRecording = async (request) => {
+      attemptId = request.attemptId;
+      return { attemptId, phase: "recording", elapsedMs: 0, monotonicMs: 0, level: 0, clipping: false, error: null, asset: null };
+    };
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <StrictMode><IpcContext.Provider value={client}>{children}</IpcContext.Provider></StrictMode>
+    );
+    const { result } = renderHook(() => useRecorder("Explain a programming concept"), { wrapper });
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    act(() => result.current.start({ deviceId: null }));
+    await waitFor(() => expect(result.current.phase).toBe("recording"));
+
+    const emit = (elapsedMs: number, level: number) =>
+      act(() => listeners.forEach((l) => l({ attemptId, phase: "recording", elapsedMs, monotonicMs: elapsedMs, level, clipping: false, error: null, asset: null })));
+    expect(listeners.size).toBeGreaterThan(0);
+    emit(1_200, 0.1);
+    emit(2_300, 0.3);
+    expect(result.current.elapsedMs).toBe(2_300);
+    expect(result.current.levels).toEqual([0.1, 0.3]);
+    // A late duplicate (same monotonic time) neither rewinds the timer nor adds a bar.
+    emit(2_300, 0.3);
+    expect(result.current.levels).toHaveLength(2);
   });
 
   it("removes asynchronous event subscriptions when the screen is closed", async () => {

@@ -16,10 +16,13 @@ interface State {
   elapsedMs: number;
   level: number;
   clipping: boolean;
+  /** Recent input levels, oldest first, for the live waveform (one per level event, ~10/s). */
+  levels: number[];
   error: string | null;
   takes: Take[];
 }
-const initial: State = { phase: "idle", countdown: 0, elapsedMs: 0, level: 0, clipping: false, error: null, takes: [] };
+export const LEVEL_HISTORY = 80;
+const initial: State = { phase: "idle", countdown: 0, elapsedMs: 0, level: 0, clipping: false, levels: [], error: null, takes: [] };
 export interface Recorder extends State {
   ready: boolean;
   isCapturing: boolean;
@@ -43,15 +46,20 @@ export function useRecorder(title: string, context?: PracticeContext): Recorder 
   const countdownTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const starting = useRef<Promise<void> | null>(null);
   const stopping = useRef<Promise<boolean> | null>(null);
+  const lastLevelAt = useRef(-1);
 
   const apply = useCallback((status: RecordingStatus) => {
     if (!alive.current || (attemptId.current && status.attemptId !== attemptId.current)) return;
     if (!attemptId.current && ["saved", "interrupted"].includes(status.phase)) return;
     attemptId.current = status.attemptId;
     busy.current = ["preparing", "recording", "finalizing"].includes(status.phase);
+    // Each level event carries a newer monotonic time; replies and repeats don't add samples.
+    const sample = status.phase === "recording" && status.monotonicMs > 0 && status.monotonicMs > lastLevelAt.current;
+    if (sample) lastLevelAt.current = status.monotonicMs;
     setState((previous) => ({
-      ...previous, phase: status.phase, elapsedMs: status.elapsedMs, level: status.level,
-      clipping: status.clipping, error: status.error,
+      ...previous, phase: status.phase, elapsedMs: Math.max(status.elapsedMs, status.phase === "recording" ? previous.elapsedMs : 0),
+      level: status.level, clipping: status.clipping, error: status.error,
+      levels: sample ? [...previous.levels, status.level].slice(-LEVEL_HISTORY) : previous.levels,
       takes: status.asset && !previous.takes.some((take) => take.asset.assetId === status.asset!.assetId)
         ? [...previous.takes, { ordinal: previous.takes.length + 1, durationMs: status.asset.durationMs, state: "saved", asset: status.asset }]
         : previous.takes,
@@ -65,7 +73,7 @@ export function useRecorder(title: string, context?: PracticeContext): Recorder 
     const register = (remove: () => void) => { if (disposed) remove(); else removers.push(remove); };
     void (async () => {
       try {
-        register(await ipc.onRecordingEvent(apply));
+        register(await ipc.onRecordingEvent((status) => apply(status)));
         register(await ipc.onRecordingCloseRequested(() => setCloseRequested(true)));
         const current = await ipc.getRecordingStatus();
         if (disposed) return;
@@ -86,7 +94,8 @@ export function useRecorder(title: string, context?: PracticeContext): Recorder 
   const begin = useCallback((deviceId: string | null) => {
     const id = crypto.randomUUID();
     attemptId.current = id;
-    setState((s) => ({ ...s, phase: "preparing", elapsedMs: 0, level: 0, clipping: false, error: null }));
+    lastLevelAt.current = -1;
+    setState((s) => ({ ...s, phase: "preparing", elapsedMs: 0, level: 0, clipping: false, levels: [], error: null }));
     starting.current = ipc.startRecording({ attemptId: id, idempotencyKey: crypto.randomUUID(), deviceId, title, context })
       .then(apply)
       .catch((error: unknown) => {

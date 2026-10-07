@@ -23,7 +23,7 @@ import { useIpc } from "@/lib/ipc";
 import type { ExerciseDefinition, PracticePrompt } from "@/lib/ipc/schemas";
 import { cn } from "@/lib/utils";
 import { describeDemands } from "@/features/exercises/describe";
-import { useRecorder, type Recorder } from "./recorder";
+import { LEVEL_HISTORY, useRecorder, type Recorder } from "./recorder";
 import { RecordingLibrary, SavedAudio } from "./RecordingLibrary";
 
 export function StudioPage() {
@@ -89,18 +89,27 @@ function Studio({ exercise, prompt }: { exercise: ExerciseDefinition; prompt: Pr
     else if (!rec.isCapturing) rec.start({ countdownSeconds: useCountdown ? 3 : 0, deviceId: selectedDevice || null });
   };
 
-  // Ctrl+Enter triggers the available record/stop action while the studio has focus (§14).
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.ctrlKey && e.key === "Enter") {
+  // Ctrl+Enter records or stops anywhere on this page, not only when focus is
+  // inside the studio (§14). Open dialogs keep their own keyboard handling.
+  const primaryRef = useRef(primary);
+  primaryRef.current = primary;
+  const canUsePrimary = rec.ready && rec.phase !== "preparing" && rec.phase !== "finalizing" && (rec.isCapturing || !!selectedDevice);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== "Enter" || e.repeat || e.defaultPrevented) return;
+      if (document.querySelector("[role=alertdialog], [role=dialog]")) return;
+      if (!canUsePrimary) return;
       e.preventDefault();
-      primary();
-    }
-  };
+      primaryRef.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [canUsePrimary]);
 
   const locked = rec.isCapturing || rec.phase === "countdown";
 
   return (
-    <div ref={studioRef} onKeyDown={onKeyDown} className="space-y-6">
+    <div ref={studioRef} className="space-y-6">
       <div aria-live="polite" className="sr-only">
         {announcement}
       </div>
@@ -159,11 +168,11 @@ function Studio({ exercise, prompt }: { exercise: ExerciseDefinition; prompt: Pr
         <div className="text-5xl font-medium tabular-nums" aria-label="Elapsed time">
           {rec.phase === "countdown" ? rec.countdown : formatClock(rec.elapsedMs)}
         </div>
-        <InputLevelMeter level={rec.level} active={rec.phase === "recording"} clipping={rec.clipping} />
+        <LiveWaveform levels={rec.levels} level={rec.level} active={rec.phase === "recording"} clipping={rec.clipping} />
         <Button
           size="lg"
           onClick={primary}
-          disabled={!rec.ready || rec.phase === "preparing" || rec.phase === "finalizing" || (!locked && !selectedDevice)}
+          disabled={!canUsePrimary}
           variant={rec.phase === "recording" ? "outline" : "default"}
           className="min-w-44"
           aria-keyshortcuts="Control+Enter"
@@ -271,30 +280,44 @@ function RecorderStatus({ rec }: { rec: Recorder }) {
   );
 }
 
-/** A modest input meter; no pulsing when idle (§5). */
-function InputLevelMeter({ level, active, clipping }: { level: number; active: boolean; clipping: boolean }) {
-  const bars = 24;
-  const lit = Math.round(level * bars);
+/** RMS 0–1 → 0–1 on a −50…0 dB scale, so ordinary speech is clearly visible. */
+export function levelToHeight(rms: number): number {
+  if (!(rms > 0)) return 0;
+  return Math.min(1, Math.max(0, (20 * Math.log10(rms) + 50) / 50));
+}
+
+/**
+ * Live input waveform while recording: the most recent ~8 seconds of input
+ * level scroll from right to left, mirrored around the centre line like a
+ * voice recorder. Nothing moves when idle (§5).
+ */
+function LiveWaveform({ levels, level, active, clipping }: { levels: number[]; level: number; active: boolean; clipping: boolean }) {
+  const padded = Array.from({ length: LEVEL_HISTORY }, (_, i) => levels[i - (LEVEL_HISTORY - levels.length)] ?? 0);
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div className="flex w-full max-w-xl flex-col items-center gap-1">
       <div
         role="meter"
         aria-label="Input level"
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={Math.round(level * 100)}
-        className="flex h-6 items-end gap-0.5"
+        aria-valuenow={Math.round(levelToHeight(level) * 100)}
+        className="flex h-16 w-full items-center gap-px overflow-hidden"
       >
-        {Array.from({ length: bars }, (_, i) => (
-          <span
-            key={i}
-            className={cn(
-              "w-1.5 rounded-sm bg-border",
-              active && i < lit && (clipping && i > bars - 4 ? "bg-destructive" : "bg-primary"),
-            )}
-            style={{ height: `${30 + (i / bars) * 70}%` }}
-          />
-        ))}
+        {padded.map((value, i) => {
+          const height = active || levels.length ? Math.max(0.04, levelToHeight(value)) : 0.04;
+          return (
+            <span
+              key={i}
+              className={cn(
+                "min-w-px flex-1 rounded-full",
+                !active && "bg-border",
+                active && (clipping && i === LEVEL_HISTORY - 1 ? "bg-destructive" : "bg-primary"),
+                active && i < LEVEL_HISTORY - levels.length && "bg-border",
+              )}
+              style={{ height: `${height * 100}%` }}
+            />
+          );
+        })}
       </div>
       {clipping && <span className="text-meta text-destructive">Input is very loud. Consider moving back a little.</span>}
     </div>
