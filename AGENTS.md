@@ -20,3 +20,7 @@ Windows desktop speaking-practice app: Tauri 2 + React 19 + TypeScript + Vite + 
 - Design tokens are `--cp-*` in `src/index.css` (§4), mapped onto the shadcn variables. Don't hard-code colours.
 - Evidence provenance is always labelled Measured / Estimated / Your note / AI suggestion. Missing values are `null` with a reason, never 0.
 - Pin exact dependency versions (no `^`).
+
+## Git
+
+- Commits are authored by Alex only. Never add `Co-Authored-By` (or any other AI attribution) trailers to commit messages, and no "Generated with" lines in PR descriptions.
