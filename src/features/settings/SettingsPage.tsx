@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useInputDevices } from "@/lib/ipc/queries";
 import { cn } from "@/lib/utils";
+import { BackupSettings } from "./BackupSettings";
 import { ApiCredentialSettings } from "./ApiCredentialSettings";
 import { ApiBudgetStatus } from "./ApiBudgetStatus";
 import { CoachingSpike } from "./CoachingSpike";
@@ -337,15 +338,8 @@ function DataSettings() {
         title="Backups"
         description="A backup on another drive protects against drive failure. A copy on the same drive doesn't. API keys are never included."
       >
-        <p>
-          Last successful backup: <span className="font-medium">never</span>
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button disabled>Create backup</Button>
-          <Button variant="outline" disabled>Restore…</Button>
-          <Button variant="outline" disabled>Export a session</Button>
-        </div>
-        <Later milestone={2}>Backup, restore, and readable exports (Markdown, CSV, WAV).</Later>
+        <BackupSettings />
+        <Later milestone={2}>Replacing current data from a checked backup, weekly automatic backups, and readable session exports (Markdown, CSV, WAV).</Later>
       </Section>
     </>
   );

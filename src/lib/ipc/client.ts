@@ -24,6 +24,9 @@ import type {
   TrashList,
   TrashRetentionDays,
   PurgeOutcome,
+  BackupStatus,
+  BackupSummary,
+  RestorePreview,
   RecoverableRecording,
   RecordingStatus,
   CredentialStatus,
@@ -66,6 +69,13 @@ export interface IpcClient {
   deleteSessionsPermanently(sessionIds: string[]): Promise<PurgeOutcome>;
   emptyTrash(): Promise<PurgeOutcome>;
   setTrashRetention(days: TrashRetentionDays): Promise<void>;
+  getBackupStatus(): Promise<BackupStatus>;
+  /** Opens the native folder picker; cancelling keeps the current folder. */
+  chooseBackupDestination(): Promise<BackupStatus>;
+  createBackup(): Promise<BackupSummary>;
+  /** Opens the native file picker and validates the backup into staging; null when cancelled. */
+  previewRestore(): Promise<RestorePreview | null>;
+  discardRestorePreview(stagingId: string): Promise<void>;
   getSavedRecording(assetId: string): Promise<SavedRecording>;
   getAttemptReview(attemptId: string): Promise<AttemptReview>;
 

@@ -136,6 +136,11 @@ export function createMockClient(): IpcClient {
     setTrashRetention: async (days) => {
       retentionDays = S.TrashRetentionDays.parse(days);
     },
+    getBackupStatus: () => respond(S.BackupStatus, { destination: null, destinationAvailable: false, backups: [] }),
+    chooseBackupDestination: async () => { throw new IpcError("desktop_required", "Backups are available in the desktop app."); },
+    createBackup: async () => { throw new IpcError("desktop_required", "Backups are available in the desktop app."); },
+    previewRestore: async () => { throw new IpcError("desktop_required", "Restore is available in the desktop app."); },
+    discardRestorePreview: async () => {},
     getAttemptReview: (attemptId) => respond(S.AttemptReview, data.reviewForAttempt(attemptId)),
     updateSession: async (id, details) => {
       const session = sessions.find((s) => s.id === id);

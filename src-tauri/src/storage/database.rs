@@ -15,6 +15,8 @@ use std::{
 
 type Result<T> = std::result::Result<T, String>;
 const VERSION: i64 = 2;
+/// Database schema this build reads and writes; newer backups are refused.
+pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
 /// Trash retention a user may choose; 30 days is the default (§6 Sessions).
 pub const RETENTION_CHOICES: [u32; 4] = [1, 7, 14, 30];
@@ -675,6 +677,68 @@ impl DatabaseOwner {
         failed.map_or(Ok(()), Err)
     }
 
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Online snapshot to a new file inside the app data folder (backup staging).
+    pub fn snapshot_to(&self, destination: &Path) -> Result<()> {
+        let parent = destination.parent().ok_or("Invalid snapshot path.")?;
+        contained(&self.root, parent)?;
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        online_copy(&conn, destination)
+    }
+
+    pub fn setting(&self, key: &str) -> Result<Option<String>> {
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        conn.query_row("SELECT value FROM app_settings WHERE key=?1", [key], |r| r.get(0))
+            .optional()
+            .map_err(db_error)
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        conn.execute("INSERT INTO app_settings(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",params![key,value]).map_err(db_error)?;
+        Ok(())
+    }
+
+    pub fn record_backup(
+        &self,
+        id: &str,
+        created_at_ms: u64,
+        destination: &str,
+        manifest_hash: Option<&str>,
+        status: &str,
+    ) -> Result<()> {
+        let created = i64::try_from(created_at_ms).map_err(|_| "Invalid date.")?;
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        conn.execute("INSERT OR REPLACE INTO backup_records(id,created_at_ms,destination,manifest_hash,validation_status) VALUES (?1,?2,?3,?4,?5)",params![id,created,destination,manifest_hash,status]).map_err(db_error)?;
+        Ok(())
+    }
+
+    /// Most recent backup attempts first, successful or not.
+    pub fn backups(&self) -> Result<Vec<Value>> {
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let mut stmt=conn.prepare("SELECT id,created_at_ms,destination,validation_status FROM backup_records ORDER BY created_at_ms DESC,id DESC LIMIT 20").map_err(db_error)?;
+        let rows=stmt.query_map([],|r|Ok(json!({"id":r.get::<_,String>(0)?,"createdAt":iso(r.get(1)?),"fileName":r.get::<_,String>(2)?,"status":r.get::<_,String>(3)?}))).map_err(db_error)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(db_error)
+    }
+
     pub fn snapshot(&self, id: &str) -> Result<PathBuf> {
         recording::validate_id(id)?;
         let conn = self
@@ -799,7 +863,14 @@ fn snapshot(conn: &Connection, root: &Path, id: &str) -> Result<PathBuf> {
     }
     contained(root, &folder)?;
     let destination = folder.join(format!("{id}.sqlite"));
-    let temporary = folder.join(format!("{id}.sqlite.part"));
+    online_copy(conn, &destination)?;
+    Ok(destination)
+}
+
+/// Consistent copy of a live database through SQLite's backup API, verified with
+/// integrity_check, synced, then renamed into place.
+fn online_copy(conn: &Connection, destination: &Path) -> Result<()> {
+    let temporary = destination.with_extension("sqlite.part");
     if destination.exists() || temporary.exists() {
         return Err("A database snapshot with this identifier already exists.".into());
     }
@@ -829,8 +900,7 @@ fn snapshot(conn: &Connection, root: &Path, id: &str) -> Result<PathBuf> {
         .map_err(io_error)?
         .sync_all()
         .map_err(io_error)?;
-    fs::rename(temporary, &destination).map_err(io_error)?;
-    Ok(destination)
+    fs::rename(temporary, destination).map_err(io_error)
 }
 
 #[cfg(test)]

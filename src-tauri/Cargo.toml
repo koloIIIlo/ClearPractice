@@ -29,6 +29,10 @@ rubato = "=0.16.2"
 rusqlite = { version = "=0.40.2", features = ["bundled", "backup"] }
 chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
 reqwest = { version = "=0.13.5", default-features = false, features = ["native-tls", "json", "multipart"] }
+tauri-plugin-dialog = "=2.8.1"
+zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2"] }
+# zip disables flate2 defaults; select the pure-Rust backend explicitly.
+flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security_Credentials", "Win32_System_ProcessStatus"] }

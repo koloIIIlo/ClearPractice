@@ -144,6 +144,46 @@ export type TrashList = z.infer<typeof TrashList>;
 export const PurgeOutcome = z.object({ filesPending: z.boolean() });
 export type PurgeOutcome = z.infer<typeof PurgeOutcome>;
 
+// ── Backups (§13, plan 2.18–2.19) ────────────────────────────────────────────
+export const BackupRecord = z.object({
+  id: Id,
+  createdAt: z.string(), // ISO UTC
+  fileName: z.string(),
+  status: z.enum(["verified", "failed"]),
+});
+export type BackupRecord = z.infer<typeof BackupRecord>;
+
+export const BackupStatus = z.object({
+  destination: z.string().nullable(), // display only; never sent back to the native core
+  destinationAvailable: z.boolean(),
+  backups: z.array(BackupRecord),
+});
+export type BackupStatus = z.infer<typeof BackupStatus>;
+
+export const BackupSummary = z.object({
+  id: Id,
+  fileName: z.string(),
+  createdAtMs: z.number().int().nonnegative(),
+  recordings: z.number().int().nonnegative(),
+  unavailableRecordings: z.number().int().nonnegative(),
+  bytes: z.number().int().nonnegative(),
+});
+export type BackupSummary = z.infer<typeof BackupSummary>;
+
+export const RestorePreview = z.object({
+  stagingId: Id,
+  backupId: Id,
+  createdAtMs: z.number().int().nonnegative(),
+  appVersion: z.string(),
+  schemaVersion: z.number().int().positive(),
+  sessions: z.number().int().nonnegative(),
+  trashedSessions: z.number().int().nonnegative(),
+  recordings: z.number().int().nonnegative(),
+  audioBytes: z.number().int().nonnegative(),
+  unavailableRecordings: z.number().int().nonnegative(),
+});
+export type RestorePreview = z.infer<typeof RestorePreview>;
+
 export const Attempt = z.object({
   id: Id,
   ordinal: z.number().int().positive(),

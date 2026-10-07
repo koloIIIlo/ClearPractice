@@ -1,6 +1,7 @@
 pub mod api;
 mod app_paths;
 pub mod audio;
+pub mod backup;
 mod audio_devices;
 pub mod credentials;
 pub mod storage;
@@ -409,6 +410,109 @@ async fn set_trash_retention(
         .map_err(|_| "Session storage failed.".to_string())?
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BackupStatus {
+    /// Shown to the user only; the UI never sends paths back.
+    destination: Option<String>,
+    destination_available: bool,
+    backups: Vec<serde_json::Value>,
+}
+
+fn backup_status(owner: &storage::database::DatabaseOwner) -> Result<BackupStatus, String> {
+    let destination = owner.setting(backup::DESTINATION_KEY)?;
+    Ok(BackupStatus {
+        destination_available: destination
+            .as_deref()
+            .is_some_and(|d| std::path::Path::new(d).is_dir()),
+        destination,
+        backups: owner.backups()?,
+    })
+}
+
+#[tauri::command]
+async fn get_backup_status(storage: State<'_, Arc<SessionStorage>>) -> Result<BackupStatus, String> {
+    with_storage(&storage, backup_status)
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
+/// Opens the native folder picker. Cancelling keeps the current folder.
+#[tauri::command]
+async fn choose_backup_destination(
+    app: tauri::AppHandle,
+    storage: State<'_, Arc<SessionStorage>>,
+) -> Result<BackupStatus, String> {
+    use tauri_plugin_dialog::DialogExt;
+    with_storage(&storage, move |owner| {
+        let picked = app
+            .dialog()
+            .file()
+            .set_title("Choose a folder for ClearPractice backups")
+            .blocking_pick_folder();
+        if let Some(path) = picked.and_then(|p| p.into_path().ok()) {
+            let path = path.to_string_lossy().into_owned();
+            owner.set_setting(backup::DESTINATION_KEY, &path)?;
+        }
+        backup_status(owner)
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn create_backup(
+    service: State<'_, Arc<CaptureService>>,
+    storage: State<'_, Arc<SessionStorage>>,
+) -> Result<backup::BackupSummary, String> {
+    if service.is_active() {
+        return Err("Finish the current recording before creating a backup.".into());
+    }
+    with_storage(&storage, |owner| {
+        let destination = owner
+            .setting(backup::DESTINATION_KEY)?
+            .ok_or("Choose a backup folder first.")?;
+        backup::create(owner, std::path::Path::new(&destination), storage::recording::now_ms())
+    })
+    .await
+    .map_err(|_| "Backup failed.".to_string())?
+}
+
+/// Picks a backup file natively and validates it into a staging folder. The
+/// current profile is not changed; `None` means the picker was cancelled.
+#[tauri::command]
+async fn preview_restore(
+    app: tauri::AppHandle,
+    storage: State<'_, Arc<SessionStorage>>,
+) -> Result<Option<backup::RestorePreview>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    with_storage(&storage, move |owner| {
+        let picked = app
+            .dialog()
+            .file()
+            .set_title("Choose a ClearPractice backup")
+            .add_filter("ClearPractice backup", &["zip"])
+            .blocking_pick_file();
+        let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
+            return Ok(None);
+        };
+        let staging_id = format!("restore-{}", storage::recording::now_ms());
+        backup::inspect(owner.root(), &path, &staging_id).map(Some)
+    })
+    .await
+    .map_err(|_| "Restore check failed.".to_string())?
+}
+
+#[tauri::command]
+async fn discard_restore_preview(
+    storage: State<'_, Arc<SessionStorage>>,
+    staging_id: String,
+) -> Result<(), String> {
+    with_storage(&storage, move |owner| backup::discard_staging(owner.root(), &staging_id))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
 #[tauri::command]
 fn close_after_recording(
     app: tauri::AppHandle,
@@ -427,9 +531,11 @@ fn close_after_recording(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let root = app.path().app_local_data_dir()?;
             app_paths::prepare_app_data(&root)?;
+            backup::clean_staging(&root);
             app.manage(Arc::new(SessionStorage(
                 storage::database::DatabaseOwner::open(&root),
             )));
@@ -489,6 +595,11 @@ pub fn run() {
             delete_sessions_permanently,
             empty_trash,
             set_trash_retention,
+            get_backup_status,
+            choose_backup_destination,
+            create_backup,
+            preview_restore,
+            discard_restore_preview,
             close_after_recording
         ])
         .run(tauri::generate_context!())
