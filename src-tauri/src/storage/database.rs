@@ -14,7 +14,10 @@ use std::{
 };
 
 type Result<T> = std::result::Result<T, String>;
-const VERSION: i64 = 1;
+const VERSION: i64 = 2;
+const DAY_MS: i64 = 86_400_000;
+/// Trash retention a user may choose; 30 days is the default (§6 Sessions).
+pub const RETENTION_CHOICES: [u32; 4] = [1, 7, 14, 30];
 fn db_error(_: rusqlite::Error) -> String {
     "Session storage is unavailable. Your recording files are preserved.".into()
 }
@@ -127,7 +130,10 @@ impl DatabaseOwner {
                     &format!("before-v{VERSION}-{}", recording::now_ms()),
                 )?;
             }
-            migrate(&mut connection, include_str!("schema-v1.sql"))?;
+            if version < 1 {
+                migrate(&mut connection, include_str!("schema-v1.sql"))?;
+            }
+            migrate(&mut connection, include_str!("schema-v2.sql"))?;
         }
         connection
             .pragma_update(None, "journal_mode", "WAL")
@@ -250,7 +256,12 @@ impl DatabaseOwner {
     }
 
     fn reconcile(&self) -> Result<()> {
+        // Files of an interrupted permanent delete are removed before anything is imported.
+        let _ = self.finish_purges();
         for saved in recording::list_saved(&self.root)? {
+            if self.is_purged(&saved.asset_id)? {
+                continue;
+            }
             // A bad individual asset must not hide healthy history or modify it.
             let known = {
                 let conn=self.connection.lock().map_err(|_|"Session storage owner is unavailable.")?;
@@ -284,6 +295,8 @@ impl DatabaseOwner {
             )
             .map_err(db_error)?;
         }
+        // Expiry is retried on every start; it must never block access to history.
+        let _ = self.purge_expired(recording::now_ms());
         Ok(())
     }
 
@@ -449,6 +462,219 @@ impl DatabaseOwner {
         Ok(())
     }
 
+    pub fn trash_retention_days(&self) -> Result<u32> {
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let value: Option<String> = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key='trash_retention_days'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(db_error)?;
+        // An unreadable setting falls back to the longest retention, never a shorter one.
+        Ok(value
+            .and_then(|v| v.parse().ok())
+            .filter(|d| RETENTION_CHOICES.contains(d))
+            .unwrap_or(30))
+    }
+
+    pub fn set_trash_retention_days(&self, days: u32) -> Result<()> {
+        if !RETENTION_CHOICES.contains(&days) {
+            return Err("Choose 1, 7, 14 or 30 days.".into());
+        }
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        conn.execute("INSERT INTO app_settings(key,value) VALUES ('trash_retention_days',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[days.to_string()]).map_err(db_error)?;
+        Ok(())
+    }
+
+    pub fn move_to_trash(&self, id: &str, now_ms: u64) -> Result<()> {
+        recording::validate_id(id)?;
+        let now = i64::try_from(now_ms).map_err(|_| "Invalid date.")?;
+        let mut conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let tx = conn.transaction().map_err(db_error)?;
+        let capturing: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM attempts a JOIN session_steps st ON st.id=a.step_id WHERE st.session_id=?1 AND a.capture_state IN ('preparing','recording','finalizing'))",[id],|r|r.get(0)).map_err(db_error)?;
+        if capturing {
+            return Err("Stop the recording before moving this session to Trash.".into());
+        }
+        let count = tx
+            .execute(
+                "UPDATE sessions SET deleted_at_ms=?1 WHERE id=?2 AND deleted_at_ms IS NULL",
+                params![now, id],
+            )
+            .map_err(db_error)?;
+        if count != 1 {
+            return Err("This session is unavailable.".into());
+        }
+        tx.commit().map_err(db_error)
+    }
+
+    pub fn restore_from_trash(&self, id: &str) -> Result<()> {
+        recording::validate_id(id)?;
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let count = conn
+            .execute(
+                "UPDATE sessions SET deleted_at_ms=NULL WHERE id=?1 AND deleted_at_ms IS NOT NULL",
+                [id],
+            )
+            .map_err(db_error)?;
+        if count != 1 {
+            return Err("This session is no longer in Trash.".into());
+        }
+        Ok(())
+    }
+
+    pub fn list_trash(&self) -> Result<Value> {
+        let days = self.trash_retention_days()?;
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let mut stmt=conn.prepare("SELECT s.id,s.title,s.local_date,s.deleted_at_ms,COUNT(a.asset_id),COALESCE(SUM(aa.duration_ms),0),COALESCE(SUM(aa.bytes),0),COUNT(a.id)-COUNT(a.asset_id) FROM sessions s LEFT JOIN session_steps st ON st.session_id=s.id LEFT JOIN attempts a ON a.step_id=st.id LEFT JOIN audio_assets aa ON aa.id=a.asset_id WHERE s.deleted_at_ms IS NOT NULL GROUP BY s.id ORDER BY s.deleted_at_ms DESC,s.id").map_err(db_error)?;
+        let rows=stmt.query_map([],|r|{let deleted:i64=r.get(3)?;Ok(json!({"id":r.get::<_,String>(0)?,"title":r.get::<_,String>(1)?,"localDate":r.get::<_,String>(2)?,"deletedAt":iso(deleted),"purgeAt":iso(deleted+i64::from(days)*DAY_MS),"attemptCount":r.get::<_,i64>(4)?,"durationMs":r.get::<_,i64>(5)?,"audioBytes":r.get::<_,i64>(6)?,"unsavedTakeCount":r.get::<_,i64>(7)?}))}).map_err(db_error)?;
+        let items = rows
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(db_error)?;
+        Ok(json!({"retentionDays":days,"items":items}))
+    }
+
+    /// Takes the recording library must not show: trashed sessions and unfinished purges.
+    pub fn hidden_asset_ids(&self) -> Result<std::collections::HashSet<String>> {
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let mut stmt=conn.prepare("SELECT a.id FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id WHERE s.deleted_at_ms IS NOT NULL UNION SELECT id FROM purged_assets").map_err(db_error)?;
+        let rows = stmt.query_map([], |r| r.get(0)).map_err(db_error)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(db_error)
+    }
+
+    pub fn is_purged(&self, id: &str) -> Result<bool> {
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM purged_assets WHERE id=?1)",
+            [id],
+            |r| r.get(0),
+        )
+        .map_err(db_error)
+    }
+
+    /// Permanently deletes sessions that are already in Trash. Rows and tombstones
+    /// commit together, then files are removed. Returns true when file removal is
+    /// still pending; it is retried on the next start and the session never reappears.
+    pub fn delete_permanently(&self, ids: &[String]) -> Result<bool> {
+        if ids.is_empty() || ids.len() > 1000 {
+            return Err("Select between 1 and 1000 sessions.".into());
+        }
+        for id in ids {
+            recording::validate_id(id)?;
+        }
+        {
+            let mut conn = self
+                .connection
+                .lock()
+                .map_err(|_| "Session storage owner is unavailable.")?;
+            let tx = conn.transaction().map_err(db_error)?;
+            let now = i64::try_from(recording::now_ms()).map_err(|_| "Invalid date.")?;
+            let takes = "SELECT a.id FROM attempts a JOIN session_steps st ON st.id=a.step_id WHERE st.session_id=?1";
+            for id in ids {
+                let trashed: Option<bool> = tx
+                    .query_row(
+                        "SELECT deleted_at_ms IS NOT NULL FROM sessions WHERE id=?1",
+                        [id],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .map_err(db_error)?;
+                if trashed != Some(true) {
+                    return Err("Only sessions in Trash can be deleted permanently.".into());
+                }
+                tx.execute(&format!("INSERT OR IGNORE INTO purged_assets(id,purged_at_ms) SELECT id,?2 FROM ({takes})"),params![id,now]).map_err(db_error)?;
+                tx.execute(&format!("DELETE FROM task_conditions WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
+                tx.execute("DELETE FROM attempts WHERE step_id IN (SELECT id FROM session_steps WHERE session_id=?1)",[id]).map_err(db_error)?;
+                tx.execute("DELETE FROM audio_assets WHERE id IN (SELECT id FROM purged_assets) AND id NOT IN (SELECT asset_id FROM attempts WHERE asset_id IS NOT NULL)",[]).map_err(db_error)?;
+                tx.execute("DELETE FROM session_steps WHERE session_id=?1", [id])
+                    .map_err(db_error)?;
+                tx.execute("DELETE FROM sessions WHERE id=?1", [id])
+                    .map_err(db_error)?;
+            }
+            tx.commit().map_err(db_error)?;
+        }
+        Ok(self.finish_purges().is_err())
+    }
+
+    pub fn empty_trash(&self) -> Result<bool> {
+        let ids = self.trashed_before(i64::MAX)?;
+        if ids.is_empty() {
+            return Ok(false);
+        }
+        self.delete_permanently(&ids)
+    }
+
+    fn trashed_before(&self, cutoff: i64) -> Result<Vec<String>> {
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let mut stmt=conn.prepare("SELECT id FROM sessions WHERE deleted_at_ms IS NOT NULL AND deleted_at_ms<=?1 ORDER BY deleted_at_ms LIMIT 1000").map_err(db_error)?;
+        let rows = stmt.query_map([cutoff], |r| r.get(0)).map_err(db_error)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(db_error)
+    }
+
+    fn purge_expired(&self, now_ms: u64) -> Result<()> {
+        let now = i64::try_from(now_ms).map_err(|_| "Invalid date.")?;
+        let cutoff = now - i64::from(self.trash_retention_days()?) * DAY_MS;
+        let ids = self.trashed_before(cutoff)?;
+        if !ids.is_empty() {
+            self.delete_permanently(&ids)?;
+        }
+        Ok(())
+    }
+
+    fn finish_purges(&self) -> Result<()> {
+        let ids: Vec<String> = {
+            let conn = self
+                .connection
+                .lock()
+                .map_err(|_| "Session storage owner is unavailable.")?;
+            let mut stmt = conn
+                .prepare("SELECT id FROM purged_assets")
+                .map_err(db_error)?;
+            let rows = stmt.query_map([], |r| r.get(0)).map_err(db_error)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(db_error)?
+        };
+        let mut failed = None;
+        for id in ids {
+            match remove_take_files(&self.root, &id) {
+                Ok(()) => {
+                    let conn = self
+                        .connection
+                        .lock()
+                        .map_err(|_| "Session storage owner is unavailable.")?;
+                    conn.execute("DELETE FROM purged_assets WHERE id=?1", [&id])
+                        .map_err(db_error)?;
+                }
+                Err(error) => failed = Some(error),
+            }
+        }
+        failed.map_or(Ok(()), Err)
+    }
+
     pub fn snapshot(&self, id: &str) -> Result<PathBuf> {
         recording::validate_id(id)?;
         let conn = self
@@ -457,6 +683,30 @@ impl DatabaseOwner {
             .map_err(|_| "Session storage owner is unavailable.")?;
         snapshot(&conn, &self.root, id)
     }
+}
+
+/// Removes one take's audio, receipt, recovery chunks and derived caches. Links
+/// or junctions are refused, so nothing outside the app data folder is touched.
+fn remove_take_files(root: &Path, id: &str) -> Result<()> {
+    recording::validate_id(id)?;
+    let cache = root.join("cache");
+    for path in [
+        root.join("recordings").join(id),
+        root.join("recovery").join(id),
+        cache.join("inference").join(id),
+        cache.join("peaks").join(format!("{id}.json")),
+    ] {
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        contained(root, &path)?;
+        if metadata.is_dir() {
+            fs::remove_dir_all(&path).map_err(io_error)?;
+        } else {
+            fs::remove_file(&path).map_err(io_error)?;
+        }
+    }
+    Ok(())
 }
 
 fn iso(ms: i64) -> String {
@@ -480,6 +730,16 @@ fn insert_reservation(
         .ok_or("Invalid recording date.")?
         .with_timezone(&Local);
     tx.execute("INSERT OR IGNORE INTO sessions(id,profile_id,title,local_date,timezone_offset_seconds,started_at_ms,status,prompt_snapshot,outline_snapshot) VALUES (?1,'local',?2,?3,?4,?5,'in_progress',?6,?7)",params![session,title,local.format("%Y-%m-%d").to_string(),local.offset().local_minus_utc(),ms,context.map(|c|&c.prompt),context.map(|c|serde_json::to_string(&c.outline).unwrap())]).map_err(db_error)?;
+    let trashed: bool = tx
+        .query_row(
+            "SELECT deleted_at_ms IS NOT NULL FROM sessions WHERE id=?1",
+            [session],
+            |r| r.get(0),
+        )
+        .map_err(db_error)?;
+    if trashed {
+        return Err("This session is in Trash. Restore it or start a new session.".into());
+    }
     let (exercise, version, kind) = context.map_or(("legacy-recording", 1, None), |c| {
         (
             c.exercise_id.as_str(),
@@ -813,6 +1073,133 @@ mod tests {
         assert!(reopened.checked_recording("changed").is_err());
         assert!(reopened.playback_path("healthy").is_ok());
         assert!(reopened.get_session("changed").unwrap()["attempts"][0]["audioUnavailableReason"].is_string());
+    }
+    fn context_for(session: &str) -> PracticeContext {
+        PracticeContext {
+            session_id: session.into(),
+            exercise_id: "legacy-recording".into(),
+            exercise_version: 1,
+            exercise_type: "repeat".into(),
+            prompt: "Prompt".into(),
+            outline: Outline {
+                point: String::new(),
+                reason: String::new(),
+                example: String::new(),
+            },
+            conditions: Conditions {
+                familiarity: "familiar".into(),
+                preparation_seconds: 0,
+                target_seconds: 60,
+                audience: None,
+                follow_up: false,
+            },
+        }
+    }
+    #[test]
+    fn trash_restore_and_permanent_delete_remove_files_without_reimport() {
+        let root = TestRoot::new();
+        saved(&root.0, "keep");
+        saved(&root.0, "gone");
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        owner.waveform("gone").unwrap();
+        let now = recording::now_ms();
+        owner.move_to_trash("gone", now).unwrap();
+        assert!(owner.move_to_trash("gone", now).is_err());
+        assert_eq!(owner.list_sessions(None, None, false).unwrap().len(), 1);
+        assert!(owner.get_session("gone").is_err());
+        assert!(owner.hidden_asset_ids().unwrap().contains("gone"));
+        let trash = owner.list_trash().unwrap();
+        assert_eq!(trash["retentionDays"], 30);
+        assert_eq!(trash["items"][0]["attemptCount"], 1);
+        assert_eq!(trash["items"][0]["durationMs"], 1000);
+        // A new take can't silently land in a trashed session.
+        assert!(owner
+            .reserve("late", "op-late", "Take", Some(&context_for("gone")))
+            .unwrap_err()
+            .contains("Trash"));
+
+        owner.restore_from_trash("gone").unwrap();
+        assert!(owner.restore_from_trash("gone").is_err());
+        assert!(!owner.hidden_asset_ids().unwrap().contains("gone"));
+        assert!(owner.delete_permanently(&["gone".into()]).is_err());
+
+        owner.move_to_trash("gone", now).unwrap();
+        assert!(!owner.delete_permanently(&["gone".into()]).unwrap());
+        for path in ["recordings/gone", "recovery/gone", "cache/peaks/gone.json"] {
+            assert!(!root.0.join(path).exists(), "{path} remains");
+        }
+        assert!(root.0.join("recordings/keep/audio.wav").exists());
+        assert!(owner.list_trash().unwrap()["items"].as_array().unwrap().is_empty());
+        drop(owner);
+        let reopened = DatabaseOwner::open(&root.0).unwrap();
+        assert_eq!(reopened.list_sessions(None, None, false).unwrap().len(), 1);
+        assert!(reopened.checked_recording("keep").is_ok());
+    }
+    #[test]
+    fn populated_v1_database_upgrades_to_v2_with_a_snapshot() {
+        let root = TestRoot::new();
+        saved(&root.0, "existing");
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        owner
+            .update_session("existing", "Kept title", "", &[], false)
+            .unwrap();
+        {
+            let conn = owner.connection.lock().unwrap();
+            conn.execute_batch("DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+        }
+        drop(owner);
+        let upgraded = DatabaseOwner::open(&root.0).unwrap();
+        assert_eq!(upgraded.get_session("existing").unwrap()["title"], "Kept title");
+        assert_eq!(upgraded.trash_retention_days().unwrap(), 30);
+        let snapshots: Vec<_> = fs::read_dir(root.0.join("database/snapshots"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v2-")));
+    }
+    #[cfg(windows)]
+    #[test]
+    fn interrupted_purge_resumes_on_start_and_retention_expires_old_trash() {
+        let root = TestRoot::new();
+        saved(&root.0, "locked");
+        saved(&root.0, "old");
+        saved(&root.0, "recent");
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        assert!(owner.set_trash_retention_days(3).is_err());
+        owner.set_trash_retention_days(7).unwrap();
+
+        // An open handle makes file removal fail after the purge transaction commits.
+        let handle = {
+            use std::os::windows::fs::OpenOptionsExt;
+            fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(root.0.join("recordings/locked/audio.wav"))
+                .unwrap()
+        };
+        owner.move_to_trash("locked", recording::now_ms()).unwrap();
+        assert!(owner.delete_permanently(&["locked".into()]).unwrap());
+        assert!(owner.is_purged("locked").unwrap());
+        assert!(owner.hidden_asset_ids().unwrap().contains("locked"));
+        assert!(owner.get_session("locked").is_err());
+
+        let day = DAY_MS as u64;
+        owner.move_to_trash("old", recording::now_ms() - 8 * day).unwrap();
+        owner.move_to_trash("recent", recording::now_ms() - 6 * day).unwrap();
+        drop(handle);
+        drop(owner);
+
+        // Restart: the receipt is not re-imported, its files go, and only expired Trash is purged.
+        let reopened = DatabaseOwner::open(&root.0).unwrap();
+        assert!(!root.0.join("recordings/locked").exists());
+        assert!(!reopened.is_purged("locked").unwrap());
+        assert!(!root.0.join("recordings/old").exists());
+        assert!(root.0.join("recordings/recent/audio.wav").exists());
+        let trash = reopened.list_trash().unwrap();
+        assert_eq!(trash["retentionDays"], 7);
+        assert_eq!(trash["items"].as_array().unwrap().len(), 1);
+        assert_eq!(trash["items"][0]["id"], "recent");
+        assert!(reopened.list_sessions(None, None, false).unwrap().is_empty());
     }
     trait ErrorMessage {
         fn unwrap_err_or_message(self) -> String;

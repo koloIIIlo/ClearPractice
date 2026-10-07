@@ -20,6 +20,8 @@ export function createMockClient(): IpcClient {
   const phrases = structuredClone(data.phrases);
   const prompts = structuredClone(data.prompts);
   const sessions = structuredClone(data.sessions);
+  const trash = new Map<string, { session: (typeof sessions)[number]; deletedAtMs: number }>();
+  let retentionDays: S.TrashRetentionDays = 30;
   const recordingListeners = new Set<(status: S.RecordingStatus) => void>();
   let recording: S.RecordingStatus | null = null;
   let started = 0;
@@ -98,6 +100,42 @@ export function createMockClient(): IpcClient {
       return respond(S.SessionDetail, s);
     },
 
+    listTrash: () => {
+      const items = [...trash.values()]
+        .sort((a, b) => b.deletedAtMs - a.deletedAtMs)
+        .map(({ session: s, deletedAtMs }) => ({
+          id: s.id, title: s.title, localDate: s.localDate,
+          deletedAt: new Date(deletedAtMs).toISOString(),
+          purgeAt: new Date(deletedAtMs + retentionDays * 86_400_000).toISOString(),
+          attemptCount: s.attemptCount, durationMs: s.durationMs, audioBytes: 0, unsavedTakeCount: 0,
+        }));
+      return respond(S.TrashList, { retentionDays, items });
+    },
+    moveSessionToTrash: async (sessionId) => {
+      const index = sessions.findIndex((s) => s.id === sessionId);
+      if (index < 0) throw new IpcError("not_found", "This session is unavailable.");
+      const [session] = sessions.splice(index, 1);
+      trash.set(sessionId, { session, deletedAtMs: Date.now() });
+    },
+    restoreSession: async (sessionId) => {
+      const entry = trash.get(sessionId);
+      if (!entry) throw new IpcError("not_found", "This session is no longer in Trash.");
+      trash.delete(sessionId);
+      sessions.push(entry.session);
+      sessions.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    },
+    deleteSessionsPermanently: async (sessionIds) => {
+      if (sessionIds.some((id) => !trash.has(id))) throw new IpcError("invalid", "Only sessions in Trash can be deleted permanently.");
+      sessionIds.forEach((id) => trash.delete(id));
+      return { filesPending: false };
+    },
+    emptyTrash: async () => {
+      trash.clear();
+      return { filesPending: false };
+    },
+    setTrashRetention: async (days) => {
+      retentionDays = S.TrashRetentionDays.parse(days);
+    },
     getAttemptReview: (attemptId) => respond(S.AttemptReview, data.reviewForAttempt(attemptId)),
     updateSession: async (id, details) => {
       const session = sessions.find((s) => s.id === id);

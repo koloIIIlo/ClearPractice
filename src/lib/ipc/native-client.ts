@@ -1,5 +1,6 @@
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { z } from "zod";
 import { IpcError, type IpcClient } from "./client";
 import { createMockClient } from "./mock-client";
 import * as S from "./schemas";
@@ -20,6 +21,12 @@ export function createNativeClient(): IpcClient {
     recordingMode: "native",
     listSessions: (filter) => command("list_sessions", S.SessionSummary.array(), { filter: filter ?? null }),
     getSession: (sessionId) => command("get_session", S.SessionDetail, { sessionId }),
+    listTrash: () => command("list_trash", S.TrashList),
+    moveSessionToTrash: async (sessionId) => { await command("move_session_to_trash", z.null(), { sessionId }); },
+    restoreSession: async (sessionId) => { await command("restore_session", z.null(), { sessionId }); },
+    deleteSessionsPermanently: (sessionIds) => command("delete_sessions_permanently", S.PurgeOutcome, { sessionIds }),
+    emptyTrash: () => command("empty_trash", S.PurgeOutcome),
+    setTrashRetention: async (days) => { await command("set_trash_retention", z.null(), { days }); },
     updateSession: async (sessionId, details) => { await command("update_session", S.Id.nullable(), { sessionId, ...details }); },
     getSavedRecording: (assetId) => command("get_saved_recording", S.SavedRecording, { assetId }),
     getAttemptReview: async () => { throw new IpcError("analysis_pending", "Transcription and analysis are not connected to saved sessions yet."); },

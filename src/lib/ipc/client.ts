@@ -21,6 +21,9 @@ import type {
   TodayPlan,
   SavedRecording,
   WaveformPeaks,
+  TrashList,
+  TrashRetentionDays,
+  PurgeOutcome,
   RecoverableRecording,
   RecordingStatus,
   CredentialStatus,
@@ -57,6 +60,12 @@ export interface IpcClient {
   listSessions(filter?: SessionFilter): Promise<SessionSummary[]>;
   getSession(sessionId: string): Promise<SessionDetail>;
   updateSession(sessionId: string, details: { title: string; notes: string; tags: string[]; favorite: boolean }): Promise<void>;
+  listTrash(): Promise<TrashList>;
+  moveSessionToTrash(sessionId: string): Promise<void>;
+  restoreSession(sessionId: string): Promise<void>;
+  deleteSessionsPermanently(sessionIds: string[]): Promise<PurgeOutcome>;
+  emptyTrash(): Promise<PurgeOutcome>;
+  setTrashRetention(days: TrashRetentionDays): Promise<void>;
   getSavedRecording(assetId: string): Promise<SavedRecording>;
   getAttemptReview(attemptId: string): Promise<AttemptReview>;
 

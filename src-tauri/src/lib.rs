@@ -231,19 +231,39 @@ async fn get_recording_status(
 #[tauri::command]
 async fn list_recordings(
     service: State<'_, Arc<CaptureService>>,
+    storage: State<'_, Arc<SessionStorage>>,
 ) -> Result<Vec<SavedRecording>, String> {
     let service = service.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || storage::recording::list_saved(&service.root))
-        .await
-        .map_err(|_| "Recording storage failed.".to_string())?
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let hidden = hidden_assets(&storage)?;
+        Ok(storage::recording::list_saved(&service.root)?
+            .into_iter()
+            .filter(|r| !hidden.contains(&r.asset_id))
+            .collect())
+    })
+    .await
+    .map_err(|_| "Recording storage failed.".to_string())?
+}
+
+/// Takes in Trash or awaiting permanent removal never appear in the library.
+/// Without session storage nothing can be in Trash, so nothing is hidden.
+fn hidden_assets(storage: &SessionStorage) -> Result<std::collections::HashSet<String>, String> {
+    match &storage.0 {
+        Ok(owner) => owner.hidden_asset_ids(),
+        Err(_) => Ok(Default::default()),
+    }
 }
 
 #[tauri::command]
 async fn list_recoverable_recordings(
     service: State<'_, Arc<CaptureService>>,
+    storage: State<'_, Arc<SessionStorage>>,
 ) -> Result<Vec<RecoverableRecording>, String> {
     let service = service.inner().clone();
+    let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let hidden = hidden_assets(&storage)?;
         let active = service
             .status()?
             .filter(|s| matches!(s.phase.as_str(), "preparing" | "recording" | "finalizing"));
@@ -251,6 +271,7 @@ async fn list_recoverable_recordings(
         Ok(list
             .into_iter()
             .filter(|r| active.as_ref().is_none_or(|a| a.attempt_id != r.attempt_id))
+            .filter(|r| !hidden.contains(&r.attempt_id))
             .collect())
     })
     .await
@@ -267,6 +288,9 @@ async fn recover_recording(
     let service = service.inner().clone();
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        if hidden_assets(&storage)?.contains(&attempt_id) {
+            return Err("This take belongs to a session in Trash. Restore the session first.".into());
+        }
         let saved = service.recover(&attempt_id)?;
         storage
             .0
@@ -305,6 +329,84 @@ async fn get_recording_waveform(
     })
     .await
     .map_err(|_| "Recording storage failed.".to_string())?
+}
+
+fn with_storage<T: Send + 'static>(
+    storage: &State<'_, Arc<SessionStorage>>,
+    work: impl FnOnce(&storage::database::DatabaseOwner) -> Result<T, String> + Send + 'static,
+) -> tauri::async_runtime::JoinHandle<Result<T, String>> {
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || work(storage.0.as_ref().map_err(Clone::clone)?))
+}
+
+#[tauri::command]
+async fn list_trash(storage: State<'_, Arc<SessionStorage>>) -> Result<serde_json::Value, String> {
+    with_storage(&storage, |owner| owner.list_trash())
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn move_session_to_trash(
+    storage: State<'_, Arc<SessionStorage>>,
+    session_id: String,
+) -> Result<(), String> {
+    with_storage(&storage, move |owner| {
+        owner.move_to_trash(&session_id, storage::recording::now_ms())
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn restore_session(
+    storage: State<'_, Arc<SessionStorage>>,
+    session_id: String,
+) -> Result<(), String> {
+    with_storage(&storage, move |owner| owner.restore_from_trash(&session_id))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PurgeOutcome {
+    files_pending: bool,
+}
+
+#[tauri::command]
+async fn delete_sessions_permanently(
+    storage: State<'_, Arc<SessionStorage>>,
+    session_ids: Vec<String>,
+) -> Result<PurgeOutcome, String> {
+    with_storage(&storage, move |owner| {
+        owner
+            .delete_permanently(&session_ids)
+            .map(|files_pending| PurgeOutcome { files_pending })
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn empty_trash(storage: State<'_, Arc<SessionStorage>>) -> Result<PurgeOutcome, String> {
+    with_storage(&storage, |owner| {
+        owner
+            .empty_trash()
+            .map(|files_pending| PurgeOutcome { files_pending })
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn set_trash_retention(
+    storage: State<'_, Arc<SessionStorage>>,
+    days: u32,
+) -> Result<(), String> {
+    with_storage(&storage, move |owner| owner.set_trash_retention_days(days))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
 }
 
 #[tauri::command]
@@ -381,6 +483,12 @@ pub fn run() {
             recover_recording,
             get_recording_playback_path,
             get_recording_waveform,
+            list_trash,
+            move_session_to_trash,
+            restore_session,
+            delete_sessions_permanently,
+            empty_trash,
+            set_trash_retention,
             close_after_recording
         ])
         .run(tauri::generate_context!())

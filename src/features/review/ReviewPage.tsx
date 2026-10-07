@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { formatClock, formatLongDay } from "@/lib/format";
 import { IpcError, useIpc } from "@/lib/ipc";
 import { NativeSession } from "@/features/sessions/NativeSession";
+import { MoveToTrashButton } from "@/features/sessions/TrashPage";
 import { useAttemptReview, useServiceStatus, useSession } from "@/lib/ipc/queries";
 import type { AttemptReview, Observation, SessionDetail } from "@/lib/ipc/schemas";
 import { cn } from "@/lib/utils";
@@ -89,6 +90,7 @@ function Review({ session, attemptId, ordinal }: { session: SessionDetail; attem
           >
             <Mic aria-hidden /> Try again
           </Button>
+          <MoveToTrashButton session={session} />
         </div>
       </header>
 

@@ -10,6 +10,7 @@ import { useIpc } from "@/lib/ipc";
 import type { SessionDetail } from "@/lib/ipc/schemas";
 import { formatClock, formatLongDay } from "@/lib/format";
 import { SavedAudio } from "@/features/practice/RecordingLibrary";
+import { MoveToTrashButton } from "./TrashPage";
 
 /** Real saved audio never falls through to simulated review or mock observations. */
 export function NativeSession({ session, selectedOrdinal }: { session: SessionDetail; selectedOrdinal?: number }) {
@@ -46,7 +47,10 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
         {save.error && <p role="alert" className="text-destructive">{save.error.message}</p>}
       </form>
     </Panel>
-    <Button variant="outline" asChild><Link to="/sessions">Back to sessions</Link></Button>
+    <div className="flex flex-wrap gap-2">
+      <Button variant="outline" asChild><Link to="/sessions">Back to sessions</Link></Button>
+      <MoveToTrashButton session={session} />
+    </div>
   </div>;
 }
 function NativeTake({ assetId }: { assetId: string }) {

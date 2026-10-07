@@ -5,6 +5,7 @@ import { ExercisesPage } from "@/features/exercises/ExercisesPage";
 import { ExerciseDetailPage } from "@/features/exercises/ExerciseDetailPage";
 import { StudioPage } from "@/features/practice/StudioPage";
 import { SessionsPage } from "@/features/sessions/SessionsPage";
+import { TrashPage } from "@/features/sessions/TrashPage";
 import { ReviewPage } from "@/features/review/ReviewPage";
 import { ComparePage } from "@/features/review/ComparePage";
 import { PhrasesPage } from "@/features/phrases/PhrasesPage";
@@ -56,6 +57,7 @@ export const routes: RouteObject[] = [
             handle: crumb("Sessions"),
             children: [
               { index: true, element: <SessionsPage /> },
+              { path: "trash", element: <TrashPage />, handle: crumb("Trash") },
               {
                 path: ":sessionId",
                 handle: { crumb: (p) => <SessionCrumb id={p.sessionId!} /> } satisfies RouteHandle,

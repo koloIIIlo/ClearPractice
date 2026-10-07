@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { Heart, History, NotebookPen, Search } from "lucide-react";
+import { Heart, History, NotebookPen, Search, Trash2 } from "lucide-react";
 import { EmptyState, LoadingBlock, Page, PageHeader, QueryView } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,7 +37,17 @@ export function SessionsPage() {
 
   return (
     <Page>
-      <PageHeader title="Sessions" description="Everything you've recorded, newest first. Stored on this computer." />
+      <PageHeader
+        title="Sessions"
+        description="Everything you've recorded, newest first. Stored on this computer."
+        actions={
+          <Button variant="ghost" asChild>
+            <Link to="/sessions/trash">
+              <Trash2 aria-hidden /> Trash
+            </Link>
+          </Button>
+        }
+      />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative w-full max-w-sm">

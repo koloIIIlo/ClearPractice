@@ -120,6 +120,30 @@ export const SessionSummary = z.object({
 });
 export type SessionSummary = z.infer<typeof SessionSummary>;
 
+// ── Trash (§6 Sessions, plan 2.17) ───────────────────────────────────────────
+export const TRASH_RETENTION_CHOICES = [1, 7, 14, 30] as const;
+export const TrashRetentionDays = z.union([z.literal(1), z.literal(7), z.literal(14), z.literal(30)]);
+export type TrashRetentionDays = z.infer<typeof TrashRetentionDays>;
+
+export const TrashItem = z.object({
+  id: Id,
+  title: z.string(),
+  localDate: z.string(),
+  deletedAt: z.string(), // ISO UTC
+  purgeAt: z.string(), // ISO UTC; permanent deletion happens on the first start after this
+  attemptCount: z.number().int().nonnegative(),
+  durationMs: z.number().int().nonnegative(),
+  audioBytes: z.number().int().nonnegative(),
+  unsavedTakeCount: z.number().int().nonnegative(),
+});
+export type TrashItem = z.infer<typeof TrashItem>;
+
+export const TrashList = z.object({ retentionDays: TrashRetentionDays, items: z.array(TrashItem) });
+export type TrashList = z.infer<typeof TrashList>;
+
+export const PurgeOutcome = z.object({ filesPending: z.boolean() });
+export type PurgeOutcome = z.infer<typeof PurgeOutcome>;
+
 export const Attempt = z.object({
   id: Id,
   ordinal: z.number().int().positive(),
