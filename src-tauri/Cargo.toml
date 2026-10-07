@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "ClearPractice: a local desktop speaking coach"
 authors = ["ClearPractice"]
 edition = "2021"
+default-run = "clearpractice"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -15,14 +16,22 @@ name = "clearpractice_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "=2.7.0", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+tauri = { version = "=2.12.0", features = ["protocol-asset"] }
+tauri-plugin-opener = "=2.6.0"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
 cpal = "=0.18.2"
+sha2 = "=0.10.9"
+rubato = "=0.16.2"
+rusqlite = { version = "=0.40.2", features = ["bundled", "backup"] }
+chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
+reqwest = { version = "=0.13.5", default-features = false, features = ["native-tls", "json", "multipart"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security_Credentials", "Win32_System_ProcessStatus"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
@@ -32,3 +41,8 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# Integrity checks read model/runtime files on every feasibility run. Keep the
+# digest implementation optimized in development too; do not skip verification.
+[profile.dev.package.sha2]
+opt-level = 3
