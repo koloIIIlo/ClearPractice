@@ -110,7 +110,7 @@ export const SessionSummary = z.object({
   title: z.string(),
   localDate: z.string(), // YYYY-MM-DD in the user's calendar
   startedAt: z.string(), // ISO UTC
-  exerciseType: ExerciseType,
+  exerciseType: ExerciseType.nullable(),
   durationMs: z.number().int().nonnegative(),
   attemptCount: z.number().int().nonnegative(),
   favorite: z.boolean(),
@@ -128,6 +128,7 @@ export const Attempt = z.object({
   durationMs: z.number().int().nonnegative(),
   createdAt: z.string(),
   firstTake: z.boolean(),
+  audioUnavailableReason: z.string().nullable().optional(),
 });
 export type Attempt = z.infer<typeof Attempt>;
 
@@ -195,8 +196,9 @@ export const SessionDetail = SessionSummary.extend({
   outline: z.object({ point: z.string(), reason: z.string(), example: z.string() }),
   focus: z.string().nullable(),
   notes: z.string(),
-  conditions: TaskConditions,
+  conditions: TaskConditions.nullable(),
   attempts: z.array(Attempt),
+  conditionsUnavailableReason: z.string().nullable().optional(),
 });
 export type SessionDetail = z.infer<typeof SessionDetail>;
 
@@ -282,3 +284,107 @@ export const InputDevice = z.object({
   supportedConfigs: z.array(InputConfig),
 });
 export type InputDevice = z.infer<typeof InputDevice>;
+
+// ── Durable recording spike (§9, §15) ────────────────────────────────────────
+export const SavedRecording = z.object({
+  attemptId: Id,
+  assetId: Id,
+  title: z.string(),
+  createdAtMs: z.number().int().nonnegative(),
+  durationMs: z.number().int().nonnegative(),
+  sampleRate: z.number().int().positive(),
+  channels: z.literal(1),
+  sourceChannels: z.number().int().positive(),
+  sourceFormat: z.string(),
+  bytes: z.number().int().nonnegative(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  recovered: z.boolean(),
+});
+export type SavedRecording = z.infer<typeof SavedRecording>;
+
+export const RecoverableRecording = z.object({
+  attemptId: Id,
+  title: z.string(),
+  createdAtMs: z.number().int().nonnegative().nullable(),
+  durationMs: z.number().int().nonnegative().nullable(),
+  unavailableReason: z.string().nullable(),
+});
+export type RecoverableRecording = z.infer<typeof RecoverableRecording>;
+
+export const RecordingStatus = z.object({
+  attemptId: Id,
+  phase: CaptureState,
+  elapsedMs: z.number().int().nonnegative(),
+  monotonicMs: z.number().int().nonnegative(),
+  level: z.number().min(0).max(1),
+  clipping: z.boolean(),
+  error: z.string().nullable(),
+  asset: SavedRecording.nullable(),
+});
+export type RecordingStatus = z.infer<typeof RecordingStatus>;
+
+export const CredentialStatus = z.object({
+  provider: z.literal("OpenAI"),
+  present: z.boolean(),
+}).strict();
+export type CredentialStatus = z.infer<typeof CredentialStatus>;
+
+const MicroUsd = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+export const BudgetSummary = z.object({
+  currency: z.literal("USD"),
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  stopMicroUsd: MicroUsd,
+  warningMicroUsd: MicroUsd,
+  countedMicroUsd: MicroUsd,
+  coachingMicroUsd: MicroUsd,
+  transcriptionMicroUsd: MicroUsd,
+  uncertainMicroUsd: MicroUsd,
+  remainingMicroUsd: MicroUsd,
+  warning: z.boolean(),
+}).strict();
+export type BudgetSummary = z.infer<typeof BudgetSummary>;
+
+export const CoachingPreview = z.object({
+  version: z.literal(1), requestId: Id, payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  recipient: z.literal("https://api.openai.com/v1/responses"), model: z.string().min(1),
+  selectedText: z.string().min(1), prompt: z.string(), focus: z.string(), instructions: z.string(),
+  maximumOutputTokens: z.number().int().positive(), estimatedMaximumCostMicroUsd: MicroUsd,
+  priceDate: z.string(), priceSource: z.url(), inputUsdPerMillionTokens: z.string(), outputUsdPerMillionTokens: z.string(),
+  costExplanation: z.string(), expiresAtMs: z.number().int().nonnegative(),
+}).strict();
+export type CoachingPreview = z.infer<typeof CoachingPreview>;
+
+export const FeedbackResult = z.object({
+  version: z.literal(1), requestId: Id, providerRequestId: z.string().nullable(), provider: z.literal("OpenAI"), model: z.string(),
+  transcriptRevisionId: Id, inputSha256: z.string().regex(/^[a-f0-9]{64}$/), provenance: z.literal("AI suggestion"), finishState: z.literal("completed"),
+  feedback: z.object({ summary: z.string().min(1), oneImprovement: z.string().min(1), nextAttempt: z.string().min(1),
+    corrections: z.array(z.object({kind: z.enum(["clear-error", "style"]), quote: z.string().min(1), suggestion: z.string().min(1), reason: z.string().min(1)}).strict()).max(3),
+  }).strict(), inputTokens: z.number().int().nonnegative().nullable(), outputTokens: z.number().int().nonnegative().nullable(),
+  usageUnavailableReason: z.string().nullable(), estimatedCostMicroUsd: MicroUsd.nullable(), costUnavailableReason: z.string().nullable(), createdAtMs: z.number().int().nonnegative(),
+}).strict().superRefine((value, ctx) => {
+  if ((value.inputTokens === null || value.outputTokens === null) && !value.usageUnavailableReason) ctx.addIssue({code:"custom",message:"Missing usage needs a reason"});
+  if (value.estimatedCostMicroUsd === null && !value.costUnavailableReason) ctx.addIssue({code:"custom",message:"Missing cost needs a reason"});
+});
+export type FeedbackResult = z.infer<typeof FeedbackResult>;
+
+const available = <T extends z.ZodType>(value: T) => z.object({
+  value: value.nullable(), unavailableReason: z.string().min(1).max(512).nullable(),
+}).strict().refine((v) => "value" in v && v.value !== undefined && (v.value === null) === (v.unavailableReason !== null), "Missing values require a reason; known values must not have one");
+const TimedText = z.object({text: z.string().min(1), startMs: z.number().int().nonnegative(), endMs: z.number().int().nonnegative(), provenance: z.literal("Estimated")})
+  .strict().refine((v) => v.endMs >= v.startMs, "Timing end precedes start");
+export const TranscriptionResult = z.object({
+  version: z.literal(1), adapterVersion: z.string().min(1), provider: z.enum(["local-whisper", "openai"]),
+  runId: Id, requestId: available(z.string().min(1)), assetId: Id,
+  sourceSha256: z.string().regex(/^[a-f0-9]{64}$/), preparedSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  modelId: z.string().min(1), modelSha256: available(z.string().regex(/^[a-f0-9]{64}$/)), language: available(z.string().min(1)),
+  rawText: z.string().min(1), capabilities: z.object({segmentTimings: z.boolean(), wordTimings: z.boolean(), speakerLabels: z.boolean()}).strict(),
+  segments: available(z.array(TimedText)), words: available(z.array(TimedText)), speakers: available(z.array(z.string().min(1))),
+  settings: z.record(z.string(), z.unknown()), usage: z.object({inputTokens: available(z.number().int().nonnegative()), outputTokens: available(z.number().int().nonnegative()),
+    audioDurationMs: available(z.number().int().nonnegative()), estimatedCostMicroUsd: available(MicroUsd)}).strict(),
+  createdAtMs: z.number().int().nonnegative(),
+}).strict().superRefine((v, ctx) => {
+  if (v.words.value !== null && !v.capabilities.wordTimings || v.segments.value !== null && !v.capabilities.segmentTimings || v.speakers.value !== null && !v.capabilities.speakerLabels) {
+    ctx.addIssue({code:"custom", message:"Result claims an unsupported capability"});
+  }
+});
+export type TranscriptionResult = z.infer<typeof TranscriptionResult>;

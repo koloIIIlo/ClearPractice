@@ -1,160 +1,159 @@
-/**
- * Recorder state machine (blueprint §9): Preparing → Recording → Finalizing → Saved | Interrupted.
- * Capture state is kept separate from analysis state so a failed analysis can
- * never make a valid recording look unsaved.
- */
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useIpc } from "@/lib/ipc";
+import type { RecordingStatus, SavedRecording } from "@/lib/ipc/schemas";
+import type { PracticeContext } from "@/lib/ipc/client";
 
-export type RecorderPhase = "idle" | "countdown" | "preparing" | "recording" | "finalizing" | "saved" | "interrupted";
-
+export type RecorderPhase = "idle" | "countdown" | RecordingStatus["phase"];
 export interface Take {
   ordinal: number;
   durationMs: number;
-  state: "saved" | "interrupted";
+  state: "saved";
+  asset: SavedRecording;
 }
-
 interface State {
-  phase: RecorderPhase;
-  countdown: number;
-  startedAt: number | null;
-  elapsedMs: number;
-  level: number; // 0..1, display only
-  clipping: boolean;
-  takes: Take[];
-}
-
-type Action =
-  | { type: "countdown"; seconds: number }
-  | { type: "tick_countdown" }
-  | { type: "preparing" }
-  | { type: "recording"; at: number }
-  | { type: "tick"; now: number; level: number }
-  | { type: "finalizing" }
-  | { type: "saved" }
-  | { type: "interrupted" }
-  | { type: "reset" };
-
-const initial: State = { phase: "idle", countdown: 0, startedAt: null, elapsedMs: 0, level: 0, clipping: false, takes: [] };
-
-function reducer(s: State, a: Action): State {
-  switch (a.type) {
-    case "countdown":
-      return { ...s, phase: "countdown", countdown: a.seconds, elapsedMs: 0 };
-    case "tick_countdown":
-      return { ...s, countdown: Math.max(0, s.countdown - 1) };
-    case "preparing":
-      return { ...s, phase: "preparing", elapsedMs: 0, level: 0 };
-    case "recording":
-      return { ...s, phase: "recording", startedAt: a.at, elapsedMs: 0 };
-    case "tick":
-      return s.phase === "recording" && s.startedAt !== null
-        ? { ...s, elapsedMs: a.now - s.startedAt, level: a.level, clipping: a.level > 0.97 }
-        : s;
-    case "finalizing":
-      return { ...s, phase: "finalizing", level: 0 };
-    case "saved":
-      return {
-        ...s,
-        phase: "saved",
-        startedAt: null,
-        takes: [...s.takes, { ordinal: s.takes.length + 1, durationMs: s.elapsedMs, state: "saved" }],
-      };
-    case "interrupted":
-      return {
-        ...s,
-        phase: "interrupted",
-        startedAt: null,
-        level: 0,
-        takes: [...s.takes, { ordinal: s.takes.length + 1, durationMs: s.elapsedMs, state: "interrupted" }],
-      };
-    case "reset":
-      return { ...s, phase: "idle", elapsedMs: 0, level: 0 };
-  }
-}
-
-export interface Recorder {
   phase: RecorderPhase;
   countdown: number;
   elapsedMs: number;
   level: number;
   clipping: boolean;
+  error: string | null;
   takes: Take[];
-  /** True while leaving the screen would abandon a take. */
+}
+const initial: State = { phase: "idle", countdown: 0, elapsedMs: 0, level: 0, clipping: false, error: null, takes: [] };
+export interface Recorder extends State {
+  ready: boolean;
   isCapturing: boolean;
-  start: (opts?: { countdownSeconds?: number }) => void;
-  stopAndSave: () => Promise<void>;
-  cancelCountdown: () => void;
+  closeRequested: boolean;
+  start(opts: { countdownSeconds?: number; deviceId: string | null }): void;
+  stopAndSave(): Promise<boolean>;
+  cancelCountdown(): void;
+  continueRecording(): void;
+  saveAndClose(): Promise<void>;
 }
 
-/**
- * Simulated recorder for M1 — no audio is captured. In M2 this hook keeps its
- * shape but calls start_recording / stop_recording and listens to recording_level.
- */
-export function useSimulatedRecorder(): Recorder {
-  const [state, dispatch] = useReducer(reducer, initial);
-  const timers = useRef<number[]>([]);
-  const clear = () => {
-    timers.current.forEach((t) => window.clearInterval(t));
-    timers.current = [];
-  };
-  useEffect(() => clear, []);
+/** All capture and filesystem behavior is behind IPC, including the browser simulation. */
+export function useRecorder(title: string, context?: PracticeContext): Recorder {
+  const ipc = useIpc();
+  const [state, setState] = useState<State>(initial);
+  const [ready, setReady] = useState(false);
+  const [closeRequested, setCloseRequested] = useState(false);
+  const attemptId = useRef<string | null>(null);
+  const busy = useRef(false);
+  const alive = useRef(true);
+  const countdownTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const starting = useRef<Promise<void> | null>(null);
+  const stopping = useRef<Promise<boolean> | null>(null);
 
-  const begin = useCallback(() => {
-    dispatch({ type: "preparing" });
-    // Device open latency; the blueprint targets < 200 ms.
-    timers.current.push(
-      window.setTimeout(() => {
-        dispatch({ type: "recording", at: performance.now() });
-        let phase = 0;
-        timers.current.push(
-          window.setInterval(() => {
-            phase += 0.35;
-            const speech = Math.max(0, Math.sin(phase) * 0.5 + Math.sin(phase * 2.7) * 0.25);
-            dispatch({ type: "tick", now: performance.now(), level: Math.min(0.9, speech + Math.random() * 0.1) });
-          }, 100),
-        );
-      }, 150),
-    );
+  const apply = useCallback((status: RecordingStatus) => {
+    if (!alive.current || (attemptId.current && status.attemptId !== attemptId.current)) return;
+    if (!attemptId.current && ["saved", "interrupted"].includes(status.phase)) return;
+    attemptId.current = status.attemptId;
+    busy.current = ["preparing", "recording", "finalizing"].includes(status.phase);
+    setState((previous) => ({
+      ...previous, phase: status.phase, elapsedMs: status.elapsedMs, level: status.level,
+      clipping: status.clipping, error: status.error,
+      takes: status.asset && !previous.takes.some((take) => take.asset.assetId === status.asset!.assetId)
+        ? [...previous.takes, { ordinal: previous.takes.length + 1, durationMs: status.asset.durationMs, state: "saved", asset: status.asset }]
+        : previous.takes,
+    }));
   }, []);
 
-  const start = useCallback(
-    (opts?: { countdownSeconds?: number }) => {
-      clear();
-      const secs = opts?.countdownSeconds ?? 0;
-      if (secs <= 0) return begin();
-      dispatch({ type: "countdown", seconds: secs });
-      let left = secs;
-      timers.current.push(
-        window.setInterval(() => {
-          left -= 1;
-          if (left <= 0) {
-            clear();
-            begin();
-          } else dispatch({ type: "tick_countdown" });
-        }, 1000),
-      );
-    },
-    [begin],
-  );
+  useEffect(() => {
+    alive.current = true;
+    let disposed = false;
+    const removers: (() => void)[] = [];
+    const register = (remove: () => void) => { if (disposed) remove(); else removers.push(remove); };
+    void (async () => {
+      try {
+        register(await ipc.onRecordingEvent(apply));
+        register(await ipc.onRecordingCloseRequested(() => setCloseRequested(true)));
+        const current = await ipc.getRecordingStatus();
+        if (disposed) return;
+        if (current && ["preparing", "recording", "finalizing"].includes(current.phase)) apply(current);
+        setReady(true);
+      } catch (error) {
+        if (!disposed) setState((s) => ({ ...s, error: error instanceof Error ? error.message : "Recording could not be initialized." }));
+      }
+    })();
+    return () => {
+      disposed = true;
+      alive.current = false;
+      clearInterval(countdownTimer.current);
+      removers.forEach((remove) => remove());
+    };
+  }, [ipc, apply]);
 
-  const stopAndSave = useCallback(async () => {
-    clear();
-    dispatch({ type: "finalizing" });
-    // Saved is reported only after durable finalisation (§9 step 6).
-    await new Promise((r) => setTimeout(r, 400));
-    dispatch({ type: "saved" });
-  }, []);
+  const begin = useCallback((deviceId: string | null) => {
+    const id = crypto.randomUUID();
+    attemptId.current = id;
+    setState((s) => ({ ...s, phase: "preparing", elapsedMs: 0, level: 0, clipping: false, error: null }));
+    starting.current = ipc.startRecording({ attemptId: id, idempotencyKey: crypto.randomUUID(), deviceId, title, context })
+      .then(apply)
+      .catch((error: unknown) => {
+        busy.current = false;
+        if (alive.current) setState((s) => ({ ...s, phase: "interrupted", level: 0, error: error instanceof Error ? error.message : "The microphone could not be opened." }));
+      });
+  }, [ipc, title, context, apply]);
+
+  const start = useCallback((opts: { countdownSeconds?: number; deviceId: string | null }) => {
+    if (busy.current || !ready) return;
+    busy.current = true;
+    let remaining = opts.countdownSeconds ?? 0;
+    if (remaining <= 0) { begin(opts.deviceId); return; }
+    setState((s) => ({ ...s, phase: "countdown", countdown: remaining, elapsedMs: 0, error: null }));
+    countdownTimer.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) { clearInterval(countdownTimer.current); begin(opts.deviceId); }
+      else setState((s) => ({ ...s, countdown: remaining }));
+    }, 1000);
+  }, [ready, begin]);
 
   const cancelCountdown = useCallback(() => {
-    clear();
-    dispatch({ type: "reset" });
+    clearInterval(countdownTimer.current);
+    busy.current = false;
+    setState((s) => ({ ...s, phase: "idle", countdown: 0, level: 0 }));
   }, []);
 
+  const stopAndSave = useCallback((): Promise<boolean> => {
+    if (state.phase === "countdown") { cancelCountdown(); return Promise.resolve(true); }
+    if (stopping.current) return stopping.current;
+    stopping.current = (async () => {
+      await starting.current;
+      const id = attemptId.current;
+      if (!id) return false;
+      setState((s) => ({ ...s, phase: "finalizing", level: 0 }));
+      try {
+        const asset = await ipc.stopRecording(id);
+        apply({ attemptId: id, phase: "saved", elapsedMs: asset.durationMs, monotonicMs: asset.durationMs, level: 0, clipping: false, error: null, asset });
+        return true;
+      } catch (error) {
+        busy.current = false;
+        if (alive.current) setState((s) => ({ ...s, phase: "interrupted", level: 0, error: error instanceof Error ? error.message : "The take could not be saved. Captured chunks are kept for recovery." }));
+        return false;
+      } finally {
+        stopping.current = null;
+      }
+    })();
+    return stopping.current;
+  }, [state.phase, cancelCountdown, ipc, apply]);
+
+  // Browser refreshes are guarded too. Desktop window close is intercepted by Rust.
+  const isCapturing = ["countdown", "preparing", "recording", "finalizing"].includes(state.phase);
+  useEffect(() => {
+    if (!isCapturing) return;
+    const guard = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [isCapturing]);
+
   return {
-    ...state,
-    isCapturing: state.phase === "preparing" || state.phase === "recording" || state.phase === "finalizing",
-    start,
-    stopAndSave,
-    cancelCountdown,
+    ...state, ready, isCapturing, closeRequested, start, stopAndSave, cancelCountdown,
+    continueRecording: () => setCloseRequested(false),
+    saveAndClose: async () => {
+      if (await stopAndSave()) {
+        try { await ipc.closeAfterRecording(); }
+        catch (error) { setState((s) => ({ ...s, error: error instanceof Error ? error.message : "Cannot close the window." })); }
+      }
+    },
   };
 }

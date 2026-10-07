@@ -4,8 +4,10 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { CommandPalette } from "./CommandPalette";
 import { TopBar } from "./TopBar";
+import { useIpc } from "@/lib/ipc";
 
 export function AppShell() {
+  const ipc = useIpc();
   const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
@@ -34,6 +36,9 @@ export function AppShell() {
       <AppSidebar />
       <SidebarInset>
         <TopBar onOpenSearch={() => setSearchOpen(true)} />
+        <p role="note" className="border-b px-4 py-2 text-meta text-muted-foreground">
+          {ipc.recordingMode === "native" ? "Development preview: recordings and session history are stored on this computer. Routine, phrases and progress still show sample data." : "Browser preview with sample data. Open the desktop app for real recording."}
+        </p>
         <main id="main" tabIndex={-1} className="flex-1 outline-none">
           <Outlet />
         </main>

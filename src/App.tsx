@@ -6,10 +6,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/app/theme";
 import { createRouter } from "@/app/routes";
 import { IpcContext, type IpcClient } from "@/lib/ipc";
-import { createMockClient } from "@/lib/ipc/mock-client";
+import { createAppClient } from "@/lib/ipc/native-client";
 
-// M1: sample data only. The Tauri invoke client replaces this once native commands exist (M2).
-const defaultClient = createMockClient();
+const defaultClient = createAppClient();
 
 export default function App({ client = defaultClient }: { client?: IpcClient }) {
   const [queryClient] = useState(

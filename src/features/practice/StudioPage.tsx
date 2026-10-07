@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
-import { CheckCircle2, Circle, Info, Loader2, Mic, Square, TriangleAlert } from "lucide-react";
+import { useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
+import { CheckCircle2, Circle, Info, Loader2, Mic, Square } from "lucide-react";
 import { toast } from "sonner";
 import { Page, Panel, QueryView } from "@/components/page";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -17,12 +16,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatClock } from "@/lib/format";
-import { useExercises, usePrompts } from "@/lib/ipc/queries";
+import { useExercises, usePrompts, useInputDevices } from "@/lib/ipc/queries";
+import { useIpc } from "@/lib/ipc";
 import type { ExerciseDefinition, PracticePrompt } from "@/lib/ipc/schemas";
 import { cn } from "@/lib/utils";
 import { describeDemands } from "@/features/exercises/describe";
-import { useSimulatedRecorder, type Recorder } from "./recorder";
+import { useRecorder, type Recorder } from "./recorder";
+import { RecordingLibrary, SavedAudio } from "./RecordingLibrary";
 
 export function StudioPage() {
   const { exerciseId } = useParams();
@@ -38,7 +40,7 @@ export function StudioPage() {
             {(promptList) => {
               const exercise = exList.find((e) => e.id === exerciseId) ?? exList[0];
               const prompt = promptList.find((p) => p.id === params.get("prompt")) ?? promptList[0];
-              return <Studio exercise={exercise} prompt={prompt} />;
+              return <Studio key={`${exercise.id}-${prompt.id}`} exercise={exercise} prompt={prompt} />;
             }}
           </QueryView>
         )}
@@ -48,10 +50,17 @@ export function StudioPage() {
 }
 
 function Studio({ exercise, prompt }: { exercise: ExerciseDefinition; prompt: PracticePrompt }) {
-  const rec = useSimulatedRecorder();
+  const ipc = useIpc();
+  const native = ipc.recordingMode === "native";
+  const [sessionId] = useState(() => crypto.randomUUID());
+  const devices = useInputDevices();
+  const [deviceId, setDeviceId] = useState("");
+  const selectedDevice = deviceId || devices.data?.find((device) => device.isDefault && device.available)?.id || devices.data?.find((device) => device.available)?.id || "";
   const navigate = useNavigate();
   const [useCountdown, setUseCountdown] = useState(false);
   const [outline, setOutline] = useState({ point: "", reason: "", example: "" });
+  const rec = useRecorder(prompt.text, { sessionId, exerciseId: exercise.id, exerciseVersion: exercise.version,
+    exerciseType: exercise.type, prompt: prompt.text, outline, conditions: prompt.conditions });
   const [announcement, setAnnouncement] = useState("");
   const studioRef = useRef<HTMLDivElement>(null);
 
@@ -67,16 +76,17 @@ function Studio({ exercise, prompt }: { exercise: ExerciseDefinition; prompt: Pr
       countdown: "Get ready. Recording starts after the countdown.",
       recording: `Recording take ${takeNumber}.`,
       finalizing: "Saving the take.",
-      saved: lastTake ? `Take ${lastTake.ordinal} saved.` : "",
+      saved: lastTake ? `Take ${lastTake.ordinal} ${native ? "saved" : "simulated"}.` : "",
+      interrupted: rec.error ?? "The take was interrupted.",
     };
     setAnnouncement(text[rec.phase] ?? "");
-    if (rec.phase === "saved" && lastTake) toast.success(`Take ${lastTake.ordinal} saved`);
+    if (rec.phase === "saved" && lastTake) toast.success(`Take ${lastTake.ordinal} ${native ? "saved" : "simulated"}`);
   }, [rec.phase]);
 
   const primary = () => {
     if (rec.phase === "recording") void rec.stopAndSave();
     else if (rec.phase === "countdown") rec.cancelCountdown();
-    else if (!rec.isCapturing) rec.start({ countdownSeconds: useCountdown ? 3 : 0 });
+    else if (!rec.isCapturing) rec.start({ countdownSeconds: useCountdown ? 3 : 0, deviceId: selectedDevice || null });
   };
 
   // Ctrl+Enter triggers the available record/stop action while the studio has focus (§14).
@@ -108,7 +118,7 @@ function Studio({ exercise, prompt }: { exercise: ExerciseDefinition; prompt: Pr
         className="flex items-start gap-2 rounded-lg border border-dashed px-3 py-2 text-meta text-muted-foreground"
       >
         <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
-        Preview build: the recorder is simulated and no audio is captured yet. Native recording arrives in milestone 2.
+        {native ? "Recordings stay on this computer. Transcription and coaching are still being developed." : "Browser preview: recording is simulated. Open the desktop app to capture and save real audio."}
       </div>
 
       <fieldset disabled={locked} className="grid gap-3 sm:grid-cols-3">
@@ -129,6 +139,21 @@ function Studio({ exercise, prompt }: { exercise: ExerciseDefinition; prompt: Pr
         ))}
       </fieldset>
 
+      <div className="space-y-1">
+        <Label htmlFor="studio-microphone">Microphone</Label>
+        <Select value={selectedDevice} onValueChange={setDeviceId} disabled={locked || devices.isPending}>
+          <SelectTrigger id="studio-microphone" className="h-10 w-full">
+            <SelectValue placeholder={devices.isPending ? "Looking for microphones…" : "No microphone found"} />
+          </SelectTrigger>
+          <SelectContent>
+            {devices.data?.map((device) => <SelectItem key={device.id} value={device.id} disabled={!device.available}>{device.name}{device.isDefault ? " (system default)" : ""}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {devices.error && <p role="alert" className="text-meta text-destructive">{devices.error.message}</p>}
+        <Button variant="ghost" disabled={locked || devices.isFetching} onClick={() => void devices.refetch()}>Refresh microphones</Button>
+      </div>
+      {rec.error && <p role="alert" className="rounded-lg border p-3 text-destructive">{rec.error}</p>}
+
       <Panel className="flex flex-col items-center gap-5 py-10">
         <RecorderStatus rec={rec} />
         <div className="text-5xl font-medium tabular-nums" aria-label="Elapsed time">
@@ -138,7 +163,7 @@ function Studio({ exercise, prompt }: { exercise: ExerciseDefinition; prompt: Pr
         <Button
           size="lg"
           onClick={primary}
-          disabled={rec.phase === "preparing" || rec.phase === "finalizing"}
+          disabled={!rec.ready || rec.phase === "preparing" || rec.phase === "finalizing" || (!locked && !selectedDevice)}
           variant={rec.phase === "recording" ? "outline" : "default"}
           className="min-w-44"
           aria-keyshortcuts="Control+Enter"
@@ -175,36 +200,33 @@ function Studio({ exercise, prompt }: { exercise: ExerciseDefinition; prompt: Pr
           Takes
         </h2>
         {rec.takes.length === 0 ? (
-          <p className="text-muted-foreground">No takes yet. Each take is saved as soon as you stop.</p>
+          <p className="text-muted-foreground">No takes yet. {native ? "Each take is saved as soon as you stop." : "This preview simulates the recording flow."}</p>
         ) : (
           <ol className="divide-y rounded-panel border bg-card">
             {rec.takes.map((t) => (
-              <li key={t.ordinal} className="flex items-center gap-3 px-4 py-3">
-                {t.state === "saved" ? (
+              <li key={t.ordinal} className="space-y-3 px-4 py-3">
+                <div className="flex items-center gap-3">
                   <CheckCircle2 aria-hidden className="size-4 text-primary" />
-                ) : (
-                  <TriangleAlert aria-hidden className="size-4 text-destructive" />
-                )}
                 <span className="flex-1">Take {t.ordinal}</span>
                 <span className="text-meta text-muted-foreground tabular-nums">{formatClock(t.durationMs)}</span>
-                <span className="text-meta">{t.state === "saved" ? "Saved" : "Interrupted, recoverable"}</span>
+                <span className="text-meta">{native ? "Saved" : "Simulated"}</span>
+                </div>
+                <SavedAudio recording={t.asset} />
               </li>
             ))}
           </ol>
         )}
         {rec.takes.length > 0 && !locked && (
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button asChild>
-              <Link to="/sessions/s-01/attempt/1">Review take {lastTake.ordinal}</Link>
-            </Button>
-            <Button variant="outline" onClick={() => navigate("/sessions/s-01")}>
-              Finish session
+            <Button variant="outline" onClick={() => navigate("/")}>
+              Return to Today
             </Button>
           </div>
         )}
       </section>
+      <RecordingLibrary />
 
-      <AlertDialog open={blocker.state === "blocked"}>
+      <AlertDialog open={blocker.state === "blocked" || rec.closeRequested}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>A take is still recording</AlertDialogTitle>
@@ -213,15 +235,16 @@ function Studio({ exercise, prompt }: { exercise: ExerciseDefinition; prompt: Pr
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => blocker.reset?.()}>Continue recording</AlertDialogCancel>
-            <AlertDialogAction
+            <AlertDialogCancel onClick={() => { blocker.reset?.(); rec.continueRecording(); }}>Continue recording</AlertDialogCancel>
+            <Button
+              disabled={rec.phase === "finalizing"}
               onClick={async () => {
-                await rec.stopAndSave();
-                blocker.proceed?.();
+                if (rec.closeRequested) await rec.saveAndClose();
+                else if (await rec.stopAndSave()) blocker.proceed?.();
               }}
             >
               Stop and save
-            </AlertDialogAction>
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -236,8 +259,8 @@ function RecorderStatus({ rec }: { rec: Recorder }) {
     preparing: { text: "Opening microphone…", tone: "text-muted-foreground" },
     recording: { text: "Recording", tone: "text-destructive" },
     finalizing: { text: "Saving…", tone: "text-muted-foreground" },
-    saved: { text: "Saved on this computer", tone: "text-primary" },
-    interrupted: { text: "Interrupted. Captured audio is recoverable", tone: "text-destructive" },
+    saved: { text: "Take complete", tone: "text-primary" },
+    interrupted: { text: "Recording interrupted", tone: "text-destructive" },
   } as const;
   const { text, tone } = map[rec.phase];
   return (

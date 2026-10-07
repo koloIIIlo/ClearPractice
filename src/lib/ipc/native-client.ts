@@ -1,0 +1,63 @@
+import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { IpcError, type IpcClient } from "./client";
+import { createMockClient } from "./mock-client";
+import * as S from "./schemas";
+
+async function command<T>(name: string, schema: { parse(value: unknown): T }, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return schema.parse(await invoke(name, args));
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new IpcError("recording_failed", typeof error === "string" ? error : "Recording is unavailable. Please try again.");
+  }
+}
+
+/** Native history and recording; curriculum/analysis previews remain separate. */
+export function createNativeClient(): IpcClient {
+  return {
+    ...createMockClient(),
+    recordingMode: "native",
+    listSessions: (filter) => command("list_sessions", S.SessionSummary.array(), { filter: filter ?? null }),
+    getSession: (sessionId) => command("get_session", S.SessionDetail, { sessionId }),
+    updateSession: async (sessionId, details) => { await command("update_session", S.Id.nullable(), { sessionId, ...details }); },
+    getSavedRecording: (assetId) => command("get_saved_recording", S.SavedRecording, { assetId }),
+    getAttemptReview: async () => { throw new IpcError("analysis_pending", "Transcription and analysis are not connected to saved sessions yet."); },
+    getApiKeyStatus: () => command("get_api_key_status", S.CredentialStatus),
+    getApiUsageSummary: () => command("get_api_usage_summary", S.BudgetSummary),
+    previewCoachingRequest: (selectedText) => command("preview_coaching_request", S.CoachingPreview, { selectedText }),
+    cancelCoachingPreview: async (requestId) => { await invoke("cancel_coaching_preview", { requestId }); },
+    requestCoaching: (requestId, payloadSha256) => command("request_coaching", S.FeedbackResult, { requestId, payloadSha256 }),
+    storeApiKey: (key) => command("store_api_key", S.CredentialStatus, { key }),
+    removeApiKey: () => command("remove_api_key", S.CredentialStatus),
+    listInputDevices: () => command("list_input_devices", S.InputDevice.array()),
+    startRecording: ({ context, ...request }) => command("start_recording", S.RecordingStatus, { request, context: context ?? null }),
+    stopRecording: (attemptId) => command("stop_recording", S.SavedRecording, { attemptId }),
+    getRecordingStatus: () => command("get_recording_status", S.RecordingStatus.nullable()),
+    onRecordingEvent: async (listener) => {
+      const removers: (() => void)[] = [];
+      try {
+        for (const event of ["recording_status", "recording_level", "recording_saved"]) {
+          removers.push(await listen(event, ({ payload }) => {
+            const parsed = S.RecordingStatus.safeParse(payload);
+            if (parsed.success) listener(parsed.data);
+          }));
+        }
+      } catch (error) {
+        removers.forEach((remove) => remove());
+        throw error;
+      }
+      return () => removers.forEach((remove) => remove());
+    },
+    onRecordingCloseRequested: (listener) => listen("recording_close_requested", listener),
+    closeAfterRecording: async () => { await invoke("close_after_recording"); },
+    listRecordings: () => command("list_recordings", S.SavedRecording.array()),
+    listRecoverableRecordings: () => command("list_recoverable_recordings", S.RecoverableRecording.array()),
+    recoverRecording: (attemptId) => command("recover_recording", S.SavedRecording, { attemptId }),
+    getRecordingPlaybackUrl: async (assetId) => convertFileSrc(await command("get_recording_playback_path", S.Id, { assetId })),
+  };
+}
+
+export function createAppClient(): IpcClient {
+  return isTauri() ? createNativeClient() : createMockClient();
+}

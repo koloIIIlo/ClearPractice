@@ -116,7 +116,7 @@ export function SessionsPage() {
                         )}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap text-muted-foreground">{formatDay(s.localDate)}</td>
-                      <td className="hidden px-4 py-2.5 text-muted-foreground lg:table-cell">{EXERCISE_LABELS[s.exerciseType]}</td>
+                      <td className="hidden px-4 py-2.5 text-muted-foreground lg:table-cell">{s.exerciseType ? EXERCISE_LABELS[s.exerciseType] : "Recording · exercise unavailable"}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{formatClock(s.durationMs)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{s.attemptCount}</td>
                     </tr>

@@ -282,9 +282,9 @@ export function progressFor(view: ProgressView): ProgressSummary {
   const pick = (pred: (s: SessionDetail) => boolean) => done.filter(pred);
   const subset =
     view === "rehearsed"
-      ? pick((s) => s.conditions.familiarity === "familiar")
+      ? pick((s) => s.conditions?.familiarity === "familiar")
       : view === "unfamiliar"
-        ? pick((s) => s.conditions.familiarity === "unfamiliar")
+        ? pick((s) => s.conditions?.familiarity === "unfamiliar")
         : [];
   const paces = [128, 131, null, 124, 136, 133, 129, 138];
   return {

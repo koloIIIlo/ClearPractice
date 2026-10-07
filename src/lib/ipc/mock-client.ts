@@ -11,7 +11,7 @@ const LATENCY_MS = 120;
 
 function respond<T>(schema: { parse: (v: unknown) => T }, value: unknown): Promise<T> {
   // Parse through the same schemas the real client will use, so the mock can't drift from the contract.
-  return new Promise((resolve) => setTimeout(() => resolve(schema.parse(structuredClone(value))), LATENCY_MS));
+  return new Promise<void>((resolve) => setTimeout(resolve, LATENCY_MS)).then(() => schema.parse(structuredClone(value)));
 }
 
 const includes = (hay: string, needle: string) => hay.toLowerCase().includes(needle.toLowerCase());
@@ -19,11 +19,25 @@ const includes = (hay: string, needle: string) => hay.toLowerCase().includes(nee
 export function createMockClient(): IpcClient {
   const phrases = structuredClone(data.phrases);
   const prompts = structuredClone(data.prompts);
+  const sessions = structuredClone(data.sessions);
+  const recordingListeners = new Set<(status: S.RecordingStatus) => void>();
+  let recording: S.RecordingStatus | null = null;
+  let started = 0;
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const notify = () => { if (recording) recordingListeners.forEach((listener) => listener(structuredClone(recording!))); };
 
   return {
+    recordingMode: "simulated",
+    getApiKeyStatus: async () => S.CredentialStatus.parse({ provider: "OpenAI", present: false }),
+    getApiUsageSummary: async () => S.BudgetSummary.parse({ currency: "USD", month: "2026-10", stopMicroUsd: 5_000_000, warningMicroUsd: 4_000_000, countedMicroUsd: 0, coachingMicroUsd: 0, transcriptionMicroUsd: 0, uncertainMicroUsd: 0, remainingMicroUsd: 5_000_000, warning: false }),
+    storeApiKey: async () => { throw new IpcError("desktop_required", "API key storage is available in the desktop app."); },
+    removeApiKey: async () => { throw new IpcError("desktop_required", "API key storage is available in the desktop app."); },
+    previewCoachingRequest: async () => { throw new IpcError("desktop_required", "API previews are available in the desktop app."); },
+    cancelCoachingPreview: async () => {},
+    requestCoaching: async () => { throw new IpcError("desktop_required", "API feedback is available in the desktop app."); },
     getServiceStatus: () =>
       respond(S.ServiceStatus, {
-        transcription: { mode: "local", model: "base.en", state: "needs_setup" },
+        transcription: { mode: "local", model: "large-v3-turbo-q5_0", state: "needs_setup" },
         coaching: { mode: "api", providerLabel: null, state: "needs_setup" },
         storage: { lastBackupAt: null },
       }),
@@ -71,7 +85,7 @@ export function createMockClient(): IpcClient {
     listSessions: (filter = {}) =>
       respond(
         S.SessionSummary.array(),
-        data.sessions
+        sessions
           .filter((s) => !filter.exerciseType || s.exerciseType === filter.exerciseType)
           .filter((s) => !filter.favoritesOnly || s.favorite)
           .filter((s) => !filter.query || includes(s.title, filter.query) || includes(s.notes, filter.query))
@@ -79,12 +93,18 @@ export function createMockClient(): IpcClient {
       ),
 
     getSession: (sessionId) => {
-      const s = data.sessions.find((x) => x.id === sessionId);
+      const s = sessions.find((x) => x.id === sessionId);
       if (!s) return Promise.reject(new IpcError("not_found", "This session no longer exists."));
       return respond(S.SessionDetail, s);
     },
 
     getAttemptReview: (attemptId) => respond(S.AttemptReview, data.reviewForAttempt(attemptId)),
+    updateSession: async (id, details) => {
+      const session = sessions.find((s) => s.id === id);
+      if (!session) throw new IpcError("not_found", "This session is unavailable.");
+      Object.assign(session, details, { hasNote: details.notes.length > 0 });
+    },
+    getSavedRecording: async () => { throw new IpcError("desktop_required", "Saved audio is available in the desktop app."); },
 
     listPhrases: () => respond(S.PhraseCard.array(), phrases),
     reviewPhrase: (phraseId, rating) => {
@@ -128,5 +148,50 @@ export function createMockClient(): IpcClient {
         },
         { id: "dev-usb", name: "USB Headset Microphone", isDefault: false, available: false, supportedConfigs: [] },
       ]),
+    startRecording: async (request) => {
+      if (recording?.attemptId === request.attemptId) return S.RecordingStatus.parse(recording);
+      if (recording?.phase === "recording") throw new IpcError("busy", "Another recording is already active.");
+      started = performance.now();
+      recording = S.RecordingStatus.parse({
+        attemptId: request.attemptId, phase: "recording", elapsedMs: 0, monotonicMs: 0,
+        level: 0, clipping: false, error: null, asset: null,
+      });
+      timer = setInterval(() => {
+        if (!recording || recording.phase !== "recording") return;
+        recording.elapsedMs = Math.round(performance.now() - started);
+        recording.monotonicMs = recording.elapsedMs;
+        recording.level = Math.max(0, Math.sin(recording.elapsedMs / 500) * 0.5);
+        notify();
+      }, 100);
+      notify();
+      return S.RecordingStatus.parse(recording);
+    },
+    stopRecording: async (attemptId) => {
+      if (!recording || recording.attemptId !== attemptId) throw new IpcError("not_found", "Take not found.");
+      if (recording.asset) return recording.asset;
+      clearInterval(timer);
+      recording.phase = "finalizing";
+      notify();
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const asset = S.SavedRecording.parse({
+        attemptId, assetId: attemptId, title: "Simulated take", createdAtMs: Date.now(),
+        durationMs: Math.round(performance.now() - started), sampleRate: 48000, channels: 1,
+        sourceChannels: 2, sourceFormat: "F32", bytes: 0, sha256: "0".repeat(64), recovered: false,
+      });
+      recording = { ...recording, phase: "saved", elapsedMs: asset.durationMs, level: 0, asset };
+      notify();
+      return asset;
+    },
+    getRecordingStatus: async () => recording ? S.RecordingStatus.parse(recording) : null,
+    onRecordingEvent: async (listener) => {
+      recordingListeners.add(listener);
+      return () => { recordingListeners.delete(listener); };
+    },
+    onRecordingCloseRequested: async () => () => {},
+    closeAfterRecording: async () => {},
+    listRecordings: async () => [],
+    listRecoverableRecordings: async () => [],
+    recoverRecording: async () => { throw new IpcError("unavailable", "Recovery is available in the desktop app."); },
+    getRecordingPlaybackUrl: async () => { throw new IpcError("unavailable", "Simulated takes contain no audio."); },
   };
 }

@@ -10,6 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useInputDevices } from "@/lib/ipc/queries";
 import { cn } from "@/lib/utils";
+import { ApiCredentialSettings } from "./ApiCredentialSettings";
+import { ApiBudgetStatus } from "./ApiBudgetStatus";
+import { CoachingSpike } from "./CoachingSpike";
 
 const SECTIONS = [
   { id: "audio", label: "Audio" },
@@ -208,17 +211,17 @@ function TranscriptionSettings() {
         <div className="rounded-lg border">
           <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
             <div>
-              <p className="font-medium">base.en</p>
-              <p className="text-meta text-muted-foreground">English · 142 MiB · first benchmark candidate</p>
+              <p className="font-medium">large-v3-turbo-q5_0</p>
+              <p className="text-meta text-muted-foreground">English practice · 547 MiB · selected with CUDA and a filler prompt</p>
             </div>
-            <span className="text-meta text-muted-foreground">Not installed</span>
+            <span className="text-meta text-muted-foreground">App import pending</span>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3">
             <div>
-              <p className="font-medium">small.en</p>
-              <p className="text-meta text-muted-foreground">English · 466 MiB · compare on your own sample first</p>
+              <p className="font-medium">base</p>
+              <p className="text-meta text-muted-foreground">141 MiB · explicit smaller CPU alternative</p>
             </div>
-            <span className="text-meta text-muted-foreground">Not installed</span>
+            <span className="text-meta text-muted-foreground">App import pending</span>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -227,11 +230,11 @@ function TranscriptionSettings() {
         </div>
         <Later milestone={3}>Model packs are checksum-verified before use.</Later>
       </Section>
-      <Section title="Acceleration" description="Detected: AMD Ryzen 7 3750H · NVIDIA GeForce GTX 1650 (4 GB).">
-        <RadioGroup defaultValue="auto" className="gap-2">
+      <Section title="Acceleration" description="CUDA was selected after benchmarking the original laptop. Recheck hardware on another computer.">
+        <RadioGroup defaultValue="cuda" disabled className="gap-2">
           {(
             [
-              ["auto", "Choose after benchmark"],
+              ["auto", "No automatic fallback"],
               ["cpu", "CPU"],
               ["cuda", "NVIDIA GPU"],
             ] as const
@@ -281,35 +284,28 @@ function CoachingSettings() {
             <div className="space-y-1">
               <Label htmlFor="api-protocol">Provider</Label>
               <Select disabled>
-                <SelectTrigger id="api-protocol" className="h-10 w-full"><SelectValue placeholder="Not chosen yet" /></SelectTrigger>
+                <SelectTrigger id="api-protocol" className="h-10 w-full"><SelectValue placeholder="OpenAI" /></SelectTrigger>
                 <SelectContent />
               </Select>
             </div>
             <div className="space-y-1">
               <Label htmlFor="api-model">Model ID</Label>
-              <Input id="api-model" className="h-10" disabled placeholder="Set after choosing a provider" />
+              <Input id="api-model" className="h-10" disabled placeholder="gpt-6-luna · development candidate" />
             </div>
           </div>
-          <div className="space-y-1">
-            <Label>API key</Label>
-            <p className="text-meta text-muted-foreground">
-              No key stored. Keys are kept in Windows Credential Manager, never in the app database, logs, or backups.
-            </p>
-          </div>
+          <ApiCredentialSettings />
+          <ApiBudgetStatus />
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor="budget-warn">Monthly warning at</Label>
-              <Input id="budget-warn" className="h-10" disabled placeholder="e.g. 3.00 USD" />
+              <Input id="budget-warn" className="h-10" disabled placeholder="4.00 USD" />
             </div>
             <div className="space-y-1">
               <Label htmlFor="budget-stop">Stop new requests at</Label>
               <Input id="budget-stop" className="h-10" disabled placeholder="e.g. 5.00 USD" />
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button variant="outline" disabled>Test connection</Button>
-            <Later milestone={5}>The test sends a small labelled request and may be billed.</Later>
-          </div>
+          <CoachingSpike />
         </Section>
       )}
 

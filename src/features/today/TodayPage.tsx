@@ -10,6 +10,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { formatLongDay, formatRelativeDay } from "@/lib/format";
 import { useTodayPlan } from "@/lib/ipc/queries";
 import type { SessionLength, TodayPlan } from "@/lib/ipc/schemas";
+import { RecordingLibrary } from "@/features/practice/RecordingLibrary";
 
 const LENGTHS: { value: SessionLength; label: string; hint: string }[] = [
   { value: "standard", label: "About 13 minutes", hint: "Four short exercises" },
@@ -25,6 +26,7 @@ export function TodayPage() {
       <QueryView query={plan} loading={<LoadingBlock rows={4} label="Loading today's plan" />}>
         {(p) => <TodayContent plan={p} length={length} onLengthChange={setLength} />}
       </QueryView>
+      <RecordingLibrary />
     </Page>
   );
 }

@@ -17,7 +17,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { formatClock, formatLongDay } from "@/lib/format";
-import { IpcError } from "@/lib/ipc";
+import { IpcError, useIpc } from "@/lib/ipc";
+import { NativeSession } from "@/features/sessions/NativeSession";
 import { useAttemptReview, useServiceStatus, useSession } from "@/lib/ipc/queries";
 import type { AttemptReview, Observation, SessionDetail } from "@/lib/ipc/schemas";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ import { Transcript } from "./Transcript";
 import { Transport } from "./Transport";
 
 export function ReviewPage() {
+  const ipc = useIpc();
   const { sessionId, ordinal } = useParams();
   const session = useSession(sessionId);
 
@@ -43,6 +45,7 @@ export function ReviewPage() {
     <Page className="max-w-7xl">
       <QueryView query={session} loading={<LoadingBlock rows={5} label="Loading session" />}>
         {(s) => {
+          if (ipc.recordingMode === "native") return <NativeSession key={s.id} session={s} selectedOrdinal={ordinal ? Number(ordinal) : undefined} />;
           const attempt = ordinal ? s.attempts.find((a) => a.ordinal === Number(ordinal)) : s.attempts.at(-1);
           if (!attempt)
             return (
@@ -66,7 +69,7 @@ function Review({ session, attemptId, ordinal }: { session: SessionDetail; attem
         <div className="min-w-0 space-y-1">
           <p className="text-meta text-muted-foreground">
             {formatLongDay(session.localDate)} · {attempt.firstTake ? "First take" : `Take ${ordinal}`} ·{" "}
-            {session.conditions.familiarity === "unfamiliar" ? "Unfamiliar topic" : "Familiar topic"}
+            {session.conditions === null ? "Task conditions unavailable" : session.conditions.familiarity === "unfamiliar" ? "Unfamiliar topic" : "Familiar topic"}
           </p>
           <h1 className="text-title font-semibold tracking-tight">{session.title}</h1>
           <p className="text-muted-foreground">{session.prompt}</p>
@@ -81,7 +84,7 @@ function Review({ session, attemptId, ordinal }: { session: SessionDetail; attem
           )}
           <Button
             onClick={() =>
-              navigate(`/practice/ex-${session.exerciseType.replace("_", "-")}`, { state: { section: "sessions" } })
+              navigate(`/practice/ex-${(session.exerciseType ?? "repeat").replace("_", "-")}`, { state: { section: "sessions" } })
             }
           >
             <Mic aria-hidden /> Try again
