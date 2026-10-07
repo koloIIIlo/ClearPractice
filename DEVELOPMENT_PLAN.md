@@ -1,6 +1,6 @@
 # ClearPractice — Development Plan & Tracker
 
-Source of truth for *what* to build: [ClearPractice-App-Blueprint.md](ClearPractice-App-Blueprint.md) (rev. 2, 29 Sep 2026).
+Source of truth for *what* to build: [ClearPractice-App-Blueprint.md](ClearPractice-App-Blueprint.md) (rev. 3, 4 Oct 2026).
 This file tracks *how far we are*. Section references like **§9** point into the blueprint.
 
 ## How to use this file
@@ -9,6 +9,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 - Tick a box only when the item is **verified** (test passes, or it was checked manually and the check is noted).
 - Each milestone has an **Exit gate**. Don't start broad work in the next milestone until the gate passes.
   Exception: M1 (UI shell with sample data) can run alongside M0 because it doesn't depend on M0's results.
+  The separate optional API transcription gate blocks enabling uploads, not progress through the local-review/prosody/routine gates. Core M0 requirements still apply.
 - New decisions go in the **Decision log**; new risks or surprises go in **Notes & findings**.
 - Update **Current status** at the end of every working session.
 
@@ -18,11 +19,12 @@ This file tracks *how far we are*. Section references like **§9** point into th
 
 | | |
 | --- | --- |
-| Active milestone | M0 Feasibility (M1 shell is functionally done; remaining items are listed below) |
-| Last updated | 2026-09-29 |
-| Repository | Initial commit includes the M0 scaffold, M1 sample-data shell, lockfiles, and Git/editor configuration |
-| Next action | M0 audio spike: 0.5–0.9 chunked capture, recovery, level meter, and kill test. Then benchmark the existing Whisper model alongside smaller candidates |
-| Blockers | None for recording. Choose and validate the OpenAI model before the API spike; request a model download only if the existing packs cannot answer the benchmark question |
+| Active milestone | M2 Durable practice; core M0 exit gate passed. M1 manual keyboard/compact checks remain separate |
+| Last updated | 2026-10-07 |
+| Repository | Baseline commits include scaffold, app folders, and device enumeration. The recording slice described below is implemented and verified locally; its changes are uncommitted |
+| Next action | Finish M2 reconciliation/recovery presentation, recording failure/manual close checks, waveform playback, Trash and complete backup/export/restore. Native SQLite v1, legacy receipt import, staged reference commits and real session history are implemented; verify and record the latest checks below. Product transcription/job integration follows in M3 |
+| Scope update | User-approved live text coaching succeeded and its saved receipt/shared ledger were verified: 291 input + 163 output tokens, USD 0.000227 estimated. Public benchmark replaces personal speech (D-24). CUDA turbo with filler prompt is selected. Optional audio API remains disabled behind its separate approval/enablement gate |
+| Blockers | No core M0 blocker. Do not request the completed text test or a personal sample again. API audio still needs separate approved requests. Native tests require normal Windows filesystem access; no validation was weakened. Desktop executable must be rebuilt/reopened for newly added commands; avoid interrupting active recording or concurrent user input |
 
 ---
 
@@ -55,22 +57,27 @@ Resolves the hardware open questions in §10 and §18.
 | D-1 | Stack: Tauri 2 + React + TS + Vite + Tailwind 4 + shadcn/ui (Radix) (§8) | Confirmed by blueprint | 2026-09-29 |
 | D-2 | Package manager: npm (already installed; lockfile committed) | Chosen | 2026-09-29 |
 | D-3 | Target: Windows 11 x64 only, single user | Confirmed by blueprint | 2026-09-29 |
-| D-4 | Transcription default: existing large-v3-turbo-q5_0 vs smaller packs → decided by M0 benchmark | **Open** | |
-| D-5 | Whisper backend: CPU vs CUDA build → decided by M0 benchmark | **Open** | |
-| D-6 | Initial hosted coaching provider: OpenAI API; choose a configurable model after feedback quality and cost checks | Provider chosen, model pending | 2026-09-29 |
+| D-4 | Local default: existing large-v3-turbo-q5_0, based on six-profile public comparison; personal accuracy remains unknown | Chosen provisionally; app import/job integration is M3 | 2026-10-07 |
+| D-5 | CUDA default on this laptop; CPU base offered as an explicit smaller alternative with no automatic fallback | Chosen; warm selected total median 14.022 s for 61.934 s audio | 2026-10-07 |
+| D-6 | OpenAI GPT-6 Luna initial coaching model; keep configurable in M5 | One approved live sample passed access/schema/meaning/style checks; broader quality validation remains | 2026-10-07 |
 | D-7 | Stop new app coaching requests at USD 5/month; warn at USD 4 by default (adjustable) (§16) | USD 5 limit confirmed; USD 4 warning assumed | 2026-09-29 |
 | D-8 | English practice for the first release; German may follow later (§18) | Confirmed | 2026-09-29 |
 | D-9 | English interface; dates formatted with `en-GB` regardless of Windows locale (`UI_LOCALE` in src/lib/format.ts) | Confirmed | 2026-09-29 |
 | D-10 | Keep backups locally in a user-selected folder; retain original recordings until explicit deletion (§18) | Confirmed; exact backup folder selected in the app | 2026-09-29 |
 | D-11 | Reuse existing local Whisper packs first; decide on any additional one-time download after benchmarking | Existing pack found; download decision deferred | 2026-09-29 |
-| D-12 | Audio resampling crate (rubato vs alternative) → M0 spike | **Open** | |
+| D-12 | Rubato 0.16.2 FFT resampling with delay trimming and tail flushing; preserve immutable original audio | Chosen; duration/impulse/alias/cache tests pass | 2026-10-04 |
 | D-14 | shadcn preset `radix-nova`; primitives customised in place (buttons ≥ 40 px, sidebar 216 px, `nav` breakpoint 800 px, CommandDialog a11y fix) | Chosen | 2026-09-29 |
 | D-15 | Until native commands exist, the UI runs on `createMockClient()`, which parses through the same Zod schemas as the future Tauri client | Chosen | 2026-09-29 |
-| D-16 | Filler-aware transcription: plain Whisper vs. filler-prompt trick vs. CrisperWhisper → decided by 0.14a–c measurements | **Open** | |
+| D-16 | Turbo CUDA with initial prompt `Umm, so, uh, I think, like, you know.`; all filler events remain review candidates | Chosen: 13/14 UH/UM retained, zero inserted in four public trials; no verified word alignment | 2026-10-07 |
 | D-17 | Pitch tracker for prosody (YIN / pYIN / McLeod vs. CREPE-tiny) → decided by P.1 | **Open** | |
 | D-18 | Mood/emotion detection from voice: **not built**. Acted-emotion training data makes it unreliable for second-language speech; self-reported ease + energy/pitch-range measures cover the need. Revisit only as a local experiment | Deferred | 2026-09-29 |
-| D-13 | Whisper integration: sidecar `whisper-cli`/server exe vs `whisper-rs` bindings (§9: blueprint prefers a worker process) | **Open**, leaning toward a sidecar process | |
+| D-13 | Verified whisper.cpp 1.9.1 `whisper-cli.exe` sidecar, one worker owner, bounded JSON/progress, explicit cancellation and source preservation | Chosen and exercised by offline harness; packaged integration pending | 2026-10-04 |
 | D-19 | Content focus: explaining complex topics, debating, and teaching; subject pool includes sport, economics, religion, crypto, programming, anime, and books | Confirmed | 2026-09-29 |
+| D-20 | Add optional API audio transcription. Transcription modes are Local / API / Off, independent of Coaching API / Local LLM / Off. Local remains the default; a saved take is uploaded only after its audio preview is approved | API option requested; default and interaction are working design choices | 2026-10-04 |
+| D-21 | First transcription API adapter: OpenAI `/v1/audio/transcriptions`. Evaluate `gpt-transcribe` first, `gpt-4o-mini-transcribe` for cost, and `whisper-1` when word/segment timings are needed. Select the initial API model by text errors, filler recall, latency, timing support, and cost | Proposed adapter and candidates; documentation verified, app benchmark pending | 2026-10-04 |
+| D-22 | Extend the existing USD 5/month app stop limit and USD 4 warning to **combined transcription + coaching** usage. Show subtotals by purpose; reserve costs atomically across both. Do not create a second USD 5 allowance or increase the limit | Working assumption extending D-7; shared limit not previously confirmed | 2026-10-04 |
+| D-23 | First API transcription workflow submits one complete, verified saved take as derived 16 kHz mono WAV through Rust. No live microphone stream, automatic upload, batch dispatch, or automatic provider fallback. Intonation and pause analysis remain local | Working design choice | 2026-10-04 |
+| D-24 | Use a downloaded public reference sample for the current benchmark instead of asking for personal speech again. Eight complete Nyra Disfluency Speech English test clips total 61.934 s, concatenated without trimming; independent dataset annotations identify fillers/restarts | User requested internet audio; provisional public-sample results do not measure personal accuracy | 2026-10-04 |
 
 ---
 
@@ -90,41 +97,49 @@ Goal: prove recording durability, Whisper on this laptop, and one bounded API ca
 
 **Scaffold**
 - [x] 0.1 Scaffold the Tauri 2 + React + TS + Vite app in the repo root (`src/`, `src-tauri/`)
-- [~] 0.2 Pin exact dependency versions, commit lockfiles (§8). npm deps pinned exactly; Cargo.lock exists; Cargo.toml still uses `"2"` ranges
+- [~] 0.2 Pin exact dependency versions, commit lockfiles (§8). All direct npm and Rust dependencies are now pinned exactly; updated Cargo.lock passes locked builds/tests. Commit of these changes remains pending
 - [x] 0.3 Resolve the app-local data root through the Tauri path API at startup; create `database/`, `recordings/`, `imports/`, `models/`, `cache/`, `recovery/` (§12). Rust test verifies creation and repeat startup
 
 **Audio spike (§9)**
 - [x] 0.4 `list_input_devices` command using CPAL: stable ID, name, default flag, supported configs. Live Windows smoke test found three inputs with six format ranges each; native UI wiring follows with the IPC client
-- [ ] 0.5 Open the device at its native rate/format; real-time callback → bounded queue, no blocking I/O in the callback
-- [ ] 0.6 Writer thread: downmix to mono, write 16-bit PCM chunk files, flush at least every 2 s
-- [ ] 0.7 Recovery manifest written before the mic opens; on Stop, concatenate chunks → WAV, verify, atomic rename
-- [ ] 0.8 Level meter event (`recording_level`, rate-limited)
-- [ ] 0.9 **Kill test**: kill the process mid-recording; on relaunch, recover with ≤ 2 s lost
-- [ ] 0.10 Derive 16 kHz mono inference WAV (pick the resampler → D-12)
+- [x] 0.5 Open the device at its native rate/format; fixed-size blocks → bounded queue, no blocking I/O in the callback. Live default microphone captured 48 kHz stereo F32; worker downmixes to mono
+- [x] 0.6 Writer thread: downmix to mono, write 16-bit PCM chunk files, sync and close every 1 s. Sample-content and duration tests pass
+- [x] 0.7 Recovery manifest synced before stream creation; on Stop, concatenate chunks → WAV, verify size and SHA-256, atomically rename, then commit a JSON receipt. Duplicate Stop returns the same asset; SQLite references follow in M2
+- [x] 0.8 Level meter event (`recording_level`, rate-limited). Live test observed 28 valid events in ~3 s, monotonic timestamps ≥100 ms apart
+- [x] 0.9 **Kill test**: actual child-process termination and fresh journal recovery pass. Three live microphone runs recovered 3000 ms from 3760/3730/3770 ms captured (760/730/770 ms lost). Synthetic kill and incomplete-tail tests also pass. Packaged-app acceptance A-2 remains pending
+- [x] 0.10 Derive verified 16 kHz mono inference WAV with Rubato 0.16.2 (D-12). Tests cover rates 8–192 kHz, identity, duration, first/middle/final impulses, alias rejection, cancellation and corrupt-cache regeneration; original hash is preserved
 
 **Whisper spike (§10)**
-- [ ] 0.11 Obtain pinned whisper.cpp Windows binaries (CPU + CUDA) — record version, source, checksums
-- [ ] 0.12 Inventory and verify existing `ggml-base` and `ggml-large-v3-turbo-q5_0` packs; obtain `ggml-base.en`/`ggml-small.en` only if a controlled comparison still needs them
-- [ ] 0.13 Sidecar worker invocation with JSON output, progress, cancel (→ D-13)
-- [ ] 0.14 Benchmark script: 60 s personal sample × {existing base, existing large-v3-turbo-q5_0, English baselines if obtained} × {CPU, CUDA}: 1 cold + 3 warm runs, median, range, peak RAM/VRAM
+- [x] 0.11 Pinned official whisper.cpp 1.9.1 CPU + CUDA 11.8 archives. SHA-256/byte manifests and reproducible setup are in `bench/whisper-assets.json` / `Prepare-Whisper.ps1`. CUDA requires the separately verified NVIDIA cuBLAS redistributable; no system driver/toolkit changes
+- [x] 0.12 Existing `ggml-base` and `ggml-large-v3-turbo-q5_0` packs verified against upstream Hugging Face LFS hashes/sizes, reused read-only. No model weights downloaded
+- [x] 0.13 Sidecar worker: validated full JSON/raw retention, bounded progress, source/hash checks, peak RAM, below-normal hidden process, cancellation/kill/reap and single-owner behavior exercised by harness (D-13). Product Review/job integration follows in M3
+- [x] 0.14 Six public-sample profiles, each initial + three subsequent process trials. Worker/total latency and peak RAM recorded in bench/results-2026-10.json and .md. Initial caches uncontrolled; per-process VRAM unavailable (Windows WDDM N/A), with reasons
 
 *Filler-aware transcription (→ D-16). Whisper tends to drop "um"/"uh" and smooth over restarts (§11)*
-- [ ] 0.14a Make a verbatim reference for the benchmark sample(s): hand-mark every filler, repetition, and restart with approximate times. Without this, filler recall can't be measured
-- [ ] 0.14b **Filler prompt variant**: rerun base.en / small.en with a filler-bearing initial prompt (whisper.cpp `--prompt`, e.g. "Umm, so, uh, I think, like, you know…"). Measure filler recall, false insertions, change in ordinary word errors, and any repetition/hallucination loops the prompt causes
-- [ ] 0.14c **CrisperWhisper** (verbatim fine-tune): check the licence (reportedly CC BY-NC 4.0, fine for personal use, blocks later distribution) and whether a whisper.cpp/ggml conversion exists or can be made. It's a large-v3 fine-tune, so only a quantized build has a chance on 4 GB VRAM. Benchmark it like 0.14 and reject it if it misses the §10 wait targets
-- [ ] 0.15 Write the benchmark results into **Notes & findings**; decide D-4, D-5, and D-16
+- [x] 0.14a D-24 independent dataset verbatim reference with fillers, repetitions/restarts and clip boundaries (Estimated; not word alignment). Source audio hashes and untrimmed composition are verified. Portable word-edit scorer has tests; scope counts explicit UH/UM only, not ambiguous “like”
+- [x] 0.14b Filler-prompt comparison completed for CPU base and CUDA turbo against plain profiles. Selected turbo retains 13/14 explicit UH/UM, zero insertions, 1.11% ordinary WER across all four trials; additional English-only weights not needed for the initial choice
+- [x] 0.14c CrisperWhisper compatibility/licence decision completed: defer the additional adapter/weights experiment. V2 custom CTranslate2 published wheels are Linux; Windows uses Transformers. Model licence is Nyra NonCommercial Research License; code MIT; no official ggml route identified. It was not benchmarked and redistribution is not cleared
+- [x] 0.15 Results and D-4/D-5/D-16 recorded; portable selected-profile.json and setup config added. Small public fixture does not establish personal accuracy or verified alignment; all fillers remain review candidates
 
-**API spike (§10)**
-- [ ] 0.16 User picks the provider/model (D-6)
-- [ ] 0.17 `credentials` module: store/read/delete a key in Windows Credential Manager (`keyring` crate or `windows` CredWriteW)
-- [ ] 0.18 reqwest client: HTTPS only, timeouts 10 s/60 s, bounded body, no cross-origin redirects
-- [ ] 0.19 One structured feedback request on a sample transcript → validate against a draft `FeedbackResult` schema
+**Text coaching API spike (§10)**
+- [x] 0.16 Initial GPT-6 Luna choice verified with the user-approved live coaching sample on 7 October. Feedback preserves the trade-off, grounds style changes in exact text, and labels “more clear” optional. Broader quality checks/model configuration remain M5
+- [x] 0.17 Native Windows Credential Manager store/read/replace/delete. Only provider/presence is returned to UI. Disposable fake-slot round-trip passed and was cleaned up; secret-redaction, browser-disabled controls and no key in query/mutation caches tested
+- [x] 0.18 Pinned reqwest 0.13.5 native TLS client: HTTPS only, 10 s connect / 60 s total, bounded request/response, redirects disabled, automatic retries disabled, sensitive auth headers. Request/header and streamed-body boundary tests pass; real provider round-trip is still 0.19
+- [x] 0.19 Single-use hashed sample-text preview, explicit Send, strict FeedbackResult and unique evidence validated by native/UI tests and one user-approved live result. Saved receipt verified; no additional paid request made by the agent
+
+**Optional API transcription spike (§10, D-20–23)**
+- [x] 0.20 Shared native USD 5 stop / USD 4 warning ledger passes concurrent-purpose, duplicate, corrupt-ledger and restart-uncertainty checks. Real approved request settled with 291/163 tokens and 227 micro-USD conservatively estimated. Locked JSON foundation remains until the later SQLite usage migration; preserve all existing charges
+- [x] 0.21 Provider-neutral TranscriptionResult local adapter and real normalized artifacts verified; native + Zod tests cover identity, unknown reasons, capabilities and invalid timing. Word alignment/diarization remain unavailable
+- [ ] 0.22 Verify candidate request/response formats, limits, current prices, and endpoint-specific retention, then build the native spike: prepare/hash a complete saved take, show recipient/model, duration/size, all language/context hints, and estimated charge; reserve budget and submit one approved multipart request to verify model access. Validate/save raw output and reject stale approval, invalid output, oversize audio, and duplicates. Requires 0.10, 0.17–18, and 0.20–21; credentials stay in the app
+- [ ] 0.23 After 0.22, benchmark the D-21 candidates against the same hand-checked audio as 0.14a **only after an in-app preview and explicit approval for each request**; measure upload + processing time, errors, filler omissions/insertions, alignment where available, and cost. Record the selected API model separately from D-4's local default
+
+These API transcription items add an estimated 1–2 days to feasibility if credentials are available. They have their own enablement gate in M3; unavailable credentials must not stall durable local practice. API transcription is not enabled by merely choosing API coaching.
 
 **Exit gate M0**
-- [ ] Recording is recovered after a forced kill within the loss target
-- [ ] Transcription backend and default model chosen with measured numbers
-- [ ] Filler strategy (D-16) chosen from measured filler recall and false insertions, not from the model's reputation
-- [ ] One validated API result obtained; the key is never in SQLite, logs, or the frontend
+- [x] Recording is recovered after a forced kill within the loss target (native M0 test harness; packaged acceptance remains separate)
+- [x] Transcription backend and default model chosen with measured numbers
+- [x] Filler strategy (D-16) chosen from measured filler recall and false insertions, not from the model's reputation
+- [x] One validated text coaching API result obtained; the stored key is never returned to the frontend or written to SQLite/logs
 
 ## Milestone 1 — Design system & shell (§3–§5) · budget 3–5 days
 
@@ -144,17 +159,17 @@ Goal: prove recording durability, Whisper on this laptop, and one bounded API ca
 **Exit gate M1**
 - [~] Every key screen is navigable with sample data using only the keyboard. Automated: Today → Sessions → Review, Ctrl+K search, and 404. Still needed: a manual keyboard pass over Studio, Phrases, Progress, and Settings, plus a check of compact nav below 800 px
 
-**M1 notes**: all 8 screens exist with sample data (Today, Exercises + detail, Studio with a *simulated* recorder and navigation guard, Review with a simulated transport + candidate review + coaching preview, Compare, Sessions, Phrases with the recall schedule, Progress with 3 separate views, Settings with 7 sections). Controls that need the native core are disabled and say which milestone enables them.
+**M1 notes**: all 8 screens exist. The desktop Studio now uses real recording, live devices/levels, a countdown, and saved-audio controls. Today and Studio include a separate persistent recording/recovery library. The browser still simulates capture; the rest of the history, curriculum, review, and feedback screens use labelled sample data. Full session persistence and analysis follow after M0.
 
 ## Milestone 2 — Durable practice (§9, §12, §13) · budget 6–10 days
 
 **Storage**
-- [ ] 2.1 rusqlite with foreign keys, WAL, busy timeout, a single writer owner
-- [ ] 2.2 Versioned migration runner (+ pre-migration backup, stop safely on failure)
-- [ ] 2.3 Schema v1: profiles, exercise_definitions, prompts, sessions, session_steps, attempts, audio_assets, task_conditions, jobs, backup_records
-- [ ] 2.4 Staged asset protocol: reserve ID → temp write → verify sha256 → atomic finalize → commit reference
-- [ ] 2.5 Startup reconciliation: interrupted manifests, missing references, orphaned files → Recovery entry in the UI
-- [ ] 2.6 Path safety: relative paths only, traversal and symlink checks, IDs → paths resolved in Rust only
+- [x] 2.1 Pinned rusqlite 0.40.2 with bundled SQLite, foreign keys, WAL, FULL sync, five-second busy timeout and one Mutex-owned connection; concurrent retake/FK tests pass
+- [x] 2.2 Versioned transactional migration; existing older database receives an online, integrity-checked snapshot before upgrade. Failed upgrade rolls back and preserves the snapshot; newer schema fails closed. Tests pass
+- [x] 2.3 SQLite v1 tables and indexes implemented for profiles, exercise_definitions, prompts, sessions, session_steps, attempts, audio_assets, task_conditions, jobs and backup_records. Curriculum seeding/full job behavior follow their milestones
+- [~] 2.4 Native commands reserve attempt/asset identity before capture, finalize verified files then commit the reference, and announce Saved only after both succeed. Receipt-import/restart/idempotency tests pass; whole-app failure acceptance remains
+- [~] 2.5 Startup imports healthy legacy receipts idempotently, marks reserved captures interrupted and flags missing/corrupt assets without deleting them. Existing recovery UI retained; comprehensive orphan/discard/reservation presentation remains
+- [~] 2.6 Trusted native IDs and generated relative asset paths; recording, chunk, database and snapshot access checks links/junctions/containment. Traversal tests pass. Remaining adversarial link/archive and restore checks pending
 
 **Recording in the app**
 - [ ] 2.7 `start_recording` / `stop_recording` with idempotency keys; a second Stop creates no duplicate
@@ -168,7 +183,7 @@ Goal: prove recording durability, Whisper on this laptop, and one bounded API ca
 - [ ] 2.13 Scoped asset protocol for playback by trusted ID
 - [ ] 2.14 WaveSurfer player: seek, speed, loop region, keyboard alternative (start/end fields, skip)
 - [ ] 2.15 Waveform peaks cache
-- [ ] 2.16 Sessions list: compact table, filters, rename, tag, favorite
+- [~] 2.16 Real native session list, title/note/tag/favorite search and editor connected. Edits persist through restart and retain original audio identity; failed-save UI keeps edits and never claims success. Manual full-app pass remains
 - [ ] 2.17 Trash with 30-day retention and restore; delete dialog states which audio/analysis is included
 
 **Backup, restore, export (§13)**
@@ -183,24 +198,37 @@ Goal: prove recording durability, Whisper on this laptop, and one bounded API ca
 
 ## Milestone 3 — Review & transcription (§6 Session review, §11) · budget 5–8 days
 
-- [ ] 3.1 Job queue (jobs table): one transcription job at a time; recording has priority; cancel
+The API tasks below add an estimated 3–5 days. Implement the shared budget foundation here, before exposing audio uploads; M5 extends it for full coaching. Complete local review independently if the API gate is waiting for credentials.
+
+- [ ] 3.1 Job queue (jobs table): one transcription job across Local/API at a time; recording has priority; cancel. Paid jobs never resume or dispatch automatically after restart/reconnection
 - [ ] 3.2 Whisper worker protocol: JSON request, structured progress, result, schema version
 - [ ] 3.3 Model pack registry: ID, checksum, size, license, language; verified import; atomic install
 - [ ] 3.4 Schema: transcript_revisions, transcript_segments, analysis_runs, metric_values, annotations
 - [ ] 3.5 VAD + timeline mapping (never measure pauses from trimmed audio)
 - [ ] 3.6 Metrics with definition versions: duration, analysis interval, estimated pace (≥15 s speech, ≥20 words), pauses (≥700 ms threshold, stored), repeated wording
 - [ ] 3.7 Candidate filler lexicon (contextual) → annotations; Hear it / Confirm / Dismiss; manual insertion. Use the D-16 transcription strategy; anything it inserts is still only a candidate until reviewed
-- [ ] 3.8 Transcript component: segment seek, views As transcribed / My corrections / Suggested wording
+- [ ] 3.8 Transcript component: segment seek only with verified timings, views As transcribed / My corrections / Suggested wording. Untimed API text remains editable alongside whole-take playback; no invented alignment
 - [ ] 3.9 Transcript revisions: edits create a child revision; dependent metrics are invalidated; Reanalyze
 - [ ] 3.10 Evidence labels: Measured / Estimated / Your note / AI suggestion
 - [ ] 3.11 Failure paths: Retry transcription, Change model, Add notes; audio is never lost
-- [ ] 3.12 Settings → Transcription: installed packs, CPU/NVIDIA toggle, Benchmark button
+- [ ] 3.12 Settings → Transcription: independent Local / API / Off selector; local packs/backend/Benchmark; API provider/model/key status and clearly billable test. Local is default; Off preserves playback, notes, and existing transcripts
 - [ ] 3.13 FTS5 index for transcripts, notes, prompts, phrases; wire it to the command palette
 
-**Exit gate M3**
+**Optional API transcription**
+- [ ] 3.14 Integrate the D-21 OpenAI adapter behind `TranscriptionProvider` and the typed IPC client; capability-check model parameters, enforce the verified upload limit, and stream the prepared file from Rust. No frontend paths, audio byte arrays, or browser-side API requests
+- [ ] 3.15 Preview → Transcribe via API: whole selected take, playable prepared audio, recipient/model, duration/size, all included hints, price/date, estimated cost, and remaining shared budget. Approval is single-use and bound to audio hash + hints + provider/config/model + price version; any change requires a fresh preview. Settings alone never uploads audio
+- [ ] 3.16 Save API runs, raw results, transcript revisions, request IDs, capability/timing provenance, and usage. Retranscription creates a separate run; never overwrites local or corrected text. Cache by exact uploaded audio + hints + provider/model/settings/adapter version; Retranscribe is an explicit paid action
+- [ ] 3.17 Shared usage ledger and atomic reservations (0.20): transcription audio-duration/token categories and coaching token categories, separate subtotals, combined warning/stop limits. Missing price/usage remains unknown; cancellation/timeout after submission retains possible charge. Display billed/estimated/uncertain separately
+- [ ] 3.18 Exercise offline, missing/rejected credentials, rate limits/quota, timeout, cancellation, malformed/truncated/empty output, duplicate requests, provider/model changes, and restored pending jobs. Audio remains saved; show explicit local retry or manual review; no automatic paid retry, model switch, or upload on reconnection
+- [ ] 3.19 Verify filler review and available metrics against API transcripts with and without timing. Compute pauses/pitch/energy from local audio; disable per-word stress labels and timed candidate replay when alignment is absent. An optional local alignment job must be explicit and verified
+
+**Exit gate M3 — local review**
 - [ ] Worker crash leaves the audio saved and the next recording works
 - [ ] Editing a transcript keeps raw text and old metrics tied to their original revision
 - [ ] Timing is verified after resampling / VAD, including gaps and the final segment
+
+**API transcription enablement gate (separate from the local milestone)**
+- [ ] API transcription enablement gate: consented live request and provider contract tests pass; audio preview, credential binding, shared budget, cache, failures, untimed results, and restore behavior are verified. Keep API mode unavailable until this gate passes
 
 ## Milestone P — Prosody: intonation & stress display · budget 4–6 days
 
@@ -211,7 +239,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 - [ ] P.2 Compute an F0 contour (Hz, plus semitones relative to the speaker's median), voicing flags, and RMS energy (dB) at a 10 ms hop on the **original recording timeline** (never VAD-trimmed audio, §9)
 - [ ] P.3 Storage: a versioned, regenerable analysis artifact (compact binary) plus a `prosody_tracks` record (run_id, attempt_id, algorithm, settings, hop_ms, definition_version, checksum). Metrics: pitch range (5th–95th percentile, semitones) and loudness variation, labelled **Estimated**; unavailable with a reason when there is too little voiced speech, clipping, or heavy noise
 - [ ] P.4 Contour view in Session review: pitch line + energy band under the transport, synced playhead, click to seek, gaps where the voice is unvoiced or silent (never drawn as zero), neutral colours only
-- [ ] P.5 Imitation overlay (feeds 4.8): reference clip vs. attempt, aligned at speech onset with optional time-normalisation. The user picks one feature (sentence-final fall/rise, stressed word, phrase rhythm) and compares by listening and looking. **No similarity score**
+- [ ] P.5 Imitation overlay (feeds 4.8): reference clip vs. attempt, aligned at speech onset with optional time-normalisation. The user picks one feature (sentence-final fall/rise, stressed word, phrase rhythm) and compares by listening and looking. **No similarity score**. Untimed API text permits audio contours and audio-only comparison; word-linked stress requires separately verified alignment
 - [ ] P.6 Contours for bundled and imported reference clips are computed at import and versioned with the clip (links to 4.4)
 - [ ] P.7 Accessible equivalent: keyboard navigation between phrase endings, with a text readout per phrase ending (rising / falling / level, Estimated). Treat it as data, not advice
 - [ ] P.8 Tests: synthetic tones and sweeps with known F0 (unit), octave-error checks on low and high voices, alignment after resampling (with A-6), CPU time per 60 s take (target ≤ 5 s, to validate)
@@ -245,7 +273,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 - [ ] 4.16 Progress: Rehearsed / Unfamiliar / Real conversations views; Recharts with labeled axes; unavailable ≠ 0
 - [ ] 4.17 Transfer reviews (real conversation form; listener text stored separately)
 - [ ] 4.18 Rules-based scheduler with visible reasons; progression events; user override (§7)
-- [ ] 4.19 Onboarding: 4 steps incl. optional baseline recording
+- [ ] 4.19 Onboarding: 4 steps incl. optional baseline recording; independent transcription/coaching choices, local default, explicit explanation of API audio vs. text submission, and manual practice when setup is skipped
 
 **Exit gate M4**
 - [ ] The offline routine works end to end; unfamiliar-task evidence stays separate from rehearsal
@@ -260,10 +288,10 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 - [ ] 5.6 Preview → request flow: "View text to send", temporary redaction, payload hash, stale-preview rejection
 - [ ] 5.7 Result cache keyed by redacted input + versions + provider + model + settings; explicit Regenerate
 - [ ] 5.8 Error states: 401/403, rate limit, quota, timeout (uncertain billing), invalid JSON, refusal, cancel
-- [ ] 5.9 Usage records, price editor (Unknown ≠ 0), monthly warn/stop limits with reservation
+- [ ] 5.9 Extend M3's shared usage ledger and price editor for full coaching (Unknown ≠ 0); atomic reservations and combined monthly warn/stop limits across transcription + coaching, including tests/retries/follow-ups
 - [ ] 5.10 Settings → Coaching: API / Local LLM / Off; Test connection; masked key status; Replace/Remove
 - [ ] 5.11 API follow-up question generation (separate explicit request, labeled simulation)
-- [ ] 5.12 Log redaction: no transcript text, headers, or keys in logs
+- [ ] 5.12 Log redaction for both API purposes: no audio, transcript text, echoed payloads, authorization headers, or keys in logs
 
 **Exit gate M5**
 - [ ] Both adapters pass the same contract tests and fail safely; no silent fallback or auto-download
@@ -283,7 +311,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Acceptance suite (§17) — run on a packaged build before release
 
-- [ ] A-1 Network off: complete manual practice + local transcription; reopen every take and saved API result; new API coaching shows unavailable
+- [ ] A-1 Network off: complete manual practice + local transcription; reopen every take, saved API transcript, and saved feedback; fresh API transcription/coaching show unavailable without blocking practice
 - [ ] A-2 Kill during recording → recovery within the loss target
 - [ ] A-3 Worker crash → audio, notes, and the next recording still work
 - [ ] A-4 Mic disconnect + full disk → no false Saved message
@@ -293,22 +321,38 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 - [ ] A-8 Reject corrupted archive, missing audio, path traversal, newer schema
 - [ ] A-9 Upgrade a populated older schema; failed migration recovers safely
 - [ ] A-10 Packaged install without dev runtime or internet
-- [ ] A-11 Network inspection: recording/transcription send nothing; coaching sends only previewed text to the configured recipient
+- [ ] A-11 Network inspection: recording/local transcription/prosody send nothing; API transcription sends only approved prepared audio and previewed hints; coaching sends only previewed text to its configured recipient. No cross-purpose payloads
 - [ ] A-12 Keys absent from SQLite, logs, exports, frontend persistence, backups
 - [ ] A-13 Auth failure, rate limit, quota, malformed JSON, refusal, timeout, cancel → audio safe, uncertain billing shown
-- [ ] A-14 API / Local LLM / Off switching: no silent fallback, no auto-download, no restored pending upload
+- [ ] A-14 Independent Transcription Local / API / Off and Coaching API / Local LLM / Off switching: no silent fallback, no auto-download, no restored pending upload
 - [ ] A-15 Provider/endpoint change doesn't forward the old key
-- [ ] A-16 Cache reuse, explicit regenerate, usage accounting, budget limits, unknown price
+- [ ] A-16 Both API purposes: cache reuse, explicit retranscribe/regenerate, usage accounting, unknown price; simultaneous requests cannot exceed combined reservations; timed-out charges never reset to zero
 - [ ] A-17 Transcript or redaction change invalidates the coaching preview; old evidence preserved
 - [ ] A-18 Unfamiliar first attempts, rehearsal, and real-conversation feedback stay separate
 - [ ] A-19 Difficulty recommendations show a reason, tolerate missing evidence, accept override
 - [ ] A-20 Major flows keyboard-only + screen reader
 - [ ] A-21 Prosody contours stay aligned with the original timeline after resampling; unvoiced stretches are gaps, not zeros
 - [ ] A-22 No filler, prosody, or imitation value is shown as a score, grade, or mood label
+- [ ] A-23 API audio preview: setting a key, selecting API, stopping capture, switching screens, restart, recovery, restore, and reconnection never dispatch an upload; changed audio/hints/recipient/model/price reject prior approval
+- [ ] A-24 API transcripts with no timing allow text correction and whole-take playback; unavailable alignment is explained. Returned timings are range/monotonicity checked and tested against the original timeline
+- [ ] A-25 API failure/cancel/oversize/malformed output leaves recordings and old revisions intact; explicit retries disclose possible duplicate charges; changing ASR provider/model does not overwrite history or forward credentials
 
 ---
 
 ## Notes & findings
+
+- 2026-10-07: Core M0 closed. Six profiles × four public trials are published in bench/results-2026-10.json/.md; selected CUDA turbo + exact filler prompt has warm worker median 11.532 s, total median 14.022 s, peak working set 380.2 MiB, 3/194 verbatim edits, 13/14 UH/UM retained and zero insertions in all trials. Initial cache state and per-process VRAM are unknown; older JFK GPU slowness was not reproduced and has no proven cause. CrisperWhisper adapter/weights experiment deferred, not benchmarked. Portable setup selects CUDA or explicit CPU base without automatic fallback.
+- 2026-10-07: User supplied one successful, explicitly approved in-app GPT-6 Luna feedback result. Agent verified saved feedback metadata and the shared ledger without reading credentials: 291 input / 163 output tokens, estimated USD 0.000227, settled. Suggestions preserve meaning and label natural comparative phrasing as optional style. No audio upload or extra paid request. Broader coaching quality and optional audio API gates remain separate.
+- 2026-10-07: Started M2 with rusqlite 0.40.2 bundled SQLite, single connection owner, WAL/FK/FULL sync, transactional v1 schema, online pre-migration snapshots, native history/edit commands and staged capture references. Legacy receipts import idempotently; missing audio stays flagged, task details unknown, and user edits survive restart. Native Review/Compare play real recordings and bypass simulated observations. Recorder events announce Saved only after SQLite commit; failed references leave files/receipts recoverable. Full ZIP backup/restore, Trash, waveform controls and comprehensive recovery/manual acceptance remain unfinished. API usage remains in its locked JSON owner; migrate later without dropping the live charge.
+
+- 2026-10-04: At the user's request, updated blueprint rev. 3 and this tracker for optional API audio transcription (D-20–23, 0.20–23, 3.14–19, A-23–25). Updated `handout.md` for another chat/machine. This is documentation and planned scope, not an implemented API feature; no audio was submitted or paid request made. Existing recording progress and remaining local feasibility tasks are preserved. Added API allowances total approximately 4–7 working days, beyond the previous filler/prosody extension; estimates need validation.
+- 2026-10-04: Verified official OpenAI [file transcription guide](https://developers.openai.com/api/docs/guides/speech-to-text), [pricing](https://developers.openai.com/api/docs/pricing), [Whisper model](https://developers.openai.com/api/docs/models/whisper-1), and [data controls](https://developers.openai.com/api/docs/guides/your-data). The guide recommends `gpt-transcribe`; word/segment timestamp parameters are specific to `whisper-1`. Current rates: `gpt-transcribe` USD 0.0045/min, `gpt-4o-mini-transcribe` about USD 0.003/min, `whisper-1` USD 0.006/min. Store dated prices/capabilities and recheck at implementation; these facts do not demonstrate filler fidelity or performance on this user's audio. Provider retention is endpoint-specific; do not apply a generic 30-day assumption or promise deletion from local deletion.
+- 2026-10-04: Documentation verification passed: all 13 new API task/acceptance IDs occur once and remain unchecked, blueprint source IDs are unique, and every source reference resolves. Reviewed privacy/offline/dependency wording across the three documents; `git diff --check` passes. No application code changed in this planning session.
+- 2026-10-04: Implemented M0 recording in `src-tauri/src/audio/capture.rs` and `src-tauri/src/storage/recording.rs`, with native IPC commands and Zod-validated responses/events. Startup journals and receipts preserve native format, source channels, title, duration, and checksums. Identifier validation prevents frontend paths; playback resolves only trusted asset IDs and is scoped to app-owned WAV files. Recovery is explicit and never restarts a microphone or uploads audio. Completed chunks remain alongside final WAVs until M2 implements cleanup after database commit.
+- 2026-10-04: Verified seven regular Rust tests, a live microphone save/idempotency/level-event test, and three live forced-kill runs (loss 760/730/770 ms). Full frontend suite passed 19/19; after the final event-filter/mock-error fixes, the two affected files passed 9/9 again. Typecheck, frontend production build, and native desktop build passed; format and diff checks are clean. Test recordings were created in isolated temporary directories and deleted. Hardware tests are ignored by default and require explicit execution.
+- 2026-10-04: CPAL's `RealtimeDenied` and `DeviceChanged` notifications describe an active stream, so they do not terminate a take. Actual stream failures, queue overruns, and driver xruns stop capture and retain recovery chunks without a false Saved state. One concurrent-build run produced a driver xrun; all three crash tests passed after compilation finished. Keep recording ahead of background work, as required by §9.
+- 2026-10-04: Opened the native desktop app and verified Today/Studio render, native mode is selected, real microphone enumeration appears, and the saved-recording library is reachable. Further UI input was declined because user input was detected, so in-window recording, audible playback, reopen, and close-dialog checks remain manual tasks. Native capture and recovery were verified through the hardware harness. The development preview remains open.
+- 2026-10-04: Pinned direct Rust versions to the existing lockfile and added SHA-256 hashing plus Tauri's scoped asset protocol. Only `http-range` 0.1.5 needed downloading. No model weights or coaching requests were downloaded/submitted.
 
 - 2026-09-29: M0 0.4 pins CPAL 0.18.2 and adds a native `list_input_devices` command with stable device IDs and supported input format ranges. A live WASAPI smoke test returned three devices and six ranges per device without opening a stream. `cargo test --locked --offline` passed (one regular test; the hardware smoke test is ignored by default and passed when run explicitly). Frontend typecheck and 15/15 Vitest tests passed with a single reused worker. The desktop UI still shows mock devices until the native IPC client is connected.
 

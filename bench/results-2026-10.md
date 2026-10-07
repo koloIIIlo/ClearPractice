@@ -1,0 +1,18 @@
+# Local transcription comparison — 7 October 2026
+
+Measured on the development laptop using the pinned public fixture. Each profile has an initial process and three subsequent processes. OS/model caches were uncontrolled; the initial run is not a proven cold start.
+
+| Profile | First worker / total (s) | Warm worker / total median (s) | Ordinary WER | UH/UM retained | Inserted | Peak working set (MiB) |
+| --- | --- | --- | --- | --- | --- | --- |
+| public-cpu-base | 27.52 / 30.09 | 28.60 / 29.04 | 15.00% | 0/14 | 0 | 367.8 |
+| public-cpu-turbo | 184.33 / 188.77 | 170.25 / 170.95 | 5.00% | 0/14 | 0 | 914.7 |
+| public-cpu-base-fillers-v2 | 64.97 / 71.33 | 60.21 / 60.89 | 11.11% | 1/14 | 0 | 398.3 |
+| public-cuda-base-v2 | 5.09 / 8.01 | 4.74 / 6.54 | 15.00% | 0/14 | 0 | 363.4 |
+| public-cuda-turbo | 62.84 / 71.02 | 10.67 / 12.98 | 5.00% | 0/14 | 0 | 643.2 |
+| public-cuda-turbo-fillers | 11.86 / 14.41 | 11.53 / 14.02 | 1.11% | 13/14 | 0 | 380.2 |
+
+Selected: large-v3-turbo-q5_0, CUDA, four threads, initial prompt `Umm, so, uh, I think, like, you know.`. All four selected-profile trials produced 3/194 verbatim word errors, 13/14 retained UH/UM, and zero inserted UH/UM. CPU base is an explicit smaller alternative, never an automatic fallback.
+
+This small public sample does not establish personal accuracy or verified word alignment. Ambiguous ‘like’ and ‘you know’ are excluded from filler counts. All detected fillers require review. Out-of-range segment timing remains unavailable rather than clamped. Per-process VRAM is unavailable with a reason. The older slow JFK GPU result was not reproduced; its cause remains unknown. Some CPU filler trials overlapped development checks.
+
+CrisperWhisper is deferred: its custom adapter and noncommercial model licence need separate evaluation. No additional model download is required for the selected profile. Packaging and redistribution review remain M6 work.

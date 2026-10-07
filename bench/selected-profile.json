@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "modelId": "large-v3-turbo-q5_0",
+  "backend": "cuda",
+  "threads": 4,
+  "prompt": "Umm, so, uh, I think, like, you know.",
+  "explicitAlternative": { "modelId": "base", "backend": "cpu", "prompt": null },
+  "decisionDate": "2026-10-07",
+  "evidence": "results-2026-10.json",
+  "fillerReviewRequired": true,
+  "wordAlignmentVerified": false
+}

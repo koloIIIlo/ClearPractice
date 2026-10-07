@@ -1,0 +1,58 @@
+{
+  "dataset": "nyralabs/disfluency_speech_english",
+  "split": "test",
+  "source": "https://huggingface.co/datasets/nyralabs/disfluency_speech_english",
+  "sourcePaper": "https://arxiv.org/abs/2406.08820",
+  "license": "Apache-2.0 (dataset card)",
+  "version": 1,
+  "clips": [
+    {
+      "id": "DISFLUENCY_TEST_000003",
+      "rowIndex": 3,
+      "sha256": "46f8d62003447879df1b526fb294a8fa4adf0dbff216b4a2c3ed881c31b06090",
+      "referenceSha256": "f91e24c53a7bcc0327d5c142a83666c2298e1c70c3e06bc201ac993661ba82dd"
+    },
+    {
+      "id": "DISFLUENCY_TEST_000013",
+      "rowIndex": 13,
+      "sha256": "7d9d6520f4509a1bda27293806eb1a857cb92ee1692462e473de5358b3181488",
+      "referenceSha256": "7016a0af45258c0ef12e0c14aabb521fe4a93808a69b7e2185834c578b141fdc"
+    },
+    {
+      "id": "DISFLUENCY_TEST_000018",
+      "rowIndex": 18,
+      "sha256": "499bb57d7e9325f96b63694cefef7342568cb0f91c3da9e1d200dae84edf0050",
+      "referenceSha256": "9a204ddc463b82ecb3d9322b06de7dd6db2e01ea9fecd286f2b470a6aa6e8c8a"
+    },
+    {
+      "id": "DISFLUENCY_TEST_000019",
+      "rowIndex": 19,
+      "sha256": "7861cf8c15defa0938491afca720cd284d2f4e3a669a106dcecae2f2b899f175",
+      "referenceSha256": "c799922289726d4038472944d2b0f9f452ac9e50429386287504bf0d1b08d305"
+    },
+    {
+      "id": "DISFLUENCY_TEST_000021",
+      "rowIndex": 21,
+      "sha256": "199a52fed2b883a65796f72d64b2be3b231db8ff887fe9ea5e0f32fd85cfd86f",
+      "referenceSha256": "497438d2b5ff2046ef4253807b655a4faafd965a633fe12980c7772ac3fcc1f7"
+    },
+    {
+      "id": "DISFLUENCY_TEST_000026",
+      "rowIndex": 26,
+      "sha256": "6254e3cb758ec2e0df0b5c0caf022da66ab1352b6878770cf200a14c36ab7c54",
+      "referenceSha256": "c14874f555d3e10cc2ee99ae9ed1cfe1dc13788419b98afb06ab964e83b98d92"
+    },
+    {
+      "id": "DISFLUENCY_TEST_000037",
+      "rowIndex": 37,
+      "sha256": "3e85df92a32e4c11187d20ddaf329e3ee6b753e17d2911af0cae542c5b1660bf",
+      "referenceSha256": "606c19509689bd267fa2a2c778dfd89871a5fd65c3d2d9807cd5a077b4134606"
+    },
+    {
+      "id": "DISFLUENCY_TEST_000038",
+      "rowIndex": 38,
+      "sha256": "1145089d360b574fef2cdfb517ff5963483c8692fb6e2c045d6e8c091ae4bc6c",
+      "referenceSha256": "ecfa614f311683f41e0049a2921e4625b39b0864e1720875ff1b08deb99b13cd"
+    }
+  ]
+}

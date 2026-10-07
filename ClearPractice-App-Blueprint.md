@@ -2,19 +2,19 @@
 
 Product design and implementation plan
 
-29 September 2026
+4 October 2026 (original blueprint: 29 September 2026)
 
-Revision 2 includes API coaching and progressive practice
+Revision 3 includes optional API audio transcription, API coaching, and progressive practice
 
 Build ClearPractice as an installed desktop app that guides short speaking sessions and keeps the entire practice history on the computer. The primary experience is a clear sequence: choose a prompt, record an answer, review one improvement, and try again. Exercises, recordings, transcripts, personal notes, useful expressions, and progress remain available after closing the app and without an internet connection.
 
-The recommended foundation remains Tauri 2, React, TypeScript, Vite, Tailwind CSS, and the Radix variant of shadcn/ui. Rust owns recording, files, SQLite, and outbound API calls. The intended personal setup uses local whisper.cpp transcription and a hosted language model API for wording and structure feedback. Offer a separate optional local LLM mode through a tested loopback endpoint, but do not install or run an LLM on this laptop by default. The design should feel like a quiet practice notebook with a small recording studio.
+The recommended foundation remains Tauri 2, React, TypeScript, Vite, Tailwind CSS, and the Radix variant of shadcn/ui. Rust owns recording, files, SQLite, and outbound API calls. The intended personal setup defaults to local whisper.cpp transcription, with optional API transcription of explicitly approved saved recordings, and a hosted language model API for wording and structure feedback. Offer a separate optional local LLM coaching mode through a tested loopback endpoint, but do not install or run an LLM on this laptop by default. The design should feel like a quiet practice notebook with a small recording studio.
 
-The delivery target is a single-user Windows 11 desktop application. The reported laptop has a Ryzen 7 processor and a GeForce GTX 1650 laptop GPU. The exact CPU model, installed RAM, available VRAM, driver version, and free disk space remain to be verified; the approximate spoken CPU name is not a reliable model identifier. Start with Windows x64 packaging after detection confirms it. English practice is the initial curriculum, with a separate interface language setting and multilingual transcription option. Other desktop platforms remain later extensions.
+The delivery target is a single-user Windows 11 x64 desktop application. The reference laptop's hardware and tools have been detected and recorded in `DEVELOPMENT_PLAN.md`; re-detect them when continuing on another machine. English practice is the initial curriculum, with a separate interface language setting and a future multilingual option. Other desktop platforms remain later extensions.
 
 This plan specifies proposed behavior. Timing budgets, hardware profiles, and implementation estimates are engineering targets to validate, not measured results from an existing app. The screen concept uses illustrative content and does not record or analyze real audio.
 
-The revised learning design adds an explicit progression in difficulty, practice in real conversations, and separate evidence for rehearsed and unfamiliar tasks. The revised technical design separates local storage, local speech recognition, and selectable text coaching. Previously saved material remains available offline; new API feedback needs a connection and may incur provider charges. The earlier screen concept is illustrative; the screen specifications in this revision define the updated behavior.
+The revised learning design adds an explicit progression in difficulty, practice in real conversations, and separate evidence for rehearsed and unfamiliar tasks. The technical design separates local storage, selectable speech recognition, local acoustic analysis, and selectable text coaching. Previously saved material remains available offline; fresh API transcription and feedback need a connection and may incur provider charges. API transcription sends audio, while text coaching sends selected text under separate approval. The earlier screen concept is illustrative; the screen specifications in this revision define the updated behavior.
 
 ## 1 Product outcomes and boundaries
 
@@ -34,15 +34,16 @@ The first complete release must support these jobs:
 - Find an old session or useful phrase without remembering its exact date.
 - See personal trends while understanding which values are estimates.
 - Practise unfamiliar tasks and record feedback from real conversations.
-- Select API coaching, an optional local LLM endpoint, or manual review independently of local transcription.
+- Select Local / API / Off for transcription, independently of API coaching, an optional local LLM endpoint, or manual review.
 - Export and restore the practice history without depending on an account or subscription.
 
-The initial release does not need social feeds, rankings, in-app payments, a ClearPractice cloud account, unrestricted AI chat, automatic video downloading, or a mobile app. API coaching uses the user's own provider account and credentials. Turn-taking conversation with a voice model is a later extension. Pronunciation assessment at the phoneme level requires a separately evaluated system and should not be inferred from a transcript.
+The initial release does not need social feeds, rankings, in-app payments, a ClearPractice cloud account, unrestricted AI chat, automatic video downloading, or a mobile app. API transcription and coaching use the user's own provider account and credentials. Live audio streaming and turn-taking conversation with a voice model are later extensions. Pronunciation assessment at the phoneme level requires a separately evaluated system and should not be inferred from a transcript.
 
 | Priority | Included capabilities | Completion condition |
 | --- | --- | --- |
 | Foundation | Local curriculum, native recording, playback, SQLite history, export and restore | A complete manual practice session survives restart and restore |
 | Core coaching | Local transcription, editable transcript, approximate speech and pause measures, candidate filler review | Every displayed observation can be inspected or corrected |
+| Optional API transcription | One native hosted ASR adapter, audio preview, transcript normalization, shared usage controls | Only approved saved audio is uploaded; missing timings and provider failures remain visible |
 | Complete personal app | Four exercises, phrase review, comparisons, progress, local search, progressive tasks | Manual practice and saved material remain usable offline |
 | Default text coaching | Hosted API feedback and usage controls | Selected text is sent only on an explicit request; results are saved locally |
 | Optional local coaching | Tested loopback LLM adapter with the same feedback contract | No model download is required for API users; failures preserve manual practice |
@@ -147,13 +148,13 @@ Keep onboarding to four short steps. First, ask what the user wants to improve: 
 
 Second, select a microphone, display a live level, and record a five-second test with explicit playback. Do not enable continuous microphone monitoring after leaving this step. Explain a silent input with a specific action such as selecting another device or opening microphone permissions.
 
-Third, configure two independent services. Transcription defaults to Local Whisper with base.en as the first benchmark candidate; show pack size and an Import pack option. Coaching defaults to API, with Local LLM and Off available as alternatives. API setup asks for the supported provider or endpoint, model, and personal API key, then offers a small labeled connection test. State that selected text leaves the computer and the test may be billable. Choosing API never initiates a local LLM download. Skipping setup keeps manual practice available.
+Third, configure two independent services. Transcription offers Local / API / Off and defaults to Local Whisper; show installed packs, pack size, and Import pack. Select the local default from the verified M0 benchmark. API transcription setup explains that a chosen recording leaves the computer only after a separate audio preview is approved. Coaching defaults to API, with Local LLM and Off available as alternatives; its requests send selected text. Each API setup shows provider, model, masked key status, and a clearly labeled test that may be billable. Choosing API does not require local model downloads. Skipping setup keeps manual practice available; configuring a service does not submit a baseline recording.
 
 Fourth, offer an optional 60-second baseline recording: "Describe something you would like to get better at and why." Save it with a baseline tag. Explain that later comparisons will include unfamiliar prompts so improvement is not judged only from rehearsed answers.
 
 ### Today
 
-The header contains the date and an understated "Saved on this computer" indicator. Nearby service labels distinguish "Transcription: Local" and "Coaching: API"; local storage is never presented as proof that all processing stays local. The central area shows today's focus in one sentence, such as "State your point before explaining it." Under it, show the selected duration and one Start practice button.
+The header contains the date and an understated "Saved on this computer" indicator. Nearby service labels show the independent active choices, such as "Transcription: Local" or "Transcription: API · OpenAI" and "Coaching: API"; local storage is never presented as proof that all processing stays local. The central area shows today's focus in one sentence, such as "State your point before explaining it." Under it, show the selected duration and one Start practice button.
 
 Below, present the four planned exercise rows with durations. The right side can show one recent reflection and one saved phrase due for review. Avoid filling unused space with unrelated statistics. If there is an incomplete session, replace the main action with Resume session and offer Start fresh as secondary.
 
@@ -181,7 +182,7 @@ Use a short optional preparation countdown before capture, visibly distinct from
 
 ### Session review
 
-Place the audio transport across the top of the content area: play, elapsed and total time, waveform, speed, and loop selection. Below it, place the transcript on the left and a small feedback panel on the right. A click on a segment seeks near the corresponding audio. Use segment timing by default; enable word-level seeking only when tested alignment is sufficiently reliable.
+Place the audio transport across the top of the content area: play, elapsed and total time, waveform, speed, and loop selection. Below it, place the transcript on the left and a small feedback panel on the right. A click on a segment seeks near the corresponding audio only when verified timing exists; enable word-level seeking only when tested alignment is sufficiently reliable. Untimed API text remains editable alongside whole-take playback, with a clear "Timing unavailable for this model" explanation.
 
 The main feedback panel shows one useful observation, an example from the attempt, and one action for the next take. Additional suggestions are collapsed. Labels distinguish Measured, Estimated, Your note, and AI suggestion. These describe the evidence source, not an invented confidence percentage.
 
@@ -190,6 +191,8 @@ The transcript has separate views for As transcribed, My corrections, and Sugges
 Selecting text opens actions to play the passage, correct transcription, save a phrase, or add a note. Candidate fillers have a neutral underline. A small review panel offers Hear it, Confirm, and Dismiss. Dismissing a candidate records that decision so it does not reappear from the same analysis run.
 
 If AI feedback is unavailable, show the transcript, playback, manual checklist, and metrics that can still be computed. If transcription fails, preserve the audio and offer Retry transcription, Change model, or Add notes. A failure must never replace the recording with an empty completed result.
+
+When API transcription is selected, saving a take exposes Transcribe via API. Its preview identifies the whole selected recording, provides playback of the prepared audio, and shows recipient/model, duration, size, included language/context hints, estimated charge, price date, and remaining shared budget. Send is an explicit action bound to that exact preview. No upload happens on Stop, navigation, recovery, or reconnection. A completed API transcript is labeled with its provider/model and run date; Retranscribe creates a separate run. Local retry is offered as an explicit choice if the installed pack is available.
 
 The coaching panel has Get feedback, View text to send, and a provider label. The preview includes the selected transcript revision, prompt, focus, and any chosen comparison excerpt; it allows temporary redaction without changing the saved original. After completion show the provider, model, generation date, and usage when available in Details. Offline, show Saved feedback if present and Manual review for new takes. An unavailable API must not silently switch provider, upload later, or download a local model.
 
@@ -223,11 +226,11 @@ Use comparable task demands when reviewing change over several weeks. Keep an un
 
 ### Settings
 
-Group settings into Audio, Practice, Appearance, Transcription, Coaching, Data and backups, and About. Transcription shows Local Whisper, installed packs, CPU or NVIDIA acceleration, and Benchmark. Coaching has a three-way API / Local LLM / Off control. API fields include provider protocol, endpoint when configurable, model ID, masked key status, Test connection, response budget, and usage limits. Local LLM shows its loopback endpoint and connection state. Detailed configuration stays here; the review screen retains a concise active-provider label. Permit moving local model files independently of recordings.
+Group settings into Audio, Practice, Appearance, Transcription, Coaching, Data and backups, and About. Transcription has Local / API / Off: Local shows installed Whisper packs, CPU or NVIDIA acceleration, and Benchmark; API shows its provider/model, supported capabilities, masked key status, and billable-test explanation; Off keeps recordings, notes, and saved transcripts. Coaching has an independent API / Local LLM / Off control. API fields include supported protocol, endpoint when configurable, model ID, masked key status, Test connection, response budget where applicable, and usage limits. Local LLM shows its loopback endpoint and connection state. Detailed configuration stays here; the review screen retains a concise active-provider label. Permit moving local model files independently of recordings.
 
 Data settings show the current folder, total audio size, last successful backup, restore options, and exports. The app should explain whether audio is included in a particular backup. Settings also control interface language, practice language, reminder behavior, text size, reduced motion, and recording sounds.
 
-Usage displays this app's recorded calls, input and output tokens where reported, estimated cost, and uncertain charges. A price editor records currency, rate source, and effective date; an unknown price is Unknown, never zero. Changing provider or endpoint invalidates the old credential association. Keys have Replace and Remove actions and are excluded from exports. A provider privacy link explains that its retention terms are separate from local storage.
+Usage displays this app's recorded calls, audio duration and tokens according to each model's billing units, estimated cost, and uncertain charges. Show transcription and coaching subtotals plus the combined monthly limit. A price editor records currency, rate source, and effective date; an unknown price is Unknown, never zero. Changing provider or endpoint invalidates the old credential association. Keys have Replace and Remove actions and are excluded from exports. A provider privacy link explains that its retention terms are separate from local storage.
 
 ## 7 Exercise content and adaptation
 
@@ -298,7 +301,8 @@ Tauri provides a Rust application core and a web-based interface rendered in the
 | Audio capture | Rust CPAL plus a writer thread | Native microphone access and controlled persistence |
 | Audio processing | Rust resampling and WAV utilities selected in the spike | Convert device audio into explicit stored and inference formats |
 | Playback | WaveSurfer.js and local asset URLs | Waveform, seek, loop, and playback controls |
-| Speech recognition | Pinned whisper.cpp worker | On-device transcript generation |
+| Speech recognition default | Pinned whisper.cpp worker | On-device transcript generation |
+| Optional API transcription | Native TranscriptionProvider adapter using reqwest | Approved saved audio uploads; common results with model-specific capabilities |
 | Text coaching by default | Rust provider adapter using reqwest | Hosted LLM requests with bounded structured output |
 | Optional local LLM | Tested loopback adapter, initially llama.cpp server compatible | Same coaching contract; user-managed runtime, no required model pack |
 | API credentials | Windows Credential Manager through a narrow Rust module | Personal keys stay out of SQLite, logs, exports, and frontend storage |
@@ -333,7 +337,7 @@ The recording pipeline should follow this order:
 5. Flush completed chunks periodically, targeting a maximum of two seconds of lost audio under ordinary forced-process termination. Record this as a tested recovery target, not an absolute guarantee under hardware failure.
 6. On Stop, close capture, finalize and verify the file, then commit its durable metadata. Mark the attempt saved only after the required write succeeds.
 7. Derive 16 kHz mono inference audio without deleting the saved recording. Compute levels and voice activity from the relevant audio stream, preserving the original time coordinates.
-8. Run transcription and store its raw output as a versioned analysis artifact.
+8. Run local transcription, or await an explicit preview approval for API transcription of the verified derived WAV. Off skips this job. Store raw output as a versioned analysis artifact with source audio hash, provider/model, settings, and timing capabilities.
 9. Compute text-derived metrics locally. Generate coaching only when requested through the selected API or local adapter. Save the validated response locally and make each result available independently.
 10. Create compact waveform peaks and discard regenerable temporary files according to cache policy.
 
@@ -341,28 +345,28 @@ If voice activity detection trims silence for transcription, maintain an explici
 
 Use the lifecycle states Preparing, Recording, Finalizing, Saved, and Interrupted for capture. Analysis has its own Queued, Running, Completed, Failed, and Canceled states. Separating these states prevents a failed AI job from making a valid recording appear unsaved.
 
-Allow one transcription job and one coaching request at a time by default. API coaching does not load an LLM into laptop memory. When optional local LLM mode is selected, schedule it around transcription according to available memory. A new recording takes priority over background analysis; pause or postpone inference if it causes audio dropouts. Canceling an analysis job stops its worker cleanly and preserves the take.
+Allow one transcription job across Local/API and one coaching request at a time by default. API processing avoids loading the corresponding local inference model but adds upload time and a network dependency. When optional local LLM mode is selected, schedule it around transcription according to available memory. A new recording takes priority over background analysis; pause or postpone local inference and audio preparation if they cause dropouts. Canceling a job preserves the take; for an already submitted API request it stops local waiting without promising that provider processing or billing stopped. Pending paid jobs never automatically dispatch after restart or reconnection.
 
-The bundled Whisper worker uses a narrow process protocol with JSON requests and structured progress/results. The API adapter uses outbound HTTPS from Rust. Optional local LLM mode uses an explicitly configured loopback endpoint, with endpoint authentication where supported; the user manages that runtime. A remote or LAN endpoint belongs to API mode and must not carry an On this computer label. Keep all inference services inaccessible to frontend-supplied arbitrary URLs.
+The bundled Whisper worker uses a narrow process protocol with JSON requests and structured progress/results. Separate transcription and coaching API adapters use outbound HTTPS from Rust, sharing credential, transport, and budget infrastructure while keeping payload approval separate. Optional local LLM coaching uses an explicitly configured loopback endpoint, with endpoint authentication where supported; the user manages that runtime. A remote or LAN endpoint belongs to API mode and must not carry an On this computer label. Keep all inference services inaccessible to frontend-supplied arbitrary URLs.
 
-## 10 Transcription coaching modes and hardware
+## 10 Transcription, coaching modes, and hardware
 
 ### Recommended setup for this laptop
 
-Use local whisper.cpp for speech recognition and a hosted API for all normal LLM coaching. Keep the optional local LLM adapter available, switched off. No LLM weights or local LLM runtime should be installed as a dependency of the intended setup.
+Default to local whisper.cpp for speech recognition and a hosted API for normal LLM coaching. Offer API transcription separately for approved saved takes when the user prefers it; benchmark its accuracy, latency, and cost against local results. Keep the optional local LLM coaching adapter available, switched off. No LLM weights or local LLM runtime should be installed as a dependency of the intended setup.
 
-The reported Windows 11, Ryzen 7, and GTX 1650 laptop configuration is a reasonable candidate for short recordings processed after capture. This is an engineering assessment based on a modest workload, not a benchmark of this machine. The exact Ryzen model is unconfirmed. A Ryzen 7 3750H is one plausible interpretation of the spoken name, and ASUS documented that processor paired with a GTX 1650, but this does not identify the user's laptop. ASUS specifications also show 4 GB variants; detect the actual VRAM instead of assuming it. [S23]
+The reference laptop was detected on 29 September 2026 as Windows 11 x64, Ryzen 7 3750H, 13.9 GB usable RAM, and GTX 1650 with 4096 MiB dedicated memory. Full environment facts are in `DEVELOPMENT_PLAN.md`; re-detect on another machine. Local transcription performance remains unmeasured. API transcription is an alternative to evaluate, not evidence that local processing is inadequate.
 
 | Item | Status or initial choice | Decision |
 | --- | --- | --- |
-| Operating system | Windows 11 reported | Validate packaged x64 build on the actual laptop |
-| Processor | Ryzen 7 family reported; exact model unknown | Use detection and measured timings, not an inferred SKU |
-| Graphics | GTX 1650 laptop reported | Test NVIDIA acceleration; retain CPU fallback |
-| System RAM | Unknown | 8 GB is a practical light-profile test target; 16 GB gives more multitasking room |
-| Transcription | Whisper base.en initially | Compare small.en on a personal sample before making it default |
+| Operating system | Windows 11 Pro x64 detected | Validate packaged build on the actual laptop |
+| Processor | Ryzen 7 3750H, 4 cores / 8 threads | Use measured timings |
+| Graphics | GTX 1650 laptop, 4096 MiB VRAM detected | Test NVIDIA acceleration; retain CPU fallback |
+| System RAM | 13.9 GB usable, 16 GB installed | Benchmark under ordinary multitasking load |
+| Transcription | Local Whisper by default; optional API | Verify existing base and large-v3-turbo-q5_0 packs before any further download; choose local and API models separately |
 | Language coaching | Hosted API | No local LLM memory or GPU budget required |
 
-Start with 30–120 second takes, transcription after stopping, and one active transcription job. Try small.en if it produces meaningfully better transcripts within an acceptable wait. Use multilingual base or small when another practice language is selected. Medium and large models are outside the default profile for this laptop. Do not promise live transcription or a particular seconds-per-minute speed before testing.
+Start with 30–120 second takes, transcription after stopping, and one active transcription job. Benchmark existing packs first; obtain base.en/small.en only if comparison needs them. Use a multilingual pack when another practice language is selected. A larger installed pack becomes a default only after its quality and resource use are measured. Do not promise live transcription or a particular seconds-per-minute speed before testing.
 
 whisper.cpp supports Windows, CPU execution, and NVIDIA acceleration. Its documentation lists base at 142 MiB on disk and about 388 MB memory, and small at 466 MiB and about 852 MB. These are upstream model figures, not a complete Windows RAM budget or a guarantee about peak GPU allocations. [S12]
 
@@ -370,9 +374,25 @@ Package a tested CPU build and a compatible optional NVIDIA build. Validate the 
 
 ### Hardware benchmark and acceptance
 
-Record the detected CPU name, RAM, GPU, available dedicated memory, driver, app build, power mode, model checksum, and inference settings. On a plugged-in laptop, benchmark the same 60-second personal sample with base.en on CPU, then GPU if available, then small.en. Run a cold trial and three warm trials for each candidate; report the median warm time and observed range, memory peak, transcript corrections needed, and whether capture stays responsive. Repeat the chosen configuration under the user's usual multitasking load.
+Record the detected CPU name, RAM, GPU, available dedicated memory, driver, app build, power mode, model checksum, and inference settings. On a plugged-in laptop, benchmark the same hand-checked 60-second personal sample with the verified existing packs on CPU and GPU where available, adding English baselines only if needed. Run a cold trial and three warm trials for each local candidate; report median warm time and range, memory peak, transcript corrections, filler omissions/false insertions, and capture responsiveness. Repeat the chosen local configuration under the user's usual multitasking load. API comparison requires a separate approved request for each sample/model and records upload plus processing time, returned capabilities, and usage; local cold/warm timings are not API latency measurements.
 
 Treat a median processing time of at most 30 seconds for a 60-second take as a preferred product target, 30–60 seconds as usable with background review, and over 60 seconds as a reason to offer a smaller pack or CPU/GPU change. These are proposed waiting-time preferences, not performance predictions. The user can accept a longer wait for a better transcript. If neither pack is satisfactory, manual review remains usable while the implementation is tuned. Recommend hardware purchases only after a measured bottleneck is established.
+
+### Transcription modes and initial API candidates
+
+| Mode | Processing and setup | Audio boundary and availability |
+| --- | --- | --- |
+| Local default | Verified Whisper pack, CPU or tested NVIDIA backend | No upload; works offline with an installed pack |
+| API optional | Supported provider/model, personal key, evaluated price | One approved saved take is sent; needs connection; saved results remain local and available offline |
+| Off | No speech recognition | Recording, playback, manual notes, local acoustic analysis, and existing transcripts remain available |
+
+Start with one OpenAI adapter for `/v1/audio/transcriptions`, keeping the trait extensible for later evaluated providers. As checked on 4 October 2026, the file-transcription guide recommends `gpt-transcribe`; `gpt-4o-mini-transcribe` is a lower-cost candidate. Evaluate `whisper-1` when word/segment timestamps are required; the documented timestamp-granularity parameter is specific to that model. General transcription quality, filler preservation, and timing quality must be measured independently. API transcription does not supply a validated mood, pronunciation, or intonation assessment. [S24]
+
+The first implementation submits a complete saved take as verified, untrimmed 16 kHz mono PCM WAV. This avoids automatic live streaming and preserves original time coordinates. The documented file limit is 25 MB; enforce the current limit before submission and explain oversize files. Automatic chunking, multi-speaker diarization, other providers, and live transcription are later work. Selecting API does not force a local pack download or trigger an upload. [S24]
+
+Use a `TranscriptionProvider` interface with validate_configuration, capabilities, test_connection, transcribe, and cancel. Local Whisper and the initial API adapter normalize into a versioned `TranscriptionResult`: source asset/hash, prepared audio hash, provider/model/engine, language, settings, raw text, optional segments/word timings, timing source and validity, request/run IDs, finish state, and available usage. Parameters follow each model's capability table; language hints and prompts are not assumed interchangeable. Store absent timings/confidence as `null` with a reason. Validate bounds, monotonicity, schema, and completeness before presenting results; silence or unusable output is explained rather than interpreted as flawless speech.
+
+Audio preview approval is single-use and binds the prepared audio hash, included hints, exact provider configuration/model, and price version. Rust rechecks source identity and approval before sending; changes require a new preview. Cache by exact uploaded audio, hints, provider/model/settings, and adapter version. Reopening a screen uses saved results; explicit Retranscribe creates a new run and may cost money. Provider retirement prompts a new configuration and approval; it never silently swaps models.
 
 ### Coaching modes
 
@@ -380,13 +400,13 @@ Treat a median processing time of at most 30 seconds for a 60-second take as a p
 | --- | --- | --- | --- |
 | API default | Selected provider or explicitly remote server | Personal key, supported adapter, model | New feedback requires its connection; saved results remain offline |
 | Local LLM optional | User-managed endpoint on this computer | Tested local server and suitable model | Offline while runtime is available; no silent cloud fallback |
-| Off | No LLM call | None | Playback, local transcript, rules, and manual feedback remain available |
+| Off | No LLM call | None | Playback, existing transcripts, selected transcription mode, rules, and manual feedback remain available |
 
-Keep transcription and coaching settings independent. Switching LLM provider must not alter Whisper or upload audio. Start with one tested hosted provider adapter and one tested local endpoint adapter. A configurable OpenAI-compatible protocol is useful, but providers differ in schemas, token limits, usage reporting, and supported parameters. Compatibility must be tested per provider; do not advertise every API as interchangeable. Native provider adapters can be added without changing saved sessions. llama.cpp server is a candidate for the optional local protocol. [S20]
+Keep transcription and coaching settings independent. Switching LLM provider must not change the transcription mode/model or approve an audio upload. Start with one tested hosted coaching adapter and one tested local endpoint adapter. A configurable OpenAI-compatible protocol is useful, but providers differ in schemas, token limits, usage reporting, and supported parameters. Compatibility must be tested per provider and service purpose; do not advertise every API as interchangeable. Native provider adapters can be added without changing saved sessions. llama.cpp server is a candidate for the optional local coaching protocol. [S20]
 
-The provider is not yet selected. Evaluate the user's chosen provider/model on actual correction tasks for meaning preservation, evidence grounding, latency, structured output, and cost. Keep provider/model IDs configurable so the app can survive model retirement. Do not hard-code a current best model or claim that a larger model provides accurate pronunciation assessment from a transcript.
+OpenAI is the initial hosted coaching provider; the coaching model remains to be evaluated on correction tasks for meaning preservation, evidence grounding, latency, structured output, and cost. Keep provider/model IDs configurable so the app can survive model retirement. Do not hard-code a current best model or claim that a larger model provides accurate pronunciation assessment from a transcript.
 
-### Provider request and response contract
+### Coaching provider request and response contract
 
 Use a CoachingProvider interface with validate_configuration, test_connection, generate_feedback, and cancel. Normalize provider responses into a versioned FeedbackResult. Required request fields are a request ID, transcript revision ID, selected text, prompt, focus, response budget, schema version, and explicitly selected comparison context. Required result fields include provider/model IDs, request ID where supplied, evidence spans, optional suggestions, finish state, and usage when available. Cache results by the exact redacted input, prompt/schema versions, provider, model, and generation settings.
 
@@ -398,11 +418,15 @@ Use proposed defaults of a 10-second connect timeout and 60-second request timeo
 
 ### Data sent and credentials
 
-The normal API payload contains only the selected transcript or redacted excerpt, task prompt, focus, and explicitly chosen context. Audio, unrelated notes, the phrase collection, and the full practice history stay local. Exact audio metrics need not leave the computer; if the user includes them, label their source and limitations. No web search, provider tools, remote file upload, or persistent provider conversation is needed for this text feedback workflow.
+The text coaching API payload contains only the selected transcript or redacted excerpt, task prompt, focus, and explicitly chosen context. It contains no audio. Unrelated notes, the phrase collection, and the full practice history stay local. Exact audio metrics need not leave the computer; if the user includes them, label their source and limitations. No web search, provider tools, remote file upload, or persistent provider conversation is needed for this text feedback workflow.
+
+The separate API transcription request contains only the approved prepared audio and its previewed model/language/context options. Send the file directly to the transcription endpoint using native multipart transport, not a persistent Files API object or provider conversation. Local transcription and acoustic analysis send nothing. Audio submission does not authorize text coaching, additional audio analysis, or later retranscription. Uploaded speech itself may contain personal information; the preview must not describe the audio as anonymized merely because notes are excluded.
 
 Store the personal API key in Windows Credential Manager through a narrow Rust interface; SQLite stores only the credential reference. CredWrite is the Windows facility for creating or updating a credential. [S18] Receive a new key once through the settings form, store it in native code, clear the field, and subsequently return only key-present status. Exclude keys from logs, crash reports, command lines, source code, frontend persistence, and backups. Removing a key removes the local credential but does not revoke it at the provider. Operating-system credential storage does not protect against all code running as the same user.
 
-The review button and setup explanation disclose the selected recipient and the possibility of API billing. Provider retention and processing terms apply to transmitted text; a locally stored result is not evidence of provider deletion. Inspect current provider terms during adapter selection. An offline or failed request is never silently queued for dispatch on reconnection. The user explicitly requests it again.
+Bind credentials to a validated recipient and service purpose. The same OpenAI credential may be selected for both services only through explicit configuration; choosing coaching does not enable transcription. Endpoint or provider changes require revalidation and fresh credential association. The frontend sends trusted asset IDs and configuration references, never filesystem paths, upload bytes, or stored secrets.
+
+Each service's review button and setup explanation disclose the recipient, payload type, and possible API billing. Provider processing and retention terms apply to transmitted audio or text; saving a result locally or deleting a local take does not establish provider deletion. OpenAI currently documents no training by default and no abuse-monitoring/application-state retention for `/v1/audio/transcriptions`; this is an endpoint-specific policy, not a blanket claim for all OpenAI services. Link current terms and recheck before enabling an adapter. An offline or failed request is never silently queued for dispatch on reconnection; the user explicitly requests it again. [S26]
 
 ### Local assets
 
@@ -433,6 +457,8 @@ For short or poor recordings, return unavailable values with reasons. Suggested 
 
 Speech recognition may normalize repetitions or omit filled pauses. Therefore, counting "um" in the transcript cannot establish the actual filler count. The safe first-release experience is candidate review with replay and manual insertion of missed events. If the user reviews only candidates but not the entire take, label the result "confirmed candidates" rather than a complete rate. A dedicated disfluency model is a separate future project with its own annotation and evaluation dataset.
 
+These rules apply to local and API transcripts. Capability support and better general text accuracy do not demonstrate filler recall or reliable word alignment. Keep each run's raw text and edits separate. Pauses, pitch, and energy are computed locally from the original audio regardless of ASR mode. Prosody milestone P adds an estimated pitch/energy contour and imitation comparison without scores or mood labels. Untimed API text allows audio contours and whole-take listening; per-word stress or timed filler playback requires separately verified alignment. Do not manufacture timestamps from word positions or confidence percentages from model log probabilities.
+
 Use a maintained contextual lexicon for possible fillers, but do not flag every "like," "so," "well," or "you know" automatically. Quoted examples, discourse markers, and ordinary words require context. A candidate that came from a model is still a candidate until reviewed.
 
 Text coaching receives the selected transcript or redacted excerpt, prompt, chosen focus, and only explicitly included precomputed metrics. It should return an optional main observation, quoted evidence spans, a small set of suggested rewrites, and one next exercise. It must not infer actual pace, pronunciation, accent quality, emotions, or a speech disorder from text.
@@ -457,14 +483,15 @@ Use one SQLite database owned by the Rust layer. Enable foreign keys and version
 | attempts | id, step_id, repetition_group_id, ordinal, capture_state | Links a take to its recording |
 | audio_assets | id, relative_path, sha256, bytes, sample_rate, channels, duration | Can be owned recording or imported reference |
 | transcript_revisions | id, attempt_id, kind, text, parent_id, created_at | Raw, user-corrected, and suggested versions stay separate |
-| transcript_segments | id, revision_id, start_ms, end_ms, text, alignment_kind | Timing refers to the original audio coordinate system |
+| transcript_segments | id, revision_id, nullable start_ms/end_ms, text, alignment_kind, unavailable_reason | Verified timing refers to original audio; untimed text is explicitly unaligned |
 | analysis_runs | id, attempt_id, engine_version, provider_id, model_id, settings, state | Captures local or hosted provenance and failure information |
 | task_conditions | attempt_id, familiarity, preparation, audience, challenge, follow_up | Separates difficulty from improvement |
 | transfer_reviews | id, situation, date, listener_text, self_report, next_focus | Real conversation reflection; audio optional |
 | progression_events | id, goal, previous_stage, next_stage, reason, user_choice | Records transparent recommendations and overrides |
-| provider_configs | id, mode, protocol, endpoint, model, credential_ref, capabilities | Nonsecret configuration only |
+| provider_configs | id, service_purpose, mode, protocol, endpoint, model, credential_ref, capabilities, version | Independent transcription/coaching configuration; nonsecret only |
+| transcription_requests | id, attempt_id, source_asset_id, prepared_hash, hints_hash, provider_id, config_version, approved_preview_hash, state | Audio requests have their own approval and immutable input identity |
 | coaching_requests | id, revision_id, redacted_input_hash, provider_id, state, schema | Tracks requests without duplicating full sensitive payloads in logs |
-| usage_records | request_id, tokens, price_version, estimated_cost, charge_state | Reported, estimated, or unknown usage stays distinct |
+| usage_records | request_id, purpose, audio_duration, billing_units, tokens, price_version, reserved_cost, estimated_cost, charge_state | Shared ledger; reported, estimated, or unknown usage stays distinct |
 | metric_values | run_id, definition_version, revision_id, key, value, unit, validity_reason | Values can be unavailable without becoming zero |
 | annotations | id, attempt_id, span, source, category, review_state | Candidate, confirmed, dismissed, or manually added |
 | feedback_items | id, run_id, evidence_span, suggestion, acceptance_state | Suggestions remain traceable |
@@ -484,13 +511,15 @@ File creation and database writes cannot be one filesystem transaction. Use an e
 
 A changed transcript invalidates dependent text analyses. Keep old results attached to their original revision and offer Reanalyze. Do not silently overwrite historical results with a new model or algorithm. Progress views either filter to comparable versions or clearly identify a change.
 
+A changed transcription provider/model, audio preparation, or context creates a new analysis run and raw transcript revision. Link metrics and corrections to their original run/revision. Preserve timing capabilities and prepared-to-original timeline mappings. Request and usage records share an operation identity across services so retries and cost reservations cannot be double-counted or collide.
+
 A changed API provider, redaction, or prompt template similarly creates a new coaching run. Store the exact text used as a versioned local analysis artifact when needed for evidence alignment, with the same deletion and backup policy as transcripts; logs retain only hashes and IDs. Preserve redaction-to-source span mappings so evidence can be inspected without attaching a suggestion to the wrong words.
 
 ## 13 Backups portability and offline operation
 
 Local storage makes information available without a service account, but it does not protect against drive failure. Build backup and restore into the first usable version. A backup includes a consistent database snapshot, referenced recordings, imported clips, curriculum overrides, and a manifest with schema version and checksums. Model weights and regenerable caches are excluded by default, with an optional self-contained export that includes installed packs when redistribution permits.
 
-Include saved API feedback, task conditions, transfer reviews, progression history, and usage records. Exclude API keys and authentication headers. Restored provider configurations show Credentials needed until a key is re-entered; never reuse an accidental credential reference belonging to a different configuration. Disable pending API dispatch on restore. Deleting local material does not request deletion at a provider or remove older backups.
+Include saved local/API transcripts, analysis provenance, API feedback, task conditions, transfer reviews, progression history, and usage records. Exclude API keys and authentication headers. Restored provider configurations show Credentials needed until a key is re-entered; never reuse an accidental credential reference belonging to a different configuration. Invalidate audio/text preview approvals and disable all pending API dispatch on restore. Deleting local material does not request deletion at a provider or remove older backups.
 
 Use SQLite's online backup mechanism or another documented consistent snapshot operation. Do not copy only an active database file while ignoring its journal state. SQLite documents the backup API specifically for creating consistent backups of live databases. [S14]
 
@@ -502,7 +531,7 @@ Restore first into a staging directory. Reject path traversal entries, unreasona
 
 Provide readable exports in addition to full backup: transcript and notes as Markdown or text, measurements as CSV, and original WAV audio. A complete session export can be a ZIP with these items and a JSON manifest. The app should not be the only software capable of reading a person's own practice information.
 
-All normal app screens, curriculum, fonts, icons, recordings, local transcripts, and previously saved feedback must work without network access. New API coaching, connection tests, and explicitly requested API follow-ups need a connection. Other permitted network use is model installation, optional update checks, and opening a chosen external link. No remote fonts, CDN assets, analytics, hidden inference, or audio upload belong in the default workflow. The offline acceptance test covers local practice; it must not falsely claim fresh API responses work offline.
+All normal app screens, curriculum, fonts, icons, recordings, saved local/API transcripts, and previously saved feedback must work without network access. Local transcription works with an installed pack. Fresh API transcription, API coaching, connection tests, and explicitly requested API follow-ups need a connection. Offer local transcription as an explicit offline choice when its pack is installed; never change modes automatically or dispatch uploads upon reconnection. Other permitted network use is model installation, optional update checks, and opening a chosen external link. No remote fonts, CDN assets, analytics, hidden inference, or automatic audio upload belong in the default workflow. The offline acceptance test covers local practice and saved material; it must not claim fresh API responses work offline.
 
 Provide an installer path that works offline. On Windows, account for the WebView2 dependency; Tauri documents an offline installer option. Package size must distinguish the app, the WebView runtime when needed, and selected model packs. A small desktop shell does not imply a small full AI installation. [S15]
 
@@ -528,10 +557,12 @@ Redact authorization headers, provider error bodies that echo input, and URL sec
 | Disk becomes full | Report the failed save without claiming success | Preserve recoverable data; choose space to export or clear |
 | Model missing or corrupt | Keep manual practice available | Import or reinstall a verified pack |
 | Local inference process crashes | Mark analysis failed, keep audio saved | Retry once if appropriate, then offer manual action |
-| API offline or quota exhausted | New API feedback unavailable; saved material usable | Manual review or an explicit later request |
+| API offline or quota exhausted | Fresh API transcription/feedback unavailable; saved material usable | Manual review or explicitly selected local transcription; no automatic upload later |
 | API key rejected | Configuration needs attention | Replace key or select another configured provider |
 | API timeout after submission | Result and possible charge are uncertain | Explicit retry with possible extra charge disclosed |
-| API output invalid or refused | No successful coaching assessment shown | Inspect safe error, retry explicitly, or use manual review |
+| API output invalid or refused | No fabricated transcript or successful coaching assessment shown | Inspect safe error, retry explicitly, or use manual review |
+| API audio exceeds limit | Explain size limit before submission; no charge initiated | Keep audio; choose local transcription or a shorter take |
+| API model lacks timing | Text and whole-take playback remain usable | Explain unavailable alignment; optionally request a verified local alignment job |
 | App closes unexpectedly | Recovery entry appears on next launch | Recover valid chunks and interrupted jobs |
 | Backup destination missing | Last valid backup remains listed | Choose a destination or retry later |
 | Imported file unsupported | Explain supported formats before changing data | Convert externally or use a supported file |
@@ -562,15 +593,17 @@ Organize the code around product features. Shared controls belong in a small des
 | src/lib/ipc | Typed native commands and event adapters |
 | src-tauri/src/audio | Device access, buffers, capture, resampling |
 | src-tauri/src/storage | Database, migrations, assets, recovery |
-| src-tauri/src/inference | Local Whisper queue, worker protocol, output validation |
-| src-tauri/src/coaching | Provider adapters, feedback contract, request lifecycle, usage |
+| src-tauri/src/inference | Shared transcription queue, local Whisper protocol, common result validation |
+| src-tauri/src/transcription | TranscriptionProvider adapters, prepared audio preview, approved upload lifecycle |
+| src-tauri/src/coaching | Text provider adapters, feedback contract, request lifecycle |
+| src-tauri/src/providers | Shared validated HTTP transport, capability/configuration records, usage ledger and budget reservations |
 | src-tauri/src/credentials | Native secret storage and provider binding |
 | src-tauri/src/learning | Progression rules, task conditions, transfer evidence |
 | src-tauri/src/backup | Snapshot, archive, restore, manifests |
 | src-tauri/src/commands | Narrow application commands and validation |
 | resources/content | Versioned prompts, guides, licensed clips |
 
-The core commands should include list_input_devices, start_recording, stop_recording, list_sessions, get_session, create_transcript_revision, enqueue_analysis, cancel_analysis, preview_coaching_request, request_coaching, test_provider, store_provider_key, remove_provider_key, save_transfer_review, choose_challenge, search_content, save_phrase, export_session, create_backup, and restore_backup_preview. The destructive restore commit is a separate command from preview.
+The core commands should include list_input_devices, start_recording, stop_recording, list_sessions, get_session, create_transcript_revision, enqueue_analysis, cancel_analysis, preview_transcription_request, request_transcription, preview_coaching_request, request_coaching, test_provider, store_provider_key, remove_provider_key, save_transfer_review, choose_challenge, search_content, save_phrase, export_session, create_backup, and restore_backup_preview. The destructive restore commit is a separate command from preview. A generic analysis enqueue cannot bypass API preview approval.
 
 The frontend sends identifiers and small validated values. The backend resolves paths and checks state. Every mutation that can be retried needs an idempotency key or an equivalent operation identity. A second Stop request must not create a duplicate asset or session.
 
@@ -583,6 +616,8 @@ The frontend sends identifiers and small validated values. The backend resolves 
 | analysis_progress | job_id, stage, optional progress; never invent percent completion |
 | analysis_completed | job_id, run_id, transcript_revision_id, available result kinds |
 | create_transcript_revision | parent_revision_id and expected version; preserves source revision |
+| preview_transcription_request | trusted saved asset ID and configuration; returns prepared-audio identity/playback ID, duration/size, hints, recipient/model, capabilities, price version, estimated cost, and preview hash; no stored key/path/audio array |
+| request_transcription | approved preview hash, source/prepared hashes, provider config version, request ID; validate single-use approval, state, size, and shared budget before native upload |
 | preview_coaching_request | selected revision and provider; returns exact text and estimated size, never a stored key |
 | request_coaching | approved payload hash, provider config version, request ID; reject stale preview or changed endpoint |
 | choose_challenge | task conditions and reason; preserve user override and prior evidence |
@@ -600,13 +635,15 @@ Audio is likely to dominate personal-data storage. At 48,000 samples per second,
 
 Show storage by category: recordings, reference clips, model packs, backups, and regenerable cache. Clearing cache is distinct from deleting recordings. Offer retention choices, but keep audio indefinitely by default until the user explicitly chooses a policy. If audio is deleted while notes remain, the history view must state that playback and reanalysis are unavailable.
 
-Local Whisper has no per-minute hosted transcription charge. Hosted LLM feedback is billed under the chosen provider's terms; a consumer chat subscription must not be assumed to include API usage. Exact costs depend on the selected model, tokens, caching rules, and any additional provider charges. No provider price is fixed by this plan.
+Local Whisper has no per-minute hosted transcription charge. Optional API transcription and hosted LLM feedback are billed under the chosen provider's terms; a consumer chat subscription must not be assumed to include API usage. Exact costs depend on the model's billing units, audio duration, tokens, caching rules, and additional charges. Store dated prices rather than treating this document as a permanent quote.
+
+For planning, current documented rates checked on 4 October 2026 are `gpt-transcribe` USD 0.0045/min, `gpt-4o-mini-transcribe` approximately USD 0.003/min, and `whisper-1` USD 0.006/min. One hour would therefore be approximately USD 0.27, 0.18, or 0.36 respectively, before text coaching, taxes, retries, or other charges. Mini's per-minute figure is an estimate for token-based billing; preserve actual billing categories. Use submitted audio duration, not the full practice-session timer, and recheck before implementation. [S25, S27]
 
 For token-priced models, estimate cost as input tokens times the input rate per million divided by one million, plus output tokens times the output rate per million divided by one million. Use the provider's actual billing categories when they differ. As a purely hypothetical example, 60 calls in a month at 2,000 input and 500 output tokens each would use 120,000 input and 30,000 output tokens. At invented example rates of USD 5 and USD 15 per million respectively, that is USD 1.05 before other charges. This illustrates arithmetic, not a quote or expected bill.
 
-Allow monthly app-level warning and stop limits. Reserve a conservative amount for an in-flight call before starting another, count explicit retries and tests, and reconcile reported usage afterward. Unknown usage after a timeout remains uncertain rather than zero. Stop new paid calls if the local budget cannot be evaluated reliably; permit a clear user override. Provider billing is authoritative: app limits cannot control other clients, retroactive price changes, or provider-side work after cancellation. Recommend provider-side spending controls where available.
+Allow monthly app-level warning and stop limits. The working extension of the confirmed coaching budget is one combined USD 5/month stop limit with a USD 4 warning for transcription plus coaching; it does not add a second allowance. This shared allocation is an engineering assumption recorded as D-22. Show subtotals by purpose. Atomically reserve a conservative amount for each in-flight call across both services, count explicit retries and tests, and reconcile reported usage afterward. Unknown usage after a timeout remains uncertain rather than zero. Stop new paid calls if the local budget cannot be evaluated reliably; permit a clear user override. Provider billing is authoritative: app limits cannot control other clients, retroactive price changes, or provider-side work after cancellation. Recommend provider-side spending controls where available.
 
-Keep feedback to one request per reviewed attempt by default. Changing views or reopening a session uses the saved result; Regenerate is a deliberate new request. Show local storage separately from API use. Other costs remain the computer, storage, electricity, backup media, and maintenance. Benchmark the existing laptop before considering a hardware purchase.
+Keep feedback to one request per reviewed attempt by default. Reuse saved transcription/feedback results when changing views or reopening a session; Retranscribe and Regenerate are deliberate new requests. A transcription model change does not automatically regenerate coaching. Show local storage separately from API use. Other costs remain the computer, storage, electricity, backup media, and maintenance. Benchmark the existing laptop before considering a hardware purchase.
 
 ## 17 Build sequence and release criteria
 
@@ -615,18 +652,21 @@ Build a vertical slice first: install, record, save, close, reopen, play, export
 | Milestone | Deliverable | Exit criterion | Planning allowance |
 | --- | --- | --- | --- |
 | 0 Feasibility | Audio, Whisper, and selected API on target PC | Recover audio, compare transcription backends, verify one bounded API result and credentials | 3–5 working days |
+| 0A Optional API transcription spike | Provider contract, model comparison, shared cost foundation | Approved saved-audio request; capabilities, cost, and failures checked | Additional 1–2 days |
 | 1 Design and shell | Tokens, navigation, real empty states, typed contracts | All key screens navigable with sample data and keyboard | 3–5 days |
 | 2 Durable practice | Recording, playback, sessions, migrations, backup and restore | Full offline manual session survives restart and restore | 6–10 days |
-| 3 Review and transcription | Worker, transcript revisions, evidence, measures | Failures preserve audio; timing and corrections remain traceable | 5–8 days |
+| 3 Review and local transcription | Worker, transcript revisions, evidence, measures | Failures preserve audio; timing and corrections remain traceable | 5–8 days |
+| 3A Optional API transcription | Native adapter, audio approval, cache, shared budget, untimed review | Separate API enablement gate passes before any user-facing upload option | Additional 3–5 days |
+| P Prosody | Local pitch/energy display and imitation overlay | Original timeline preserved; gaps shown; no grades/mood labels | Additional 4–6 days |
 | 4 Full routine | Exercises, phrases, comparisons, progressive tasks, transfer reviews | Offline routine works and unfamiliar evidence stays separate | 7–10 days |
-| 5 Coaching modes | One hosted adapter, one local endpoint adapter, usage and privacy UI | API is default; both modes pass the same feedback contract and fail safely | 6–10 days |
+| 5 Coaching modes | One hosted adapter, one local endpoint adapter, shared usage and privacy UI | API is default; both modes pass the same feedback contract and fail safely | 6–10 days |
 | 6 Release hardening | Installer, crash recovery, accessibility, performance | Release checklist passes on the supported system | 5–8 days |
 
-These sum to roughly 35–56 working days for one experienced developer before substantial scope changes. Calendar delivery is approximately 7–12 full-time weeks under favorable conditions; unfamiliar native audio, multiple operating systems, model evaluation, and user testing can extend it. A useful manual prototype arrives earlier. Multi-platform release should be estimated separately.
+The original milestones total roughly 35–56 working days for one experienced developer. The existing filler/prosody extension adds about 5–7 days, and optional API transcription adds a further 4–7 days, giving a revised allowance of about 44–70 working days. These are planning estimates, not a delivery promise; native audio, evaluation, and user testing can extend them. Once the core M0 gate passes, optional API transcription checks must not stall local durable practice. The checkbox tracker is authoritative for actual progress. Multi-platform release should be estimated separately.
 
 The acceptance suite must cover real risks rather than only rendering components:
 
-- Complete manual practice and local transcription with the network disabled, then reopen every take and saved API result. New API coaching must show unavailable without blocking practice.
+- Complete manual practice and local transcription with the network disabled, then reopen every take, saved API transcript, and saved feedback. Fresh API transcription/coaching must show unavailable without blocking practice.
 - Kill the process during recording and verify recovery against the declared loss target.
 - Force a worker crash and confirm the saved audio, notes, and next recording still work.
 - Disconnect the microphone and simulate a full disk; confirm no false Saved message appears.
@@ -636,13 +676,17 @@ The acceptance suite must cover real risks rather than only rendering components
 - Reject a corrupted archive, missing audio file, path traversal entry, and unsupported newer schema.
 - Upgrade a populated earlier schema and recover safely from a failed migration.
 - Check a packaged Windows installation without a developer runtime or internet connection.
-- Inspect network activity: local recording and transcription send nothing; explicit API coaching sends only its previewed text to the configured recipient.
+- Inspect network activity: local recording, transcription, and prosody send nothing; API transcription sends only approved prepared audio and hints; API coaching sends only its previewed text to its configured recipient.
 - Verify keys never appear in SQLite, logs, exports, frontend persistence, or backup archives.
 - Exercise authentication failure, rate limits, quota exhaustion, malformed JSON, refusal, timeout, and cancellation; check saved audio and uncertain billing states.
-- Switch API / Local LLM / Off and verify no silent fallback, automatic LLM download, or restored pending upload.
+- Switch transcription Local / API / Off independently of coaching API / Local LLM / Off; verify no silent fallback, automatic model download, or restored pending upload.
 - Change provider or endpoint and verify the previous key is not forwarded.
-- Verify cache reuse, explicit regeneration, usage accounting, budget limits, and unknown-price behavior.
+- Verify cache reuse, explicit retranscription/regeneration, usage accounting, concurrent reservations against the combined budget, and unknown-price behavior.
 - Verify a changed transcript or redaction invalidates the coaching preview and preserves old evidence.
+- Verify selecting API, setting credentials, Stop, navigation, recovery, restore, and reconnection never upload audio; changed audio/hints/recipient/model/price invalidates an approved audio preview.
+- Verify untimed API results support editing and whole-take playback without fabricated alignment; validate supported timings against the original timeline.
+- Verify API audio limits, malformed/truncated results, cancellation, and retries preserve recordings and old revisions, disclose uncertain charges, and never silently forward credentials or switch models.
+- Verify local prosody remains aligned with the original audio and absent voiced data appears as gaps; word-linked labels require tested alignment and never imply a mood or score.
 - Verify unfamiliar first attempts, rehearsal, and real conversation feedback remain separate.
 - Verify difficulty recommendations expose a reason, tolerate missing evidence, and accept user override.
 - Complete the major flows using only the keyboard and a target-platform screen reader.
@@ -653,17 +697,17 @@ Measure transcript errors, alignment error, candidate precision and missed event
 
 ## 18 Confirmed choices and remaining checks
 
-The product direction is Windows 11, local Whisper, hosted API coaching, and optional local LLM compatibility. The laptop's CPU, RAM, GPU memory, driver, and free disk space have been recorded in `DEVELOPMENT_PLAN.md`. An existing local `ggml-large-v3-turbo-q5_0` pack is available for evaluation. Verify its provenance and benchmark it before selecting a default or deciding whether any additional one-time model download is useful.
+The product direction is Windows 11, local Whisper by default, optional API audio transcription, hosted API text coaching, and optional local LLM coaching compatibility. Transcription and coaching are independently configurable. The laptop's CPU, RAM, GPU memory, driver, and free disk space have been recorded in `DEVELOPMENT_PLAN.md`. An existing local `ggml-large-v3-turbo-q5_0` pack is available for evaluation. Verify its provenance and benchmark it before selecting a default or deciding whether any additional one-time model download is useful.
 
 Practice is English only for the first release, with German a possible later extension. The interface is English and uses `en-GB` dates. Prioritize explaining complex topics, debating, and teaching someone, with subject matter drawn from sport, economics, religion, crypto, programming, anime, and books. Backups stay local in a folder selected by the user; retain original recordings until the user deletes them.
 
-OpenAI is the initial hosted coaching provider. The app stops new coaching requests at USD 5 of its recorded monthly usage and warns at USD 4 by default; these are app-level controls, not a guarantee about the provider account's total bill. Choose a configurable model after evaluating feedback quality and cost. Review its current API format, pricing, retention options, and structured-output support. API credentials are entered only in the built app; they are not part of this plan. Optional local LLM mode requires no hardware commitment or installation for this user.
+OpenAI is the initial hosted coaching provider and proposed first transcription API adapter. Coaching and ASR models are chosen separately after quality/cost checks; §10 lists current ASR candidates. The confirmed coaching cap is USD 5/month; D-22 provisionally applies it to combined API usage with a USD 4 warning, keeping total allowance unchanged. These are app-level controls, not a guarantee about the provider account's total bill. Review current formats, prices, retention, and capability support at implementation. API credentials are entered only in the built app, never chat/source. Optional local LLM coaching requires no hardware commitment or installation for this user.
 
-The first implementation task is the feasibility milestone. It should produce a small installed app that records one minute, saves and reopens it, benchmarks base.en and small.en, and obtains one validated API response through native credential storage. The durable-practice milestone must prove backup and restore. These results determine the transcription default and the provider contract before broad UI work. This document authorizes the design direction; it does not claim an implemented or tested application.
+The immediate development task remains M0 0.10: derive verified inference audio, verify existing Whisper assets, and benchmark them, including filler retention. Real capture/recovery is implemented; see the tracker for verification and pending manual checks. The optional API spike adds a separately approved saved-audio comparison after credential/budget foundations. The durable-practice milestone must prove backup and restore. Before enabling API transcription, its M3 approval, budget, failure, and capability gate must pass. This specification describes required behavior; it does not claim that transcription, coaching, or prosody are already implemented.
 
 ## 19 Primary sources
 
-Technical documentation and model information were checked on 28 September 2026. Product behavior, visual tokens, schedules, and engineering targets in this plan are proposed design decisions. Pin exact tested releases and keep these source links in the project's decision record.
+Original technical documentation and model information were checked on 28 September 2026; API transcription sources S24–S27 were checked on 4 October 2026. Product behavior, visual tokens, schedules, and engineering targets in this plan are proposed design decisions. Pin exact tested releases and keep these source links in the project's decision record.
 
 - S1 shadcn/ui documentation and components: https://ui.shadcn.com/docs and https://ui.shadcn.com/docs/components/radix/sidebar
 - S2 Radix accessibility overview: https://www.radix-ui.com/primitives/docs/overview/accessibility
@@ -689,5 +733,9 @@ Technical documentation and model information were checked on 28 September 2026.
 - S21 Council of Europe qualitative aspects of spoken language: https://www.coe.int/en/web/common-european-framework-reference-languages/table-3-cefr-3.3-common-reference-levels-qualitative-aspects-of-spoken-language-use
 - S22 Suzuki and Hanzawa, Massed task repetition is a double-edged sword for fluency development: https://doi.org/10.1017/S0272263121000358
 - S23 ASUS product guide documenting Ryzen 7 3750H and GTX 1650 laptop configurations: https://www.asus.com/event/2019/productguide/in/ROG_Buyers_Guide_Q3_2019.pdf
+- S24 OpenAI file transcription guide (models, upload limit, timestamps): https://developers.openai.com/api/docs/guides/speech-to-text
+- S25 OpenAI API pricing: https://developers.openai.com/api/docs/pricing
+- S26 OpenAI API data controls and endpoint retention: https://developers.openai.com/api/docs/guides/your-data
+- S27 OpenAI Whisper API model and per-minute price: https://developers.openai.com/api/docs/models/whisper-1
 
 The speaking exercises also draw on the practical recording and imitation guidance discussed in the preceding conversation: https://learnenglish.britishcouncil.org/level/improve-your-english-level/how-improve-your-english-speaking and https://www.britishcouncil.org/voices-magazine/ten-dos-ielts-speaking-test

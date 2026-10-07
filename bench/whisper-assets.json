@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "verifiedOn": "2026-10-04",
+  "runtimeVersion": "1.9.1",
+  "releaseMetadata": "https://api.github.com/repos/ggml-org/whisper.cpp/releases/tags/v1.9.1",
+  "runtimes": [
+    {
+      "backend": "cpu",
+      "url": "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.1/whisper-bin-x64.zip",
+      "archiveBytes": 7982101,
+      "archiveSha256": "7d8be46ecd31828e1eb7a2ecdd0d6b314feafd82163038ab6092594b0a063539",
+      "executableSha256": "58245314fb73b30fbd0cf0542c5c172e23f02b6eb7cad7b51e792439cf5e1755"
+    },
+    {
+      "backend": "cuda",
+      "url": "https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.1/whisper-cublas-11.8.0-bin-x64.zip",
+      "archiveBytes": 278557654,
+      "archiveSha256": "aecdce0e4d4bb758a7c72a31f3f9f19a7b6d861405fd2da743cd86398633c963",
+      "executableSha256": "4bf174113843613cbec146e73e6820a767e54b0e1c736f2c6d7ab16aac4c245d",
+      "supplemental": {
+        "metadata": "https://developer.download.nvidia.com/compute/cuda/redist/redistrib_11.8.0.json",
+        "url": "https://developer.download.nvidia.com/compute/cuda/redist/libcublas/windows-x86_64/libcublas-windows-x86_64-11.11.3.6-archive.zip",
+        "archiveBytes": 420850025,
+        "archiveSha256": "67b0934a6359e4ee26fff823c356021589d392c4fd49ca12624f570edc08e2b9",
+        "folder": "libcublas-windows-x86_64-11.11.3.6-archive",
+        "libraries": ["cublas64_11.dll", "cublasLt64_11.dll"]
+      }
+    }
+  ],
+  "modelMetadata": "https://huggingface.co/api/models/ggerganov/whisper.cpp/tree/main?recursive=false&expand=false",
+  "models": [
+    { "id": "base", "file": "ggml-base.bin", "bytes": 147951465, "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe" },
+    { "id": "large-v3-turbo-q5_0", "file": "ggml-large-v3-turbo-q5_0.bin", "bytes": 574041195, "sha256": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2" }
+  ],
+  "fixture": {
+    "url": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.9.1/samples/jfk.wav",
+    "sha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e",
+    "purpose": "Official JFK sample for protocol verification only; not the personal quality benchmark"
+  }
+}
