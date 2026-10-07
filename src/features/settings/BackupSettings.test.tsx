@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { expect, it, vi } from "vitest";
@@ -7,7 +7,7 @@ import { createMockClient } from "@/lib/ipc/mock-client";
 import type { BackupStatus } from "@/lib/ipc/schemas";
 import { BackupSettings } from "./BackupSettings";
 
-it("chooses a folder natively, reports verified and failed backups, and checks a backup without changing data", async () => {
+it("chooses a folder natively, reports verified and failed backups, checks a backup, and restores only after confirmation", async () => {
   const user = userEvent.setup();
   let status: BackupStatus = { destination: null, destinationAvailable: false, backups: [] };
   const chosen: BackupStatus = { destination: "E:\\Backups", destinationAvailable: true, backups: [] };
@@ -25,6 +25,7 @@ it("chooses a folder natively, reports verified and failed backups, and checks a
       sessions: 2, trashedSessions: 1, recordings: 3, audioBytes: 2048, unavailableRecordings: 0,
     })),
     discardRestorePreview: vi.fn(async () => {}),
+    restoreBackup: vi.fn(async () => ({ rollbackFolder: "restore-rollback/before-restore-2026-10-08-120000" })),
   };
   render(<QueryClientProvider client={new QueryClient()}><IpcContext.Provider value={client}><BackupSettings /></IpcContext.Provider></QueryClientProvider>);
 
@@ -48,4 +49,16 @@ it("chooses a folder natively, reports verified and failed backups, and checks a
   expect(screen.getByText(/current data has not been changed/)).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Done" }));
   expect(client.discardRestorePreview).toHaveBeenCalledWith("restore-1");
+
+  await user.click(screen.getByRole("button", { name: /Check a backup/ }));
+  await user.click(await screen.findByRole("button", { name: "Replace current data…" }));
+  const dialog = screen.getByRole("alertdialog");
+  expect(dialog).toHaveTextContent("Your current data is not deleted");
+  await user.click(within(dialog).getByRole("button", { name: "Keep current data" }));
+  expect(client.restoreBackup).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Replace current data…" }));
+  await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Replace current data" }));
+  expect(await screen.findByText(/Backup restored\. The data you had before is kept/)).toHaveTextContent("before-restore-2026-10-08-120000");
+  expect(client.restoreBackup).toHaveBeenCalledWith("restore-1");
+  expect(screen.queryByText("This backup passed every check")).not.toBeInTheDocument();
 });

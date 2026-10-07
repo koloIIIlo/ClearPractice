@@ -12,7 +12,22 @@ use storage::recording::{RecoverableRecording, SavedRecording};
 use tauri::{Emitter, Manager, State};
 
 struct ApiAccounting(Result<api::budget::BudgetOwner, String>, std::path::PathBuf);
-struct SessionStorage(Result<storage::database::DatabaseOwner, String>);
+/// The session database owner. Restore swaps it under the write lock; every other
+/// command holds the read lock for the whole of its storage or file work.
+struct SessionStorage(std::sync::RwLock<Result<storage::database::DatabaseOwner, String>>);
+
+impl SessionStorage {
+    fn with<T>(
+        &self,
+        work: impl FnOnce(&storage::database::DatabaseOwner) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let guard = self
+            .0
+            .read()
+            .map_err(|_| "Session storage is unavailable.".to_string())?;
+        work(guard.as_ref().map_err(Clone::clone)?)
+    }
+}
 
 #[derive(serde::Deserialize, Default)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -31,11 +46,13 @@ async fn list_sessions(
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let filter = filter.unwrap_or_default();
-        storage.0.as_ref().map_err(Clone::clone)?.list_sessions(
-            filter.query.as_deref(),
-            filter.exercise_type.as_deref(),
-            filter.favorites_only,
-        )
+        storage.with(|owner| {
+            owner.list_sessions(
+                filter.query.as_deref(),
+                filter.exercise_type.as_deref(),
+                filter.favorites_only,
+            )
+        })
     })
     .await
     .map_err(|_| "Session storage worker failed.".to_string())?
@@ -48,11 +65,7 @@ async fn get_session(
 ) -> Result<serde_json::Value, String> {
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        storage
-            .0
-            .as_ref()
-            .map_err(Clone::clone)?
-            .get_session(&session_id)
+        storage.with(|owner| owner.get_session(&session_id))
     })
     .await
     .map_err(|_| "Session storage worker failed.".to_string())?
@@ -69,13 +82,7 @@ async fn update_session(
 ) -> Result<(), String> {
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        storage.0.as_ref().map_err(Clone::clone)?.update_session(
-            &session_id,
-            &title,
-            &notes,
-            &tags,
-            favorite,
-        )
+        storage.with(|owner| owner.update_session(&session_id, &title, &notes, &tags, favorite))
     })
     .await
     .map_err(|_| "Session storage worker failed.".to_string())?
@@ -88,7 +95,7 @@ async fn get_saved_recording(
 ) -> Result<SavedRecording, String> {
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        storage.0.as_ref().map_err(Clone::clone)?.checked_recording(&asset_id)
+        storage.with(|owner| owner.checked_recording(&asset_id))
     })
     .await
     .map_err(|_| "Recording storage worker failed.".to_string())?
@@ -176,21 +183,19 @@ async fn start_recording(
     let service = service.inner().clone();
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        storage.0.as_ref().map_err(Clone::clone)?.reserve(
-            &request.attempt_id,
-            &request.idempotency_key,
-            &request.title,
-            context.as_ref(),
-        )?;
-        let status = service.start(request)?;
-        if let Some(saved) = status.asset.as_ref().filter(|_| status.phase == "saved") {
-            storage
-                .0
-                .as_ref()
-                .map_err(Clone::clone)?
-                .commit_recording(saved)?;
-        }
-        Ok(status)
+        storage.with(|owner| {
+            owner.reserve(
+                &request.attempt_id,
+                &request.idempotency_key,
+                &request.title,
+                context.as_ref(),
+            )?;
+            let status = service.start(request)?;
+            if let Some(saved) = status.asset.as_ref().filter(|_| status.phase == "saved") {
+                owner.commit_recording(saved)?;
+            }
+            Ok(status)
+        })
     })
     .await
     .map_err(|_| "Recording worker failed.".to_string())?
@@ -206,12 +211,11 @@ async fn stop_recording(
     let service = service.inner().clone();
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let saved = service.stop(&attempt_id)?;
-        storage
-            .0
-            .as_ref()
-            .map_err(Clone::clone)?
-            .commit_recording(&saved)?;
+        let saved = storage.with(|owner| {
+            let saved = service.stop(&attempt_id)?;
+            owner.commit_recording(&saved)?;
+            Ok(saved)
+        })?;
         let _ = app.emit("recording_saved", RecordingStatus::saved(saved.clone()));
         Ok(saved)
     })
@@ -237,23 +241,16 @@ async fn list_recordings(
     let service = service.inner().clone();
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let hidden = hidden_assets(&storage)?;
-        Ok(storage::recording::list_saved(&service.root)?
-            .into_iter()
-            .filter(|r| !hidden.contains(&r.asset_id))
-            .collect())
+        storage.with(|owner| {
+            let hidden = owner.hidden_asset_ids()?;
+            Ok(storage::recording::list_saved(&service.root)?
+                .into_iter()
+                .filter(|r| !hidden.contains(&r.asset_id))
+                .collect())
+        })
     })
     .await
     .map_err(|_| "Recording storage failed.".to_string())?
-}
-
-/// Takes in Trash or awaiting permanent removal never appear in the library.
-/// Without session storage nothing can be in Trash, so nothing is hidden.
-fn hidden_assets(storage: &SessionStorage) -> Result<std::collections::HashSet<String>, String> {
-    match &storage.0 {
-        Ok(owner) => owner.hidden_asset_ids(),
-        Err(_) => Ok(Default::default()),
-    }
 }
 
 #[tauri::command]
@@ -264,16 +261,19 @@ async fn list_recoverable_recordings(
     let service = service.inner().clone();
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let hidden = hidden_assets(&storage)?;
-        let active = service
-            .status()?
-            .filter(|s| matches!(s.phase.as_str(), "preparing" | "recording" | "finalizing"));
-        let list = storage::recording::list_recoverable(&service.root)?;
-        Ok(list
-            .into_iter()
-            .filter(|r| active.as_ref().is_none_or(|a| a.attempt_id != r.attempt_id))
-            .filter(|r| !hidden.contains(&r.attempt_id))
-            .collect())
+        // Takes in Trash or awaiting permanent removal are never offered for recovery.
+        storage.with(|owner| {
+            let hidden = owner.hidden_asset_ids()?;
+            let active = service
+                .status()?
+                .filter(|s| matches!(s.phase.as_str(), "preparing" | "recording" | "finalizing"));
+            let list = storage::recording::list_recoverable(&service.root)?;
+            Ok(list
+                .into_iter()
+                .filter(|r| active.as_ref().is_none_or(|a| a.attempt_id != r.attempt_id))
+                .filter(|r| !hidden.contains(&r.attempt_id))
+                .collect())
+        })
     })
     .await
     .map_err(|_| "Recording storage failed.".to_string())?
@@ -289,15 +289,16 @@ async fn recover_recording(
     let service = service.inner().clone();
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        if hidden_assets(&storage)?.contains(&attempt_id) {
-            return Err("This take belongs to a session in Trash. Restore the session first.".into());
-        }
-        let saved = service.recover(&attempt_id)?;
-        storage
-            .0
-            .as_ref()
-            .map_err(Clone::clone)?
-            .commit_recording(&saved)?;
+        let saved = storage.with(|owner| {
+            if owner.hidden_asset_ids()?.contains(&attempt_id) {
+                return Err(
+                    "This take belongs to a session in Trash. Restore the session first.".into(),
+                );
+            }
+            let saved = service.recover(&attempt_id)?;
+            owner.commit_recording(&saved)?;
+            Ok(saved)
+        })?;
         let _ = app.emit("recording_saved", RecordingStatus::saved(saved.clone()));
         Ok(saved)
     })
@@ -312,8 +313,11 @@ async fn get_recording_playback_path(
 ) -> Result<String, String> {
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        storage.0.as_ref().map_err(Clone::clone)?.playback_path(&asset_id)
-            .map(|path| path.to_string_lossy().into_owned())
+        storage.with(|owner| {
+            owner
+                .playback_path(&asset_id)
+                .map(|path| path.to_string_lossy().into_owned())
+        })
     })
     .await
     .map_err(|_| "Recording storage failed.".to_string())?
@@ -326,7 +330,7 @@ async fn get_recording_waveform(
 ) -> Result<audio::peaks::WaveformPeaks, String> {
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        storage.0.as_ref().map_err(Clone::clone)?.waveform(&asset_id)
+        storage.with(|owner| owner.waveform(&asset_id))
     })
     .await
     .map_err(|_| "Recording storage failed.".to_string())?
@@ -337,7 +341,7 @@ fn with_storage<T: Send + 'static>(
     work: impl FnOnce(&storage::database::DatabaseOwner) -> Result<T, String> + Send + 'static,
 ) -> tauri::async_runtime::JoinHandle<Result<T, String>> {
     let storage = storage.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || work(storage.0.as_ref().map_err(Clone::clone)?))
+    tauri::async_runtime::spawn_blocking(move || storage.with(work))
 }
 
 #[tauri::command]
@@ -503,6 +507,58 @@ async fn preview_restore(
     .map_err(|_| "Restore check failed.".to_string())?
 }
 
+/// Replaces the current profile with a checked backup (plan 2.20). The previous
+/// data is kept as rollback material; any failure puts it back.
+#[tauri::command]
+async fn restore_backup(
+    service: State<'_, Arc<CaptureService>>,
+    storage: State<'_, Arc<SessionStorage>>,
+    staging_id: String,
+) -> Result<backup::RestoreOutcome, String> {
+    if service.is_active() {
+        return Err("Stop the recording before restoring a backup.".into());
+    }
+    let root = service.root.clone();
+    let service = service.inner().clone();
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = storage
+            .0
+            .write()
+            .map_err(|_| "Session storage is unavailable.".to_string())?;
+        if service.is_active() {
+            return Err("Stop the recording before restoring a backup.".into());
+        }
+        // Close the current database before its folder moves.
+        drop(std::mem::replace(&mut *guard, Err("A restore is in progress.".into())));
+        let swapped = backup::replace_profile(&root, &staging_id, storage::recording::now_ms());
+        let outcome = match swapped {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                *guard = storage::database::DatabaseOwner::open(&root);
+                return Err(error);
+            }
+        };
+        match storage::database::DatabaseOwner::open(&root) {
+            Ok(owner) => {
+                *guard = Ok(owner);
+                backup::finish_restore(&root)?;
+                Ok(outcome)
+            }
+            Err(error) => {
+                let rolled_back = backup::roll_back(&root);
+                *guard = storage::database::DatabaseOwner::open(&root);
+                Err(match rolled_back {
+                    Ok(()) => format!("The restored data could not be opened ({error}). Your previous data was put back."),
+                    Err(rollback) => format!("The restored data could not be opened ({error}), and putting your previous data back failed ({rollback}). Restart ClearPractice; it retries at start."),
+                })
+            }
+        }
+    })
+    .await
+    .map_err(|_| "Restore failed.".to_string())?
+}
+
 #[tauri::command]
 async fn discard_restore_preview(
     storage: State<'_, Arc<SessionStorage>>,
@@ -535,10 +591,13 @@ pub fn run() {
         .setup(|app| {
             let root = app.path().app_local_data_dir()?;
             app_paths::prepare_app_data(&root)?;
-            backup::clean_staging(&root);
-            app.manage(Arc::new(SessionStorage(
-                storage::database::DatabaseOwner::open(&root),
-            )));
+            let rollback = backup::roll_back(&root);
+            if rollback.is_ok() {
+                backup::clean_staging(&root);
+            }
+            app.manage(Arc::new(SessionStorage(std::sync::RwLock::new(
+                rollback.and_then(|_| storage::database::DatabaseOwner::open(&root)),
+            ))));
             // Damaged/unavailable accounting disables API work, while capture
             // and offline practice still start normally.
             app.manage(Arc::new(ApiAccounting(
@@ -600,6 +659,7 @@ pub fn run() {
             create_backup,
             preview_restore,
             discard_restore_preview,
+            restore_backup,
             close_after_recording
         ])
         .run(tauri::generate_context!())

@@ -339,7 +339,7 @@ function DataSettings() {
         description="A backup on another drive protects against drive failure. A copy on the same drive doesn't. API keys are never included."
       >
         <BackupSettings />
-        <Later milestone={2}>Replacing current data from a checked backup, weekly automatic backups, and readable session exports (Markdown, CSV, WAV).</Later>
+        <Later milestone={2}>Weekly automatic backups and readable session exports (Markdown, CSV, WAV).</Later>
       </Section>
     </>
   );

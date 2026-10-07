@@ -182,3 +182,76 @@ fn restore_rejects_traversal_newer_schema_bad_checksums_missing_audio_and_non_zi
     fs::write(&bad, b"not a zip at all").unwrap();
     expect("garbage", "not a readable");
 }
+
+fn asset_hashes(root: &Path) -> BTreeMap<String, String> {
+    ["take-a", "take-b"]
+        .iter()
+        .map(|id| (id.to_string(), hash_file(&root.join(format!("recordings/{id}/audio.wav"))).unwrap()))
+        .collect()
+}
+
+#[test]
+fn restore_into_an_empty_profile_matches_records_and_asset_checksums() {
+    let (source, owner) = profile_with_two_takes();
+    let destination = TestRoot::new();
+    let folder = destination.0.join("backups");
+    fs::create_dir(&folder).unwrap();
+    let archive = folder.join(create(&owner, &folder, recording::now_ms()).unwrap().file_name);
+    let sessions = owner.list_sessions(None, None, false).unwrap();
+    let trash = owner.list_trash().unwrap()["items"].clone();
+
+    let empty = TestRoot::new();
+    let target = DatabaseOwner::open(&empty.0).unwrap();
+    assert!(target.list_sessions(None, None, false).unwrap().is_empty());
+    inspect(&empty.0, &archive, "stage-restore").unwrap();
+    drop(target);
+
+    let outcome = replace_profile(&empty.0, "stage-restore", recording::now_ms()).unwrap();
+    let restored = DatabaseOwner::open(&empty.0).unwrap();
+    finish_restore(&empty.0).unwrap();
+    assert!(!empty.0.join(JOURNAL).exists());
+    assert!(empty.0.join(&outcome.rollback_folder).join("database/app.sqlite").is_file());
+
+    assert_eq!(restored.list_sessions(None, None, false).unwrap(), sessions);
+    assert_eq!(restored.list_trash().unwrap()["items"], trash);
+    assert_eq!(asset_hashes(&empty.0), asset_hashes(&source.0));
+    for id in ["take-a", "take-b"] {
+        assert!(restored.checked_recording(id).is_ok());
+    }
+    // A restored profile can be backed up again.
+    assert!(create(&restored, &folder, recording::now_ms() + 2_000).is_ok());
+}
+
+#[test]
+fn interrupted_or_failed_restore_puts_the_previous_profile_back() {
+    let (source, owner) = profile_with_two_takes();
+    let destination = TestRoot::new();
+    let folder = destination.0.join("backups");
+    fs::create_dir(&folder).unwrap();
+    let archive = folder.join(create(&owner, &folder, recording::now_ms()).unwrap().file_name);
+
+    // The live profile diverges from the backup after it was made.
+    owner.update_session("take-a", "Changed after backup", "", &[], false).unwrap();
+    inspect(&source.0, &archive, "stage-crash").unwrap();
+    drop(owner);
+    let before = asset_hashes(&source.0);
+
+    // Simulate a crash after the swap but before the restored database opened.
+    replace_profile(&source.0, "stage-crash", recording::now_ms()).unwrap();
+    assert!(source.0.join(JOURNAL).exists());
+    roll_back(&source.0).unwrap();
+    assert!(!source.0.join(JOURNAL).exists());
+    let reopened = DatabaseOwner::open(&source.0).unwrap();
+    assert_eq!(reopened.get_session("take-a").unwrap()["title"], "Changed after backup");
+    assert_eq!(asset_hashes(&source.0), before);
+    drop(reopened);
+
+    // Without a valid staging folder nothing moves at all.
+    assert!(replace_profile(&source.0, "never-staged", recording::now_ms()).is_err());
+    assert!(!source.0.join(JOURNAL).exists());
+    assert_eq!(
+        DatabaseOwner::open(&source.0).unwrap().get_session("take-a").unwrap()["title"],
+        "Changed after backup"
+    );
+    assert!(roll_back(&source.0).is_ok(), "no journal is a no-op");
+}

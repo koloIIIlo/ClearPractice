@@ -1,5 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderOpen, ShieldCheck } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { UI_LOCALE } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
@@ -18,7 +29,7 @@ function savedMessage(summary: BackupSummary) {
   return `Backup saved and verified: ${count(summary.recordings, "recording")}, ${formatBytes(summary.bytes)}.${missing}`;
 }
 
-/** Settings → Data and backups (§6, §13): destination, create, history and restore check. */
+/** Settings → Data and backups (§6, §13): destination, create, history, check and restore. */
 export function BackupSettings() {
   const ipc = useIpc();
   const qc = useQueryClient();
@@ -33,6 +44,14 @@ export function BackupSettings() {
     onSettled: () => qc.invalidateQueries({ queryKey: statusKey }),
   });
   const check = useMutation({ mutationFn: () => ipc.previewRestore() });
+  const restore = useMutation({
+    mutationFn: (preview: RestorePreview) => ipc.restoreBackup(preview.stagingId),
+    // Every cached screen described the previous data.
+    onSuccess: async () => {
+      check.reset();
+      await qc.invalidateQueries();
+    },
+  });
   const dismiss = async (preview: RestorePreview) => {
     check.reset();
     await ipc.discardRestorePreview(preview.stagingId).catch(() => {});
@@ -41,7 +60,7 @@ export function BackupSettings() {
   const data = status.data;
   const lastGood = data?.backups.find((b) => b.status === "verified");
   const recentFailure = data?.backups[0]?.status === "failed" ? data.backups[0] : null;
-  const busy = choose.isPending || create.isPending || check.isPending;
+  const busy = choose.isPending || create.isPending || check.isPending || restore.isPending;
 
   return (
     <div className="space-y-4">
@@ -75,7 +94,7 @@ export function BackupSettings() {
         <Button disabled={!native || busy || !data?.destinationAvailable} onClick={() => create.mutate()}>
           {create.isPending ? "Creating and verifying…" : "Create backup"}
         </Button>
-        <Button variant="outline" disabled={!native || busy} onClick={() => { check.reset(); check.mutate(); }}>
+        <Button variant="outline" disabled={!native || busy} onClick={() => { check.reset(); restore.reset(); check.mutate(); }}>
           <ShieldCheck aria-hidden /> {check.isPending ? "Checking backup…" : "Check a backup…"}
         </Button>
       </div>
@@ -83,8 +102,13 @@ export function BackupSettings() {
 
       <div aria-live="polite">
         {create.data && <p role="status" className="text-meta">{savedMessage(create.data)}</p>}
-        {(create.error ?? choose.error ?? check.error) && (
-          <p role="alert" className="text-meta text-destructive">{(create.error ?? choose.error ?? check.error)!.message}</p>
+        {restore.data && (
+          <p role="status" className="text-meta">
+            Backup restored. The data you had before is kept in the app data folder under {restore.data.rollbackFolder}.
+          </p>
+        )}
+        {(create.error ?? choose.error ?? check.error ?? restore.error) && (
+          <p role="alert" className="text-meta text-destructive">{(create.error ?? choose.error ?? check.error ?? restore.error)!.message}</p>
         )}
         {check.data && (
           <div className="space-y-2 rounded-lg border p-3">
@@ -95,10 +119,32 @@ export function BackupSettings() {
               {formatBytes(check.data.audioBytes)} of audio.
               {check.data.unavailableRecordings > 0 && ` ${count(check.data.unavailableRecordings, "recording")} ${check.data.unavailableRecordings === 1 ? "was" : "were"} unavailable when it was made.`}
             </p>
-            <p className="text-meta text-muted-foreground">
-              Your current data has not been changed. Restoring from a checked backup comes in the next update.
-            </p>
-            <Button variant="outline" onClick={() => void dismiss(check.data!)}>Done</Button>
+            <p className="text-meta text-muted-foreground">Your current data has not been changed.</p>
+            <div className="flex flex-wrap gap-2">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button disabled={busy}>Replace current data…</Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Replace your current data with this backup?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Your sessions, notes, Trash and recordings will be replaced by the backup from {when(check.data.createdAtMs)}.
+                      Anything recorded or edited after that date is not in the backup. Your current data is not deleted: it is
+                      moved to a rollback folder inside the app data folder, and it is put back automatically if the restore fails.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Keep current data</AlertDialogCancel>
+                    <AlertDialogAction variant="destructive" onClick={() => restore.mutate(check.data!)}>
+                      Replace current data
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              <Button variant="outline" disabled={restore.isPending} onClick={() => void dismiss(check.data!)}>Done</Button>
+            </div>
+            {restore.isPending && <p role="status" className="text-meta">Restoring and verifying…</p>}
           </div>
         )}
       </div>

@@ -27,6 +27,7 @@ import type {
   BackupStatus,
   BackupSummary,
   RestorePreview,
+  RestoreOutcome,
   RecoverableRecording,
   RecordingStatus,
   CredentialStatus,
@@ -76,6 +77,8 @@ export interface IpcClient {
   /** Opens the native file picker and validates the backup into staging; null when cancelled. */
   previewRestore(): Promise<RestorePreview | null>;
   discardRestorePreview(stagingId: string): Promise<void>;
+  /** Replaces the current data with a checked backup; the previous data is kept as rollback material. */
+  restoreBackup(stagingId: string): Promise<RestoreOutcome>;
   getSavedRecording(assetId: string): Promise<SavedRecording>;
   getAttemptReview(attemptId: string): Promise<AttemptReview>;
 

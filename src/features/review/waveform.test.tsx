@@ -31,6 +31,9 @@ const fake = vi.hoisted(() => {
 vi.mock("wavesurfer.js", () => ({ default: { create: fake.create } }));
 vi.mock("wavesurfer.js/plugins/regions", () => ({ default: { create: () => fake.plugin } }));
 
+// The suite runs with --isolate=false; another file may already have loaded the
+// player with the real WaveSurfer, so load a fresh copy that sees the mocks.
+vi.resetModules();
 const { WaveformPlayer } = await import("./WaveformPlayer");
 
 const peaks = { version: 1, assetId: "take-1", sha256: "a".repeat(64), sampleRate: 48000, durationMs: 20_000, samplesPerPeak: 480, peaks: [0, 16384, 32767] };

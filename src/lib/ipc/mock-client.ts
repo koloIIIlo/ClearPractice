@@ -141,6 +141,7 @@ export function createMockClient(): IpcClient {
     createBackup: async () => { throw new IpcError("desktop_required", "Backups are available in the desktop app."); },
     previewRestore: async () => { throw new IpcError("desktop_required", "Restore is available in the desktop app."); },
     discardRestorePreview: async () => {},
+    restoreBackup: async () => { throw new IpcError("desktop_required", "Restore is available in the desktop app."); },
     getAttemptReview: (attemptId) => respond(S.AttemptReview, data.reviewForAttempt(attemptId)),
     updateSession: async (id, details) => {
       const session = sessions.find((s) => s.id === id);

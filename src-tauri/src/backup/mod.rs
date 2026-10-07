@@ -475,5 +475,120 @@ fn check_database(staging: &Path, manifest: &Manifest, staging_id: &str) -> Resu
     })
 }
 
+// ── Replace current profile (plan 2.20) ──────────────────────────────────────
+//
+// The caller closes the database first. A synced journal is written before
+// anything moves, so a crash at any point can be undone at the next start: the
+// pre-restore folders are renamed (same volume, so instant) into
+// `restore-rollback/<name>/` and kept there as rollback material.
+
+const JOURNAL: &str = "restore-in-progress.json";
+const PROFILE_DIRS: [&str; 3] = ["database", "recordings", "recovery"];
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Journal {
+    staging_id: String,
+    rollback: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreOutcome {
+    /// Folder inside the app data folder that keeps the data from before the restore.
+    pub rollback_folder: String,
+}
+
+fn rename(from: &Path, to: &Path) -> Result<()> {
+    fs::rename(from, to).map_err(|e| format!("Restore could not move {} ({e}).", from.display()))
+}
+
+/// Moves the current profile aside and the staged backup into place. If any
+/// step fails, the previous profile is put back before this returns.
+pub fn replace_profile(root: &Path, staging_id: &str, now_ms: u64) -> Result<RestoreOutcome> {
+    validate_id(staging_id)?;
+    if root.join(JOURNAL).exists() {
+        return Err("An earlier restore did not finish. Restart ClearPractice to put your data back first.".into());
+    }
+    let staging = root.join("cache").join("restore").join(staging_id);
+    if !staging.join(DATABASE).is_file() {
+        return Err("This backup check has expired. Check the backup again.".into());
+    }
+    contained(root, &staging)?;
+    let local = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(now_ms as i64)
+        .unwrap_or_default()
+        .with_timezone(&chrono::Local);
+    let name = format!("before-restore-{}", local.format("%Y-%m-%d-%H%M%S"));
+    let rollback = root.join("restore-rollback").join(&name);
+    fs::create_dir_all(root.join("restore-rollback")).map_err(io_error)?;
+    // A fresh folder only: reusing one could put older rollback data back.
+    fs::create_dir(&rollback).map_err(|_| "A restore just ran. Try again in a moment.")?;
+    contained(root, &rollback)?;
+
+    let journal = serde_json::to_vec(&Journal { staging_id: staging_id.into(), rollback: name.clone() })
+        .map_err(|e| e.to_string())?;
+    let mut file = File::create_new(root.join(JOURNAL)).map_err(io_error)?;
+    file.write_all(&journal).and_then(|_| file.sync_all()).map_err(io_error)?;
+    drop(file);
+
+    let swapped = (|| {
+        for dir in PROFILE_DIRS {
+            if root.join(dir).exists() {
+                rename(&root.join(dir), &rollback.join(dir))?;
+            }
+        }
+        rename(&staging.join("database"), &root.join("database"))?;
+        if staging.join("recordings").is_dir() {
+            rename(&staging.join("recordings"), &root.join("recordings"))?;
+        } else {
+            fs::create_dir(root.join("recordings")).map_err(io_error)?;
+        }
+        fs::create_dir(root.join("recovery")).map_err(io_error)
+    })();
+    if let Err(error) = swapped {
+        roll_back(root)?;
+        return Err(format!("{error} Your previous data was put back."));
+    }
+    Ok(RestoreOutcome { rollback_folder: format!("restore-rollback/{name}") })
+}
+
+/// Call after the restored database opened successfully.
+pub fn finish_restore(root: &Path) -> Result<()> {
+    fs::remove_file(root.join(JOURNAL)).map_err(io_error)
+}
+
+/// Puts the pre-restore profile back after a failed swap or reopen, or at start
+/// when a journal shows an interrupted restore. Does nothing without a journal.
+pub fn roll_back(root: &Path) -> Result<()> {
+    let Ok(bytes) = fs::read(root.join(JOURNAL)) else {
+        return Ok(());
+    };
+    let journal: Journal =
+        serde_json::from_slice(&bytes).map_err(|_| "The restore journal is unreadable.")?;
+    validate_id(&journal.staging_id)?;
+    if !journal.rollback.starts_with("before-restore-") || validate_id(&journal.rollback).is_err() {
+        return Err("The restore journal is invalid.".into());
+    }
+    let rollback = root.join("restore-rollback").join(&journal.rollback);
+    let staging = root.join("cache").join("restore").join(&journal.staging_id);
+    for dir in PROFILE_DIRS {
+        let previous = rollback.join(dir);
+        if !previous.exists() {
+            continue;
+        }
+        let current = root.join(dir);
+        if current.exists() {
+            // Restored copies are reproducible from the backup file; never merge them.
+            fs::create_dir_all(&staging).map_err(io_error)?;
+            if fs::rename(&current, staging.join(dir)).is_err() {
+                fs::remove_dir_all(&current).map_err(io_error)?;
+            }
+        }
+        rename(&previous, &current)?;
+    }
+    let _ = fs::remove_dir(&rollback);
+    fs::remove_file(root.join(JOURNAL)).map_err(io_error)
+}
+
 #[cfg(test)]
 mod tests;

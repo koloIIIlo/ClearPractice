@@ -184,6 +184,9 @@ export const RestorePreview = z.object({
 });
 export type RestorePreview = z.infer<typeof RestorePreview>;
 
+export const RestoreOutcome = z.object({ rollbackFolder: z.string() });
+export type RestoreOutcome = z.infer<typeof RestoreOutcome>;
+
 export const Attempt = z.object({
   id: Id,
   ordinal: z.number().int().positive(),
