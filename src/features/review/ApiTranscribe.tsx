@@ -17,7 +17,17 @@ export const money = (micro: number) =>
  * saved with the take as its own transcript (3.16). A repeat of an identical
  * request is labelled Retranscribe, because it is a new paid run.
  */
-export function ApiRequestFlow({ attemptId, provider, hasKey, keyHint }: { attemptId: string; provider: AudioProvider; hasKey: boolean; keyHint: string }) {
+export function ApiRequestFlow({ attemptId, provider, hasKey, keyHint, previewFn, sendFn, sendLabel }: {
+  attemptId: string;
+  provider: AudioProvider;
+  hasKey: boolean;
+  keyHint: string;
+  /** Other audio than a saved take (e.g. a recording being split, 4.4c). */
+  previewFn?: (provider: AudioProvider) => Promise<AudioPreview>;
+  /** Replaces the take request; its result is handled by the caller. */
+  sendFn?: (requestId: string, payloadSha256: string) => Promise<void>;
+  sendLabel?: string;
+}) {
   const ipc = useIpc();
   const qc = useQueryClient();
   const usage = useQuery({ queryKey: ["api-usage"], queryFn: () => ipc.getApiUsageSummary(), retry: false });
@@ -41,7 +51,7 @@ export function ApiRequestFlow({ attemptId, provider, hasKey, keyHint }: { attem
     discard();
     setBusy(true); setError(null); setResult(null);
     try {
-      const next = await ipc.previewApiTranscription(attemptId, provider);
+      const next = previewFn ? await previewFn(provider) : await ipc.previewApiTranscription(attemptId, provider);
       previewRef.current = next;
       setPreview(next);
       setAudioUrl(await ipc.getApiPreviewAudioUrl(next.requestId).catch(() => null));
@@ -58,8 +68,12 @@ export function ApiRequestFlow({ attemptId, provider, hasKey, keyHint }: { attem
     setPreview(null);
     setBusy(true); setError(null); setSending(approved.requestId);
     try {
-      setResult(await ipc.requestApiTranscription(approved.requestId, approved.payloadSha256));
-      void qc.invalidateQueries({ queryKey: ["attempt-transcript", approved.attemptId] });
+      if (sendFn) {
+        await sendFn(approved.requestId, approved.payloadSha256);
+      } else {
+        setResult(await ipc.requestApiTranscription(approved.requestId, approved.payloadSha256));
+        void qc.invalidateQueries({ queryKey: ["attempt-transcript", approved.attemptId] });
+      }
     } catch (e) {
       setError(`${e instanceof Error ? e.message : "The request did not finish."} Prepare a new preview to try again.`);
     } finally {
@@ -100,7 +114,7 @@ export function ApiRequestFlow({ attemptId, provider, hasKey, keyHint }: { attem
           {!hasKey && <p className="text-meta">{keyHint}</p>}
           <div className="flex flex-wrap gap-2">
             <Button disabled={busy || !hasKey} onClick={() => void send()}>
-              {preview.previousRunAt ? "Retranscribe · may be billed" : "Send take · may be billed"}
+              {preview.previousRunAt ? "Retranscribe · may be billed" : (sendLabel ?? "Send take · may be billed")}
             </Button>
             <Button variant="outline" disabled={busy} onClick={discard}>Cancel preview</Button>
           </div>

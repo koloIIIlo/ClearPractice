@@ -700,6 +700,72 @@ fn cancel_clip_work(work: State<'_, Arc<ClipWork>>) {
     }
 }
 
+/// Cloud transcription for a split (4.4c): the same preview → explicit Send
+/// flow as takes, for the staged recording's 16 kHz copy. Nothing sends here.
+#[tauri::command]
+async fn preview_split_transcription(
+    storage: State<'_, Arc<SessionStorage>>,
+    owner: State<'_, Arc<api::audio::AudioPreviewOwner>>,
+    staging_id: String,
+    provider: api::audio::AudioProvider,
+) -> Result<api::audio::AudioPreview, String> {
+    let owner = owner.inner().clone();
+    with_storage(&storage, move |db| {
+        let (path, duration_ms) = clipsplit::resample_staged(db.root(), &staging_id, &std::sync::atomic::AtomicBool::new(false))?;
+        let bytes = std::fs::metadata(&path).map_err(|_| "The prepared audio is unavailable.")?.len();
+        let sha = storage::recording::hash_file(&path)?;
+        let source = storage::recording::hash_file(&clips::staging_dir(db.root(), &staging_id)?.join("full.wav"))?;
+        owner.preview_prepared(path, &staging_id, duration_ms, bytes, sha, source, provider)
+    })
+    .await
+    .map_err(|_| "Preview failed.".to_string())?
+}
+
+/// Sends an approved split preview and proposes clips from the word timings.
+/// The paid result is not stored as a transcript: the recording is not a take.
+#[tauri::command]
+async fn request_split_transcription(
+    service: State<'_, Arc<CaptureService>>,
+    owner: State<'_, Arc<api::audio::AudioPreviewOwner>>,
+    accounting: State<'_, Arc<ApiAccounting>>,
+    inflight: State<'_, Arc<InflightApi>>,
+    request_id: String,
+    payload_sha256: String,
+) -> Result<Vec<clipsplit::Candidate>, String> {
+    if service.is_active() {
+        return Err("Finish the recording first. Nothing was sent.".into());
+    }
+    let owner = owner.inner().clone();
+    let accounting = accounting.inner().clone();
+    accounting.0.as_ref().map_err(Clone::clone)?;
+    let inflight = inflight.inner().clone();
+    let task = {
+        let (accounting, request_id, payload_sha256) = (accounting.clone(), request_id.clone(), payload_sha256.clone());
+        tauri::async_runtime::spawn(async move {
+            let budget = accounting.0.as_ref().map_err(Clone::clone)?;
+            owner.send(budget, &request_id, &payload_sha256).await
+        })
+    };
+    let abort = task.inner().abort_handle();
+    if let Ok(mut map) = inflight.0.lock() {
+        map.insert(request_id.clone(), Box::new(move || abort.abort()));
+    }
+    let outcome = task.await;
+    if let Ok(mut map) = inflight.0.lock() {
+        map.remove(&request_id);
+    }
+    let run = match outcome {
+        Ok(result) => result?,
+        Err(_) => return Err(api::audio::stopped(accounting.0.as_ref().map_err(Clone::clone)?, &request_id)),
+    };
+    let words = run.result.words.value.ok_or("The provider returned no word timings, so no clips can be cut. Try transcribing on this computer.")?;
+    let candidates = clipsplit::propose(&clipsplit::segments_from_words(&words));
+    if candidates.is_empty() {
+        return Err("No clips of 8–20 seconds with whole sentences were found.".into());
+    }
+    Ok(candidates)
+}
+
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct SectionToSave {
@@ -1488,6 +1554,8 @@ pub fn run() {
             discard_clip_staging,
             save_clip,
             split_clip_source,
+            preview_split_transcription,
+            request_split_transcription,
             cancel_clip_work,
             save_clip_sections,
             get_link_tool_status,

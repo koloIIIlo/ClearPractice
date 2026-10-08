@@ -83,7 +83,7 @@ pub fn propose(segments: &[(String, u64, u64)]) -> Vec<Candidate> {
 }
 
 /// Writes a 16 kHz mono copy of a staged file for the worker, next to it.
-fn resample_staged(root: &Path, staging_id: &str, cancel: &AtomicBool) -> Result<(PathBuf, u64)> {
+pub fn resample_staged(root: &Path, staging_id: &str, cancel: &AtomicBool) -> Result<(PathBuf, u64)> {
     let dir = clips::staging_dir(root, staging_id)?;
     prepare::contained(root, &dir)?;
     let source = dir.join("full.wav");
@@ -193,6 +193,22 @@ pub fn transcribe_local(
         .collect())
 }
 
+/// Turns provider word timings into sentence segments for `propose` (cloud split).
+pub fn segments_from_words(words: &[crate::audio::transcription::TimedText]) -> Vec<(String, u64, u64)> {
+    let mut out = Vec::new();
+    let mut current: Vec<&crate::audio::transcription::TimedText> = Vec::new();
+    for (i, word) in words.iter().enumerate() {
+        current.push(word);
+        let gap_next = words.get(i + 1).map(|n| n.start_ms.saturating_sub(word.end_ms));
+        if ends_sentence(&word.text) || gap_next.is_some_and(|g| g > MAX_GAP_MS) || i + 1 == words.len() {
+            let text = current.iter().map(|w| w.text.trim()).collect::<Vec<_>>().join(" ");
+            out.push((text, current[0].start_ms, word.end_ms));
+            current.clear();
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,6 +238,18 @@ mod tests {
         assert_eq!((c.start_ms, c.end_ms), (6_000, 17_800), "first natural end past 10 s");
         assert!(c.text.starts_with("Imagine you are") && c.text.ends_with("very interesting."));
         assert_eq!(c.title, "Imagine you are sitting in a grassy field.");
+    }
+
+    #[test]
+    fn cloud_word_timings_become_sentence_segments() {
+        use crate::audio::transcription::TimedText;
+        let w = |t: &str, s: u64, e: u64| TimedText { text: t.into(), start_ms: s, end_ms: e, provenance: "Estimated".into() };
+        let words = [w("Imagine", 0, 400), w("this.", 450, 900), w("Then", 3_000, 3_300), w("silence", 3_400, 3_900), w("again", 6_000, 6_400)];
+        assert_eq!(segments_from_words(&words), vec![
+            ("Imagine this.".to_string(), 0, 900),
+            ("Then silence".to_string(), 3_000, 3_900), // a long pause ends a segment too
+            ("again".to_string(), 6_000, 6_400),
+        ]);
     }
 
     #[test]

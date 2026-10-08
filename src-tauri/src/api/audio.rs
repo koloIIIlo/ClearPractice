@@ -160,8 +160,25 @@ impl AudioPreviewOwner {
     pub fn preview(&self, root: &Path, saved: &SavedRecording, provider: AudioProvider) -> Result<AudioPreview> {
         let audio = prepare::prepare(root, &saved.asset_id, &AtomicBool::new(false))?;
         let path = prepare::prepared_path(root, &audio)?;
-        if audio.duration_ms > MAX_AUDIO_MS || audio.bytes as usize > MAX_AUDIO_UPLOAD {
-            return Err("This take is longer than 15 minutes; API transcription is limited to shorter takes.".into());
+        self.preview_prepared(path, &saved.asset_id, audio.duration_ms, audio.bytes, audio.sha256.clone(), saved.sha256.clone(), provider)
+    }
+
+    /// Previews any prepared 16 kHz mono WAV, e.g. a long recording being split
+    /// into clips (4.4c). `owner_id` names what the audio belongs to.
+    #[allow(clippy::too_many_arguments)]
+    pub fn preview_prepared(
+        &self,
+        path: PathBuf,
+        owner_id: &str,
+        duration_ms: u64,
+        bytes: u64,
+        audio_sha256: String,
+        source_sha256: String,
+        provider: AudioProvider,
+    ) -> Result<AudioPreview> {
+        recording::validate_id(owner_id)?;
+        if duration_ms > MAX_AUDIO_MS || bytes as usize > MAX_AUDIO_UPLOAD {
+            return Err("This recording is longer than 15 minutes; API transcription is limited to shorter audio.".into());
         }
         let request_id = format!("api-{}-{}", provider.key(), recording::now_ms());
         recording::validate_id(&request_id)?;
@@ -171,12 +188,12 @@ impl AudioPreviewOwner {
             provider_label: provider.label().into(),
             model: provider.model().into(),
             recipient: provider.recipient().into(),
-            attempt_id: saved.asset_id.clone(),
-            duration_ms: audio.duration_ms,
-            bytes: audio.bytes,
-            audio_sha256: audio.sha256.clone(),
+            attempt_id: owner_id.into(),
+            duration_ms,
+            bytes,
+            audio_sha256,
             settings: provider.settings(),
-            estimated_cost_micro_usd: cost_for(provider, audio.duration_ms),
+            estimated_cost_micro_usd: cost_for(provider, duration_ms),
             price_source: provider.price_source().into(),
             price_date: PRICE_DATE.into(),
             data_handling: provider.data_handling().into(),
@@ -189,7 +206,7 @@ impl AudioPreviewOwner {
         if pending.len() >= 8 {
             return Err("Too many open previews. Cancel one first.".into());
         }
-        pending.insert(request_id, Pending { preview: preview.clone(), audio_path: path, source_sha256: saved.sha256.clone(), created: Instant::now() });
+        pending.insert(request_id, Pending { preview: preview.clone(), audio_path: path, source_sha256, created: Instant::now() });
         Ok(preview)
     }
 

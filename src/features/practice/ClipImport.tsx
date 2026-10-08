@@ -9,6 +9,8 @@ import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
 import type { ClipCandidate, ClipStaged, ReferenceClip } from "@/lib/ipc/schemas";
 import { formatClockTenths, parseClock } from "@/features/review/waveform";
+import { API_LABELS, ApiRequestFlow } from "@/features/review/ApiTranscribe";
+import type { AudioProvider } from "@/lib/ipc/schemas";
 
 type Proposal = ClipCandidate & { keep: boolean };
 
@@ -37,6 +39,12 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
   const [busy, setBusy] = useState<null | "file" | "link" | "split" | "save">(null);
   const stagedRef = useRef<ClipStaged | null>(null);
   const tool = useQuery({ queryKey: ["link-tool"], queryFn: () => ipc.getLinkToolStatus(), retry: false });
+  const preference = useQuery({ queryKey: ["transcription-preference"], queryFn: () => ipc.getTranscriptionPreference(), retry: false });
+  const keys = useQuery({ queryKey: ["transcription-api-keys"], queryFn: () => ipc.getTranscriptionApiKeys(), retry: false });
+  const [engine, setEngine] = useState<"local" | "api" | null>(null);
+  const splitEngine = engine ?? preference.data?.mode ?? "local";
+  const stored = keys.data?.filter((k) => k.present).map((k) => k.provider) ?? [];
+  const cloudProvider: AudioProvider | undefined = stored.includes(preference.data?.provider ?? "deepgram") ? (preference.data?.provider ?? "deepgram") : stored[0];
   useEffect(() => () => { if (stagedRef.current) void ipc.discardClipStaging(stagedRef.current.stagingId); }, [ipc]);
   useEffect(() => {
     let remove: (() => void) | undefined;
@@ -179,12 +187,34 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
 
           {/* 2a. Automatic: transcribe and propose whole-sentence clips */}
           <div className="space-y-2 rounded-lg border border-dashed p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button disabled={!!busy} onClick={() => void split()}>
-                <Scissors aria-hidden /> Split into clips automatically
-              </Button>
-              <span className="text-meta text-muted-foreground">Transcribes on this computer, then proposes 8–20 s clips that start and end on whole sentences.</span>
-            </div>
+            <p className="flex items-center gap-2 font-medium"><Scissors aria-hidden className="size-4" /> Split into clips automatically</p>
+            <p className="text-meta text-muted-foreground">Transcribes the recording, then proposes 8–20 s clips that start and end on whole sentences.</p>
+            <fieldset className="flex flex-wrap gap-4 text-meta" disabled={!!busy}>
+              <legend className="sr-only">Transcribe with</legend>
+              {([["local", "This computer"], ["api", "Cloud API"]] as const).map(([value, label]) => (
+                <label key={value} className="flex min-h-8 items-center gap-2">
+                  <input type="radio" name="split-engine" checked={splitEngine === value} onChange={() => setEngine(value)} /> {label}
+                </label>
+              ))}
+            </fieldset>
+            {splitEngine === "local" ? (
+              <Button disabled={!!busy} onClick={() => void split()}>Transcribe and split</Button>
+            ) : cloudProvider ? (
+              <ApiRequestFlow
+                attemptId={staged.stagingId}
+                provider={cloudProvider}
+                hasKey
+                keyHint=""
+                sendLabel={`Send to ${API_LABELS[cloudProvider]} · may be billed`}
+                previewFn={(provider) => ipc.previewSplitTranscription(staged.stagingId, provider)}
+                sendFn={async (requestId, sha) => {
+                  const found = await ipc.requestSplitTranscription(requestId, sha);
+                  setProposals(found.map((c) => ({ ...c, keep: true })));
+                }}
+              />
+            ) : (
+              <p className="text-meta text-muted-foreground">Cloud transcription needs a Deepgram or AssemblyAI key in Settings → Transcription.</p>
+            )}
             {busy === "split" && (
               <p role="status" className="flex items-center gap-2 text-meta">
                 <Loader2 aria-hidden className="size-4 animate-spin" /> Transcribing… {progress ?? 0}%
@@ -193,7 +223,7 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
             )}
             {proposals && (
               <div className="space-y-2">
-                <p className="text-meta">{proposals.length} clips found. Untick any you don't want, and rename them if you like.</p>
+                <p className="text-meta">{proposals.length} {proposals.length === 1 ? "clip" : "clips"} found. Untick any you don't want, and rename them if you like.</p>
                 <ol className="space-y-2">
                   {proposals.map((p, i) => (
                     <li key={`${p.startMs}`} className="space-y-1 rounded-md border p-2">

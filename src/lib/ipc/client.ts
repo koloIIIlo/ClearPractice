@@ -105,6 +105,10 @@ export interface IpcClient {
   deleteClip(clipId: string): Promise<void>;
   /** Transcribes a staged long recording locally and proposes whole-sentence clips (4.4c). */
   splitClipSource(stagingId: string): Promise<ClipCandidate[]>;
+  /** Cloud split (4.4c): previews the recording for a provider; nothing is sent. */
+  previewSplitTranscription(stagingId: string, provider: AudioProvider): Promise<AudioPreview>;
+  /** Sends an approved split preview and returns proposed clips. */
+  requestSplitTranscription(requestId: string, payloadSha256: string): Promise<ClipCandidate[]>;
   onClipSplitProgress(listener: (percent: number) => void): Promise<() => void>;
   /** Stops a running split or link download. */
   cancelClipWork(): Promise<void>;

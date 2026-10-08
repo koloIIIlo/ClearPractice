@@ -35,7 +35,7 @@ it("splits a long recording into proposed clips, lets the user untick and rename
   await user.click(screen.getByRole("button", { name: "Choose an audio file…" }));
   await screen.findByText("talk.m4a · 15:00");
   await user.type(screen.getByLabelText("Source and credit"), "A Speaker, A Talk, 2024");
-  await user.click(screen.getByRole("button", { name: /Split into clips automatically/ }));
+  await user.click(screen.getByRole("button", { name: "Transcribe and split" }));
   expect(client.splitClipSource).toHaveBeenCalledWith("stage-1");
   expect(await screen.findByText("2 clips found. Untick any you don't want, and rename them if you like.")).toBeInTheDocument();
   await user.click(screen.getByRole("checkbox", { name: "Keep clip 2" }));
@@ -71,4 +71,30 @@ it("explains how to get yt-dlp when it is missing, and fills the credit from a f
   expect(await screen.findByText("source.m4a · 10:00")).toBeInTheDocument();
   expect(screen.getByLabelText("Source and credit")).toHaveValue("A Speaker, “A Talk”, YouTube — https://www.youtube.com/watch?v=abc");
   expect(screen.getByLabelText("Title")).toHaveValue("A Talk");
+});
+
+it("splits with a cloud provider only after the usual preview and an explicit Send (4.4c)", async () => {
+  const user = userEvent.setup();
+  const { client } = setup({
+    chooseClipFile: async () => ({ stagingId: "stage-3", fileName: "talk.mp3", durationMs: 300_000 }),
+    getTranscriptionPreference: async () => ({ mode: "api" as const, provider: "deepgram" as const }),
+    getTranscriptionApiKeys: async () => [{ provider: "deepgram" as const, present: true }, { provider: "assemblyai" as const, present: false }],
+    previewSplitTranscription: vi.fn(async () => ({
+      requestId: "api-deepgram-9", provider: "deepgram" as const, providerLabel: "Deepgram", model: "nova-3", recipient: "api.deepgram.com",
+      attemptId: "stage-3", durationMs: 300_000, bytes: 9_600_044, audioSha256: "a".repeat(64), settings: {}, estimatedCostMicroUsd: 21_500,
+      priceSource: "https://deepgram.com/pricing", priceDate: "2026-10-08", dataHandling: "Sent with mip_opt_out=true.", payloadSha256: "b".repeat(64),
+    })),
+    requestSplitTranscription: vi.fn(async () => [{ startMs: 1_000, endMs: 13_000, text: "A whole sentence here.", title: "A whole sentence here." }]),
+    splitClipSource: vi.fn(),
+  });
+  await user.click(screen.getByRole("button", { name: "Choose an audio file…" }));
+  await screen.findByText("talk.mp3 · 5:00");
+  await waitFor(() => expect(screen.getByRole("radio", { name: "Cloud API" })).toBeChecked());
+  await user.click(await screen.findByRole("button", { name: "Preview request" }));
+  expect(client.previewSplitTranscription).toHaveBeenCalledWith("stage-3", "deepgram");
+  expect(client.requestSplitTranscription).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Send to Deepgram Nova-3 · may be billed" }));
+  expect(client.requestSplitTranscription).toHaveBeenCalledWith("api-deepgram-9", "b".repeat(64));
+  expect(await screen.findByText("1 clip found. Untick any you don't want, and rename them if you like.")).toBeInTheDocument();
+  expect(client.splitClipSource).not.toHaveBeenCalled();
 });

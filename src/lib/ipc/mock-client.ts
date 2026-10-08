@@ -138,6 +138,8 @@ export function createMockClient(): IpcClient {
     getClipPlaybackUrl: async () => { throw new IpcError("desktop_required", "Clips play in the desktop app."); },
     splitClipSource: async () => { throw new IpcError("desktop_required", "Splitting runs in the desktop app."); },
     onClipSplitProgress: async () => () => {},
+    previewSplitTranscription: async () => { throw new IpcError("desktop_required", "Cloud transcription runs in the desktop app."); },
+    requestSplitTranscription: async () => { throw new IpcError("desktop_required", "Cloud transcription runs in the desktop app."); },
     cancelClipWork: async () => {},
     saveClipSections: async () => { throw new IpcError("desktop_required", "Clips can be saved in the desktop app."); },
     getLinkToolStatus: async () => ({ available: false, path: null }),

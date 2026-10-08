@@ -35,6 +35,8 @@ export function createNativeClient(): IpcClient {
     getClipPlaybackUrl: async (clipId) => convertFileSrc(await command("get_clip_playback_path", z.string(), { clipId })),
     deleteClip: async (clipId) => { await command("delete_clip", z.null(), { clipId }); },
     splitClipSource: (stagingId) => command("split_clip_source", S.ClipCandidate.array(), { stagingId }),
+    previewSplitTranscription: (stagingId, provider) => command("preview_split_transcription", S.AudioPreview, { stagingId, provider }),
+    requestSplitTranscription: (requestId, payloadSha256) => command("request_split_transcription", S.ClipCandidate.array(), { requestId, payloadSha256 }),
     onClipSplitProgress: (listener) => listen<number>("clip_split_progress", (e) => listener(z.number().int().min(0).max(100).parse(e.payload))),
     cancelClipWork: async () => { await command("cancel_clip_work", z.null()); },
     saveClipSections: (stagingId, sections) => command("save_clip_sections", S.ReferenceClip.array(), { stagingId, sections }),
