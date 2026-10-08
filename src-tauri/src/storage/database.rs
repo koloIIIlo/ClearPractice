@@ -14,7 +14,7 @@ use std::{
 };
 
 type Result<T> = std::result::Result<T, String>;
-const VERSION: i64 = 4;
+const VERSION: i64 = 5;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
@@ -143,7 +143,10 @@ impl DatabaseOwner {
             if version < 3 {
                 migrate(&mut connection, include_str!("schema-v3.sql"))?;
             }
-            migrate(&mut connection, include_str!("schema-v4.sql"))?;
+            if version < 4 {
+                migrate(&mut connection, include_str!("schema-v4.sql"))?;
+            }
+            migrate(&mut connection, include_str!("schema-v5.sql"))?;
         }
         connection
             .pragma_update(None, "journal_mode", "WAL")
@@ -334,9 +337,62 @@ impl DatabaseOwner {
         Ok(self.root.join("recordings").join(id).join("audio.wav"))
     }
 
+    /// A take's intonation (P.3): served from its stored track when the record,
+    /// source audio and artifact checksum all agree, otherwise computed and stored.
     pub fn prosody(&self, id: &str) -> Result<crate::prosody::Contour> {
-        self.checked_recording(id)?;
-        crate::prosody::for_take(&self.root, id)
+        use crate::prosody::{self as p, Contour};
+        use sha2::Digest as _;
+        let saved = self.checked_recording(id)?;
+        let attempt: String = {
+            let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+            conn.query_row("SELECT id FROM attempts WHERE asset_id=?1 AND capture_state='saved'", [id], |r| r.get(0))
+                .optional().map_err(db_error)?.ok_or("This take is unavailable.")?
+        };
+        type Row = (String, String, i64, Option<f64>, Option<f64>, Option<f64>, Option<String>);
+        let stored: Option<Row> = {
+            let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+            conn.query_row(
+                "SELECT artifact_path,artifact_sha256,hop_ms,median_f0_hz,range_semitones,loudness_range_db,unavailable_reason FROM prosody_tracks WHERE attempt_id=?1 AND algorithm=?2 AND definition_version=?3 AND source_sha256=?4",
+                params![attempt, p::ALGORITHM, p::DEFINITION_VERSION, saved.sha256],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)),
+            ).optional().map_err(db_error)?
+        };
+        if let Some((path, sha, hop, median, range, loudness, reason)) = stored {
+            let file = self.root.join(&path);
+            let bytes = (path.starts_with("cache/prosody/") && contained(&self.root, &file).is_ok())
+                .then(|| fs::read(&file).ok()).flatten();
+            if let Some(bytes) = bytes.filter(|b| format!("{:x}", sha2::Sha256::digest(b)) == sha) {
+                if let (Ok((f0_hz, rms_db)), Some((hop_ms, sample_rate))) = (p::decode_frames(&bytes), p::artifact_timing(&bytes)) {
+                    if i64::try_from(hop_ms).ok() == Some(hop) {
+                        let narrow = |v: Option<f64>| v.map(|x| x as f32);
+                        return Ok(Contour { algorithm: p::ALGORITHM, source: "Estimated", hop_ms, sample_rate, f0_hz, rms_db,
+                            median_f0_hz: narrow(median), range_semitones: narrow(range), loudness_range_db: narrow(loudness), unavailable_reason: reason });
+                    }
+                }
+            }
+        }
+        // Missing, stale or altered: rebuild from the audio and replace the record.
+        let contour = p::compute(&self.root, id)?;
+        let bytes = p::encode_frames(&contour);
+        let sha = format!("{:x}", sha2::Sha256::digest(&bytes));
+        let now = recording::now_ms();
+        let run_id = format!("{attempt}--prosody-{now}");
+        let relative = format!("cache/prosody/{attempt}--{}-{}-d{}.bin", &saved.sha256[..16], p::ALGORITHM, p::DEFINITION_VERSION);
+        let file = self.root.join(&relative);
+        let dir = self.root.join("cache").join("prosody");
+        fs::create_dir_all(&dir).map_err(io_error)?;
+        contained(&self.root, &dir)?;
+        let part = file.with_extension("part");
+        fs::write(&part, &bytes).map_err(io_error)?;
+        fs::rename(&part, &file).map_err(io_error)?;
+        let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+        conn.execute(
+            "INSERT OR REPLACE INTO prosody_tracks(id,attempt_id,run_id,algorithm,settings,hop_ms,definition_version,source_sha256,artifact_path,artifact_sha256,frame_count,median_f0_hz,range_semitones,loudness_range_db,unavailable_reason,created_at_ms) VALUES (?1,?2,?1,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
+            params![run_id, attempt, p::ALGORITHM, p::settings(), i64::try_from(contour.hop_ms).map_err(|_| "Invalid hop.")?, p::DEFINITION_VERSION, saved.sha256, relative, sha,
+                i64::try_from(contour.f0_hz.len()).map_err(|_| "Too many frames.")?, contour.median_f0_hz.map(f64::from), contour.range_semitones.map(f64::from),
+                contour.loudness_range_db.map(f64::from), contour.unavailable_reason, i64::try_from(now).map_err(|_| "Invalid date.")?],
+        ).map_err(db_error)?;
+        Ok(contour)
     }
 
     pub fn waveform(&self, id: &str) -> Result<crate::audio::peaks::WaveformPeaks> {
@@ -627,6 +683,7 @@ impl DatabaseOwner {
                 tx.execute(&format!("DELETE FROM transcript_segments WHERE revision_id IN (SELECT id FROM transcript_revisions WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM transcript_revisions WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM jobs WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
+                tx.execute(&format!("DELETE FROM prosody_tracks WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
                 tx.execute("DELETE FROM attempts WHERE step_id IN (SELECT id FROM session_steps WHERE session_id=?1)",[id]).map_err(db_error)?;
                 tx.execute("DELETE FROM audio_assets WHERE id IN (SELECT id FROM purged_assets) AND id NOT IN (SELECT asset_id FROM attempts WHERE asset_id IS NOT NULL)",[]).map_err(db_error)?;
                 tx.execute("DELETE FROM session_steps WHERE session_id=?1", [id])
@@ -1090,7 +1147,7 @@ fn remove_take_files(root: &Path, id: &str) -> Result<()> {
             fs::remove_file(&path).map_err(io_error)?;
         }
     }
-    // Intonation caches are named `<attempt>--<hash>-<algorithm>.json`.
+    // Intonation artifacts are named `<attempt>--<hash>-<algorithm>…`.
     if let Ok(entries) = fs::read_dir(cache.join("prosody")) {
         let prefix = format!("{id}--");
         for entry in entries.flatten() {
@@ -1556,7 +1613,7 @@ mod tests {
             .unwrap();
         {
             let conn = owner.connection.lock().unwrap();
-            conn.execute_batch("DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+            conn.execute_batch("DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
         }
         drop(owner);
         let upgraded = DatabaseOwner::open(&root.0).unwrap();
@@ -1566,7 +1623,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v4-")));
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v5-")));
         assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
     }
     #[test]
@@ -1611,7 +1668,7 @@ mod tests {
         assert!(owner.attempt_transcript("take").unwrap()["revision"].is_null());
     }
     #[test]
-    fn take_intonation_is_cached_on_the_prepared_timeline_and_purged_with_the_take() {
+    fn take_intonation_is_stored_checked_regenerated_and_purged_with_the_take() {
         let root = TestRoot::new();
         let mut writer = ChunkWriter::create(&root.0, &manifest("tone")).unwrap();
         let mut phase = 0.0f64;
@@ -1630,10 +1687,27 @@ mod tests {
         assert_eq!(contour.f0_hz.len(), 150, "10 ms frames over 1.5 s on the original timeline");
         let cached: Vec<_> = fs::read_dir(root.0.join("cache/prosody")).unwrap().map(|e| e.unwrap().file_name()).collect();
         assert_eq!(cached.len(), 1);
-        assert_eq!(owner.prosody("tone").unwrap(), contour, "served from the cache unchanged");
+        assert_eq!(owner.prosody("tone").unwrap(), contour, "served from the stored track unchanged");
+        let (path, frames, settings): (String, i64, String) = owner.connection.lock().unwrap()
+            .query_row("SELECT artifact_path,frame_count,settings FROM prosody_tracks WHERE attempt_id='tone'", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+        assert_eq!(frames, 150);
+        assert!(settings.contains("\"hopMs\":10"), "{settings}");
+        assert_eq!(fs::metadata(root.0.join(&path)).unwrap().len(), 16 + 150 * 4, "compact artifact");
+        // An altered artifact fails its checksum and is rebuilt, not trusted.
+        let mut bytes = fs::read(root.0.join(&path)).unwrap();
+        bytes[20] ^= 0xff;
+        fs::write(root.0.join(&path), &bytes).unwrap();
+        assert_eq!(owner.prosody("tone").unwrap(), contour, "rebuilt after tampering");
+        // A missing artifact is regenerated too (backups leave caches out).
+        fs::remove_file(root.0.join(&path)).unwrap();
+        assert_eq!(owner.prosody("tone").unwrap(), contour, "regenerated");
+        let rows: i64 = owner.connection.lock().unwrap().query_row("SELECT COUNT(*) FROM prosody_tracks", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 1, "one track per take and definition");
         owner.move_to_trash("tone", 1).unwrap();
         owner.delete_permanently(&["tone".into()]).unwrap();
         assert_eq!(fs::read_dir(root.0.join("cache/prosody")).unwrap().count(), 0);
+        let rows: i64 = owner.connection.lock().unwrap().query_row("SELECT COUNT(*) FROM prosody_tracks", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 0, "track records purged with the take");
     }
     #[test]
     fn search_finds_titles_notes_and_transcripts_follows_edits_and_skips_trash() {
