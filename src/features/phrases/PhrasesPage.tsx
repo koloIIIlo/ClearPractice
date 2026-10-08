@@ -67,7 +67,7 @@ function PhraseList({ list, focus, today }: { list: PhraseCard[]; focus: string 
               </p>
               {p.sourceSessionId && (
                 <Link to={`/sessions/${p.sourceSessionId}`} className="text-meta text-primary hover:underline">
-                  From a session
+                  From a session<span className="sr-only">: where you first used “{p.expression}”</span>
                 </Link>
               )}
             </div>

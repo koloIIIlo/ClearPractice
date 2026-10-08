@@ -29,7 +29,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 1. One desktop pass after rebuilding (`npm run tauri dev`) over the "Built, not yet checked" list above, then the manual M2 exit gate.
 2. M3: transcript seeking, filler candidates and measures (3.6–3.8), transcript corrections (3.9), search (3.13). The Transcribe flow itself is built; check it in the desktop app (Settings → Transcription → choose `bench/runtime.local/config-selected.json`, then Transcribe on a take).
 3. Remaining M2: recovery presentation (2.5), recording failure and close-guard checks (2.8–2.10). Decide whether backups should carry the API usage ledger (restoring an older ledger would undercount spending, so it is deliberately left out for now).
-4. M1 manual keyboard pass and compact-navigation check.
+4. M1: remaining responsive check (stacked feedback below 1100 px, 800×600) and 1.9 empty/error states.
 
 **Standing notes (not blockers)**
 - Do not request another personal speech sample or repeat the completed paid coaching test; the public benchmark (D-24) stands in for personal audio.
@@ -189,7 +189,7 @@ These API transcription items add an estimated 1–2 days to feasibility if cred
 - [x] 1.12 Vitest + React Testing Library set up; keyboard navigation smoke test
 
 **Exit gate M1**
-- [~] Every key screen is navigable with sample data using only the keyboard. Automated: Today → Sessions → Review, Ctrl+K search, and 404. Still needed: a manual keyboard pass over Studio, Phrases, Progress, and Settings, plus a check of compact nav below 800 px
+- [x] Every key screen is navigable with sample data using only the keyboard. Automated: Today → Sessions → Review, Ctrl+K search, and 404. Checked by the agent in the browser preview on 2026-10-08 with real Tab presses: Studio, Phrases, Progress, Settings (Audio, Data) — every stop named and with a visible focus ring after fixing tab panels; compact navigation at 790 px opens, navigates and closes by keyboard; the skip link works
 
 **M1 notes**: all 8 screens exist. Studio, Sessions, session review playback, Trash and Settings → Data and backups use real native data in the desktop app. Curriculum, transcripts, observations, phrases and progress still use labelled sample data until M3–M4.
 
@@ -373,6 +373,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: M1 keyboard pass in the browser preview: fixed invisible focus on Radix tab panels (TabsContent had outline-none and no ring; affects every Tabs use) and gave the three "From a session" links on Phrases distinct accessible names. The tablist briefly receiving focus is Radix's internal hand-off, not a Tab stop (verified with Tab / Shift+Tab).
 - 2026-10-08: Filler review (3.7, schema v4): Rust storage/backup/analysis/transcribe 26/26 incl. v1→v4 upgrade and decision validation; Vitest transcript + ipc 12/12; crate builds. The real profile (now v3) will migrate to v4 with a snapshot on next launch.
 - 2026-10-08: End-of-session checks: full Rust suite 47 passed + all 8 hardware tests (live capture, forced-kill recovery, Credential Manager disposable key, microphone test, CUDA transcription); full Vitest 44/44 (15 files); production build. Started the real desktop app (`npm run tauri dev`): no startup errors; the real profile migrated v2 → v3 with `database/snapshots/before-v3-*.sqlite`, quick_check ok, `cache/mic-test` created; app stopped afterwards. The real profile `%LOCALAPPDATA%\com.clearpractice.app` was created on 8 Oct 01:33 and had 0 sessions and a fresh 26-byte usage ledger: the Codex-era takes and the USD 0.000227 ledger entry are not on this profile (no other ClearPractice folder exists on the machine). Nothing in this session wrote to the real profile before this launch; tests use temporary folders.
 - 2026-10-08: Microphone test (2.12): `cargo test --lib mic_test -- --ignored` recorded the laptop microphone into cache/mic-test and wiped it; Vitest settings/practice/ipc 22/22. Live waveform moved to src/components for reuse. Asset scope gained `$APPLOCALDATA/cache/mic-test/recordings/*/audio.wav`.

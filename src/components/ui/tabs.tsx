@@ -78,7 +78,8 @@ function TabsContent({
   return (
     <TabsPrimitive.Content
       data-slot="tabs-content"
-      className={cn("flex-1 text-sm outline-none", className)}
+      // Radix makes panels focusable; keep keyboard focus visible (§14).
+      className={cn("flex-1 rounded-md text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50", className)}
       {...props}
     />
   )
