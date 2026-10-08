@@ -39,8 +39,13 @@ pub fn load_config(owner: &DatabaseOwner) -> Result<WorkerConfig> {
     let stored = owner
         .setting(CONFIG_KEY)?
         .ok_or("Set up local transcription in Settings → Transcription first.")?;
-    serde_json::from_str(&stored)
-        .map_err(|_| "The stored transcription setup is unreadable. Choose the setup file again.".into())
+    let mut config: WorkerConfig = serde_json::from_str(&stored)
+        .map_err(|_| "The stored transcription setup is unreadable. Choose the setup file again.")?;
+    // Prefer the app's own verified copy of the same model (plan 3.3).
+    if let Some(installed) = crate::models::installed_path(owner.root(), &config.model_sha256) {
+        config.model = installed;
+    }
+    Ok(config)
 }
 
 pub fn status(owner: &DatabaseOwner) -> Result<SetupStatus> {

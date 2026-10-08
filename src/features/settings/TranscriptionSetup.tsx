@@ -13,6 +13,11 @@ export function TranscriptionSetup() {
     mutationFn: () => ipc.chooseTranscriptionSetup(),
     onSuccess: (next) => qc.setQueryData(["transcription-setup"], next),
   });
+  const packs = useQuery({ queryKey: ["model-packs"], queryFn: () => ipc.listModelPacks(), enabled: native });
+  const importPack = useMutation({
+    mutationFn: () => ipc.importModelPack(),
+    onSuccess: (next) => qc.setQueryData(["model-packs"], next),
+  });
   const data = setup.data;
   return (
     <div className="space-y-3">
@@ -42,6 +47,31 @@ export function TranscriptionSetup() {
         a large model takes a few seconds. A failed check keeps the previous setup.
       </p>
       {choose.error && <p role="alert" className="text-meta text-destructive">{choose.error.message}</p>}
+      {native && (
+        <div className="space-y-2">
+          <h3 className="font-medium">Model packs</h3>
+          <ul className="divide-y rounded-lg border">
+            {packs.data?.map((p) => (
+              <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
+                <div>
+                  <p className="font-medium">{p.id}</p>
+                  <p className="text-meta text-muted-foreground">
+                    {(p.bytes / (1024 * 1024)).toFixed(0)} MiB · {p.language} · {p.license}
+                  </p>
+                </div>
+                <span className="text-meta">{p.installed ? "Installed in the app" : "Not installed"}</span>
+              </li>
+            ))}
+          </ul>
+          <Button variant="outline" disabled={importPack.isPending} onClick={() => importPack.mutate()}>
+            {importPack.isPending ? "Verifying and installing…" : "Import model file…"}
+          </Button>
+          <p className="text-meta text-muted-foreground">
+            Only the known packs above are accepted; size and SHA-256 must match exactly. Once installed, transcription uses the app's own copy.
+          </p>
+          {importPack.error && <p role="alert" className="text-meta text-destructive">{importPack.error.message}</p>}
+        </div>
+      )}
     </div>
   );
 }

@@ -31,6 +31,7 @@ import type {
   RestoreOutcome,
   ExportSummary,
   TranscriptionSetup,
+  ModelPack,
   AttemptTranscript,
   TranscriptionEvent,
   MicTestFinished,
@@ -93,6 +94,9 @@ export interface IpcClient {
   /** Opens the native Save dialog and writes a readable session ZIP; null when cancelled. */
   exportSession(sessionId: string): Promise<ExportSummary | null>;
   getTranscriptionSetup(): Promise<TranscriptionSetup>;
+  listModelPacks(): Promise<ModelPack[]>;
+  /** Opens the native picker; installs a known pack only after size and checksum match. */
+  importModelPack(): Promise<ModelPack[]>;
   /** Opens the native file picker and verifies the Whisper runtime and model before storing the setup. */
   chooseTranscriptionSetup(): Promise<TranscriptionSetup>;
   getAttemptTranscript(attemptId: string): Promise<AttemptTranscript>;

@@ -28,7 +28,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 **Next actions, in order**
 1. User: one desktop pass after rebuilding (`npm run tauri dev`) over the "Built, not yet checked" list, then the manual M2 exit gate. For transcription: Settings → Transcription → choose `bench/runtime.local/config-selected.json`, record a take, open its session, Transcribe.
 2. User (optional): store a Deepgram and/or AssemblyAI key in Settings → Transcription → API transcription test, preview a take and approve one Send (closes 0.22); then plan 0.23.
-3. M3 remaining code: model pack registry and verified import (3.3), stored analysis runs/metric values (3.4), API transcription in the product behind its gate (3.14–3.19).
+3. M3 remaining code: stored analysis runs/metric values (3.4), API transcription in the product behind its gate (3.14–3.19).
 4. Physical check: unplug a USB microphone mid-take (2.9). M1: empty/error-state pass (1.9).
 5. Then milestone P (pitch tracker choice, P.1) and M4 content (start the licensed reference-clip search early).
 
@@ -229,7 +229,7 @@ The API tasks below add an estimated 3–5 days. Implement the shared budget fou
 
 - [~] 3.1 Job queue (jobs table): one transcription job across Local/API at a time; recording has priority; cancel. Paid jobs never resume or dispatch automatically after restart/reconnection. Local: `transcribe::ActiveJob` allows one job; `start_recording` cancels a running transcription; restore is refused while one runs; jobs left running are marked interrupted at start, never resumed. API jobs follow with 3.14
 - [x] 3.2 Whisper worker protocol: JSON request, structured progress, result, schema version. Delivered in M0 0.13 and now used by the app: versioned `WorkerConfig` JSON (verified before every run), structured `WorkerProgress` events (preparing/running %/completed/failed/canceled) forwarded as `transcription_progress`, versioned `Transcript` (v1) saved as raw + normalised artifacts and the provider-neutral `TranscriptionResult` (v1); exercised by the CUDA hardware test on 2026-10-08
-- [ ] 3.3 Model pack registry: ID, checksum, size, license, language; verified import; atomic install
+- [x] 3.3 Model pack registry: ID, checksum, size, license, language; verified import; atomic install. `models.rs` catalogue (base, large-v3-turbo-q5_0 from bench/whisper-assets.json, MIT ggml conversions); Import model file… (native picker) accepts only exact size + SHA-256 matches, copies as `.part` while re-hashing, syncs and renames; a failed import never replaces a good pack; transcription prefers the app's installed copy of the setup's model. Tests: synthetic catalogue + real 148 MB `ggml-base.bin` import (3.8 s). Desktop pass pending
 - [~] 3.4 Schema: transcript_revisions, transcript_segments, analysis_runs, metric_values, annotations. Schema v3 adds transcript_revisions (immutable, parent link for 3.9), transcript_segments and job columns (take, times, error); v4 adds annotations; v1→v4 upgrade tested. analysis_runs/metric_values still to come
 - [~] 3.5 VAD + timeline mapping (never measure pauses from trimmed audio). `analysis::voice_activity` (peak-energy-v1) finds speech and ≥700 ms pauses from the original take's waveform peaks (100 buckets/s, adaptive threshold between noise floor and speech), so times are on the original timeline; shown in preference to segment gaps and labelled Estimated. Real run: one 1.4 s pause at 0:50.8 that segment gaps missed. Remaining: a dedicated VAD model if the energy method proves unreliable on noisy takes, and timing checks after resampling (A-6)
 - [~] 3.6 Metrics with definition versions (v1 from transcripts in `analysis.rs`: word count, speech span, pace only with ≥15 s and ≥20 timed words, pauses ≥700 ms between neighbouring timed segments, repeated words; untimed segments counted and left out; all Estimated, missing values null with reasons. Not yet VAD-based or stored as metric_values): duration, analysis interval, estimated pace (≥15 s speech, ≥20 words), pauses (≥700 ms threshold, stored), repeated wording
@@ -368,6 +368,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Model pack registry (3.3): Rust models 3/3 incl. real base-pack import; Vitest settings + ipc 19/19.
 - 2026-10-08: Final checks before push: Rust 54 passed (8 hardware tests ignored by default; all 8 passed earlier tonight and the transcription one again after the voice-activity change), Vitest 47/47 in 17 files, production build. Double-checked this plan and the handout: removed six stale rows of the old status table that an earlier cleanup had left below the new one, and refreshed status and next actions.
 - 2026-10-08: Voice-activity pauses (3.5): Rust analysis 4/4, CUDA hardware run shows a 1.4 s pause from the audio; Vitest review + ipc 17/17.
 - 2026-10-08: Junction attack test (2.6) passes on Windows with `mklink /J`.

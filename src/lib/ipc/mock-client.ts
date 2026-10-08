@@ -144,6 +144,8 @@ export function createMockClient(): IpcClient {
     discardRestorePreview: async () => {},
     restoreBackup: async () => { throw new IpcError("desktop_required", "Restore is available in the desktop app."); },
     exportSession: async () => { throw new IpcError("desktop_required", "Export is available in the desktop app."); },
+    listModelPacks: async () => [],
+    importModelPack: async () => { throw new IpcError("desktop_required", "Model packs are managed in the desktop app."); },
     getTranscriptionSetup: () => respond(S.TranscriptionSetup, { configured: false, modelId: null, backend: null, prompt: null, unavailableReason: "Local transcription runs in the desktop app." }),
     chooseTranscriptionSetup: async () => { throw new IpcError("desktop_required", "Local transcription runs in the desktop app."); },
     getAttemptTranscript: (attemptId) => respond(S.AttemptTranscript, { attemptId, revision: null, correction: null, job: null }),

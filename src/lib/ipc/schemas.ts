@@ -212,6 +212,17 @@ export const TranscriptionSetup = z.object({
 });
 export type TranscriptionSetup = z.infer<typeof TranscriptionSetup>;
 
+export const ModelPack = z.object({
+  id: Id,
+  bytes: z.number().int().positive(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  license: z.string(),
+  language: z.string(),
+  source: z.string(),
+  installed: z.boolean(),
+});
+export type ModelPack = z.infer<typeof ModelPack>;
+
 export const SavedSegment = z.object({
   text: z.string(),
   startMs: z.number().int().nonnegative().nullable(),

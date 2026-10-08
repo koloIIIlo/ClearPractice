@@ -6,6 +6,7 @@ pub mod backup;
 mod audio_devices;
 pub mod credentials;
 pub mod mic_test;
+pub mod models;
 pub mod storage;
 pub mod transcribe;
 
@@ -702,6 +703,37 @@ async fn choose_transcription_setup(
 }
 
 #[tauri::command]
+async fn list_model_packs(storage: State<'_, Arc<SessionStorage>>) -> Result<Vec<models::PackStatus>, String> {
+    with_storage(&storage, |owner| Ok(models::list(owner.root())))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
+/// Imports a known model pack chosen in the native picker: size and SHA-256
+/// must match the catalogue, then it is copied and installed atomically.
+#[tauri::command]
+async fn import_model_pack(
+    app: tauri::AppHandle,
+    storage: State<'_, Arc<SessionStorage>>,
+) -> Result<Vec<models::PackStatus>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    with_storage(&storage, move |owner| {
+        let picked = app
+            .dialog()
+            .file()
+            .set_title("Choose a Whisper model file (ggml-*.bin)")
+            .add_filter("Whisper model", &["bin"])
+            .blocking_pick_file();
+        if let Some(path) = picked.and_then(|p| p.into_path().ok()) {
+            models::import(owner.root(), &path)?;
+        }
+        Ok(models::list(owner.root()))
+    })
+    .await
+    .map_err(|_| "Model import failed.".to_string())?
+}
+
+#[tauri::command]
 async fn get_attempt_transcript(
     storage: State<'_, Arc<SessionStorage>>,
     attempt_id: String,
@@ -1092,6 +1124,8 @@ pub fn run() {
             get_transcription_setup,
             choose_transcription_setup,
             get_attempt_transcript,
+            list_model_packs,
+            import_model_pack,
             save_transcript_correction,
             search_content,
             set_filler_decision,

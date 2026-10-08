@@ -36,6 +36,8 @@ export function createNativeClient(): IpcClient {
     discardRestorePreview: async (stagingId) => { await command("discard_restore_preview", z.null(), { stagingId }); },
     restoreBackup: (stagingId) => command("restore_backup", S.RestoreOutcome, { stagingId }),
     exportSession: (sessionId) => command("export_session", S.ExportSummary.nullable(), { sessionId }),
+    listModelPacks: () => command("list_model_packs", S.ModelPack.array()),
+    importModelPack: () => command("import_model_pack", S.ModelPack.array()),
     getTranscriptionSetup: () => command("get_transcription_setup", S.TranscriptionSetup),
     chooseTranscriptionSetup: () => command("choose_transcription_setup", S.TranscriptionSetup),
     // Sessions come from SQLite; prompts, guides and phrases are still sample curriculum (M4).
