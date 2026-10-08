@@ -54,30 +54,36 @@ function ExerciseList() {
   const exercises = useExercises();
   return (
     <QueryView query={exercises}>
-      {(list) => (
-        <ul className="grid gap-4 md:grid-cols-2">
-          {list.map((ex) => (
-            <li key={ex.id} className="flex flex-col rounded-panel border bg-card p-5">
-              <div className="flex items-baseline justify-between gap-2">
-                <h2 className="text-lg font-semibold">{ex.title}</h2>
-                <span className="text-meta text-muted-foreground tabular-nums">~{ex.typicalMinutes} min</span>
-              </div>
-              <p className="mt-1">{ex.purpose}</p>
-              <p className="mt-2 text-meta text-muted-foreground">Example: {ex.example}</p>
-              <div className="mt-4 flex gap-2 pt-1">
-                <Button asChild>
-                  <Link to={`/practice/${ex.id}`} state={{ section: "exercises" }}>
-                    Start
-                  </Link>
-                </Button>
-                <Button variant="outline" asChild>
-                  <Link to={`/exercises/${ex.id}`}>Instructions</Link>
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      {(list) =>
+        list.length === 0 ? (
+          <EmptyState title="No exercises are available">
+            The bundled exercises could not be found. Reinstalling the app restores them; your sessions and recordings are not affected.
+          </EmptyState>
+        ) : (
+          <ul className="grid gap-4 md:grid-cols-2">
+            {list.map((ex) => (
+              <li key={ex.id} className="flex flex-col rounded-panel border bg-card p-5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <h2 className="text-lg font-semibold">{ex.title}</h2>
+                  <span className="text-meta text-muted-foreground tabular-nums">~{ex.typicalMinutes} min</span>
+                </div>
+                <p className="mt-1">{ex.purpose}</p>
+                <p className="mt-2 text-meta text-muted-foreground">Example: {ex.example}</p>
+                <div className="mt-4 flex gap-2 pt-1">
+                  <Button asChild>
+                    <Link to={`/practice/${ex.id}`} state={{ section: "exercises" }}>
+                      Start
+                    </Link>
+                  </Button>
+                  <Button variant="outline" asChild>
+                    <Link to={`/exercises/${ex.id}`}>Instructions</Link>
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )
+      }
     </QueryView>
   );
 }

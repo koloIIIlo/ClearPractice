@@ -19,17 +19,17 @@ This file tracks *how far we are*. Section references like **§9** point into th
 
 | | |
 | --- | --- |
-| Active milestone | M3 Review and transcription (in progress); milestone P has started (YIN contour and Show intonation on saved takes; P.1–P.4 and P.8 partial). E is done. M0 is done except the two checks that need the user's provider keys (0.22 live request, 0.23 benchmark). M1 is done except an empty/error-state pass (1.9). M2's code is done; its remaining items are desktop/hardware checks and the exit gate |
+| Active milestone | M3 Review and transcription: all code items are built; what remains are desktop checks, a live provider response (0.22) and the separate API enablement gate. Milestone P: P.2–P.4, P.7, P.8 done (stored YIN contour, intonation view with playhead and click-to-seek, phrase-ending readout); P.1 waits on the Praat spot-check, P.5/P.6 on M4 reference clips. E is done. M0 is done except the two checks that need the user's provider keys (0.22 live request, 0.23 benchmark). M1 is done (1.9 empty/error states verified by tests). M2's code is done; its remaining items are desktop/hardware checks and the exit gate |
 | Last updated | 2026-10-08 |
 | Repository | Everything is committed on `main` and pushed to `origin` (github.com/koloIIIlo/ClearPractice); authored by Alex only |
-| Built, not yet checked in the desktop app | Studio timer / Ctrl+Enter / live waveform, waveform player (2.14), Trash (2.17), backup / check / replace / weekly / export (2.18–2.22), microphone test (2.12), discard interrupted take (2.5), close guard (2.10), local transcription with measures, filler review, corrections and search (M3), model pack import (3.3), API transcription test panel (0.22) |
+| Built, not yet checked in the desktop app | Studio timer / Ctrl+Enter / live waveform, waveform player (2.14), Trash (2.17), backup / check / replace / weekly / export (2.18–2.22), microphone test (2.12), discard interrupted take (2.5), close guard (2.10), local transcription with measures, filler review, corrections and search (M3), model pack import (3.3), intonation view with playhead, click-to-seek and phrase endings (P.4, P.7), API transcription test panel with playable preview audio and Stop waiting (0.22, 3.15, 3.18) |
 | Blockers | None for coding. Desktop and hardware checks need the user at the laptop (or an agent that can drive the desktop app); 0.22/0.23 need the user's Deepgram/AssemblyAI keys and approval |
 
 **Next actions, in order**
 1. User: one desktop pass after rebuilding (`npm run tauri dev`) over the "Built, not yet checked" list, then the manual M2 exit gate. For transcription: Settings → Transcription → choose `bench/runtime.local/config-selected.json`, record a take, open its session, Transcribe.
 2. User (optional): store a Deepgram and/or AssemblyAI key in Settings → Transcription → API transcription test, preview a take and approve one Send (closes 0.22); then plan 0.23.
-3. M3: no code items left; the rest waits on desktop checks, a live provider response (0.22) and the API enablement gate. playable prepared audio in the API preview (3.15).
-4. Physical check: unplug a USB microphone mid-take (2.9). M1: empty/error-state pass (1.9).
+3. M3: no code items left; the rest waits on desktop checks, a live provider response (0.22) and the API enablement gate.
+4. Physical check: unplug a USB microphone mid-take (2.9).
 5. Milestone P: the Praat spot-check (gate P, settles D-17), then P.5/P.6 with M4 reference clips. Then M4 content (start the licensed reference-clip search early).
 
 **Standing notes (not blockers)**
@@ -179,7 +179,7 @@ These API transcription items add an estimated 1–2 days to feasibility if cred
 - [x] 1.6 TanStack Query provider; `src/lib/ipc` typed command wrappers with a mock implementation for browser-only dev
 - [x] 1.7 Zod schemas for the core DTOs (Session, Attempt, TranscriptRevision, PhraseCard, …). FeedbackResult comes with 0.19 / 5.2
 - [x] 1.8 Responsive rules: sidebar at ≥1100 px, stacked feedback below 1100 px, compact nav below 800 px; test at 800×600. Checked in the browser preview on 2026-10-08: at 1300 px the feedback column sits beside the transcript, at 1050 px it stacks below, at 800×600 everything fits without horizontal scrolling, and below 800 px (790) the compact menu works by keyboard
-- [~] 1.9 Real empty / loading / unavailable / error states for each screen (§5)
+- [x] 1.9 Real empty / loading / unavailable / error states for each screen (§5). `src/app/states.test.tsx`: Today, Exercises, Sessions, Trash, Phrases and Progress each show an error with Try again (shell still usable) when every read fails, and Sessions, Trash, Phrases and Exercises show an empty state with no data; the pass found and fixed a blank Exercises list (now "No exercises are available")
 - [x] 1.10 Command palette (Ctrl+K), local search stub
 - [x] 1.11 Reduced motion, 120–180 ms transitions, visible focus rings
 - [x] 1.12 Vitest + React Testing Library set up; keyboard navigation smoke test
@@ -369,6 +369,8 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: End-of-session full checks: Rust 68 passed / 10 hardware tests ignored, no warnings; Vitest 69/69 in 21 files; typecheck clean; production build OK. Plan and handout re-checked (one status table, no control bytes).
+- 2026-10-08: Empty/error-state pass (1.9): new screen-state test, 10 cases; fixed the blank Exercises list. Full Vitest 69/69 in 21 files; typecheck clean.
 - 2026-10-08: Playable API preview audio (3.15): Rust api 13/13 (path only while the preview is open, plain drive form for the asset scope); Vitest ApiTranscribe + settings 6/6; typecheck clean.
 - 2026-10-08: Stop waiting for an API request (3.18): Rust api 13/13 (release before dispatch, Uncertain after); Vitest ApiTranscribe 4/4; typecheck clean.
 - 2026-10-08: Filler review and measures on API text (3.19): storage test extended (decisions on timed and untimed API revisions, pace reason, pauses from local audio); passes.
