@@ -214,7 +214,7 @@ fn write_backup(
     owner.snapshot_to(&snapshot)?;
 
     // The asset list comes from the snapshot, so it matches the database we ship.
-    let (schema_version, assets) = {
+    let (schema_version, assets, clips) = {
         let conn = Connection::open_with_flags(&snapshot, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|_| "The database snapshot cannot be read.")?;
         let version: i64 = conn
@@ -227,7 +227,15 @@ fn write_backup(
             .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, Option<String>>(3)?)))
             .map_err(|_| "The database snapshot cannot be read.")?;
         let assets: Vec<_> = rows.collect::<rusqlite::Result<_>>().map_err(|_| "The database snapshot cannot be read.")?;
-        (version, assets)
+        drop(stmt);
+        let clips: Vec<(String, String)> = {
+            let mut stmt = conn
+                .prepare("SELECT id,sha256 FROM reference_clips WHERE origin='user' ORDER BY id")
+                .map_err(|_| "The database snapshot cannot be read.")?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map_err(|_| "The database snapshot cannot be read.")?;
+            rows.collect::<rusqlite::Result<_>>().map_err(|_| "The database snapshot cannot be read.")?
+        };
+        (version, assets, clips)
     };
 
     let final_path = destination.join(format!("{id}.zip"));
@@ -255,6 +263,20 @@ fn write_backup(
         let receipt = dir.join("saved.json");
         contained(root, &receipt)?;
         entries.push(add_file(&mut zip, &format!("recordings/{asset}/saved.json"), &receipt, CompressionMethod::Deflated)?);
+    }
+    // Clips the user imported (4.4a); bundled clips ship with the app.
+    for (clip, sha256) in &clips {
+        validate_id(clip)?;
+        let audio = root.join("clips").join(clip).join("audio.wav");
+        if !audio.is_file() {
+            continue;
+        }
+        contained(root, &audio)?;
+        let entry = add_file(&mut zip, &format!("clips/{clip}/audio.wav"), &audio, CompressionMethod::Stored)?;
+        if &entry.sha256 != sha256 {
+            return Err(format!("Clip {clip} changed or failed verification, so no backup was saved. Earlier backups were not changed."));
+        }
+        entries.push(entry);
     }
     let manifest = Manifest {
         format: FORMAT.into(),
@@ -323,6 +345,7 @@ fn allowed_path(name: &str) -> bool {
     let parts: Vec<&str> = name.split('/').collect();
     matches!(parts.as_slice(), ["recordings", id, file]
         if validate_id(id).is_ok() && (*file == "audio.wav" || *file == "saved.json"))
+        || matches!(parts.as_slice(), ["clips", id, "audio.wav"] if validate_id(id).is_ok())
 }
 
 fn read_manifest(zip: &mut ZipArchive<BufReader<File>>) -> Result<Manifest> {
@@ -460,6 +483,22 @@ fn check_database(staging: &Path, manifest: &Manifest, staging_id: &str) -> Resu
         recordings += 1;
         audio_bytes += bytes as u64;
     }
+    // Imported clips listed in the database must be in the archive with the same checksum.
+    let has_clips: bool = conn
+        .query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='reference_clips')", [], |r| r.get(0))
+        .map_err(db)?;
+    if has_clips {
+        let mut stmt = conn.prepare("SELECT id,sha256 FROM reference_clips WHERE origin='user'").map_err(db)?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(db)?;
+        for row in rows {
+            let (id, sha256) = row.map_err(db)?;
+            validate_id(&id)?;
+            let path = format!("clips/{id}/audio.wav");
+            if manifest.entries.iter().find(|e| e.path == path).is_none_or(|e| e.sha256 != sha256) {
+                return Err(format!("The backup is missing or has a different copy of clip {id}. Nothing was restored."));
+            }
+        }
+    }
     let count = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, i64>(0)).map_err(db);
     Ok(RestorePreview {
         staging_id: staging_id.into(),
@@ -569,7 +608,7 @@ fn is_backup_name(name: &str) -> bool {
 // `restore-rollback/<name>/` and kept there as rollback material.
 
 const JOURNAL: &str = "restore-in-progress.json";
-const PROFILE_DIRS: [&str; 3] = ["database", "recordings", "recovery"];
+const PROFILE_DIRS: [&str; 4] = ["database", "recordings", "recovery", "clips"];
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -628,6 +667,9 @@ pub fn replace_profile(root: &Path, staging_id: &str, now_ms: u64) -> Result<Res
             rename(&staging.join("recordings"), &root.join("recordings"))?;
         } else {
             fs::create_dir(root.join("recordings")).map_err(io_error)?;
+        }
+        if staging.join("clips").is_dir() {
+            rename(&staging.join("clips"), &root.join("clips"))?;
         }
         fs::create_dir(root.join("recovery")).map_err(io_error)
     })();

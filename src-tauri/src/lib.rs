@@ -7,6 +7,7 @@ mod audio_devices;
 pub mod credentials;
 pub mod mic_test;
 pub mod models;
+pub mod clips;
 pub mod prosody;
 pub mod storage;
 pub mod transcribe;
@@ -578,6 +579,89 @@ async fn set_session_reflection(
     with_storage(&storage, move |owner| owner.set_session_reflection(&session_id, ease, takeaway.as_deref()))
         .await
         .map_err(|_| "Session storage failed.".to_string())?
+}
+
+/// Reference clips (4.4a): pick a local audio file, preview the decoded copy,
+/// keep a 3–30 s section with a title and source, list, play and delete.
+#[tauri::command]
+async fn choose_clip_file(app: tauri::AppHandle, storage: State<'_, Arc<SessionStorage>>) -> Result<Option<clips::Staged>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    with_storage(&storage, move |owner| {
+        let picked = app
+            .dialog()
+            .file()
+            .set_title("Choose an audio file to take a clip from")
+            .add_filter("Audio", &["wav", "mp3", "m4a", "aac", "mp4", "flac", "ogg", "oga"])
+            .blocking_pick_file();
+        match picked.and_then(|p| p.into_path().ok()) {
+            Some(path) => clips::stage(owner.root(), &path).map(Some),
+            None => Ok(None),
+        }
+    })
+    .await
+    .map_err(|_| "The clip could not be prepared.".to_string())?
+}
+
+#[tauri::command]
+async fn get_clip_staging_path(storage: State<'_, Arc<SessionStorage>>, staging_id: String) -> Result<String, String> {
+    with_storage(&storage, move |owner| {
+        let path = clips::staging_dir(owner.root(), &staging_id)?.join("full.wav");
+        crate::audio::prepare::contained(owner.root(), &path)?;
+        Ok(path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn discard_clip_staging(storage: State<'_, Arc<SessionStorage>>, staging_id: String) -> Result<(), String> {
+    with_storage(&storage, move |owner| {
+        clips::discard_staging(owner.root(), &staging_id);
+        Ok(())
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn save_clip(
+    storage: State<'_, Arc<SessionStorage>>,
+    staging_id: String,
+    start_ms: u64,
+    end_ms: u64,
+    title: String,
+    source: String,
+    transcript: Option<String>,
+) -> Result<clips::Clip, String> {
+    with_storage(&storage, move |owner| {
+        let details = clips::ClipDetails { title: &title, source: &source, transcript: transcript.as_deref() };
+        let clip = clips::commit(owner.root(), &staging_id, start_ms, end_ms, &details, "user")?;
+        if let Err(error) = owner.insert_clip(&clip) {
+            let _ = clips::remove_files(owner.root(), &clip.id);
+            return Err(error);
+        }
+        Ok(clip)
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn list_clips(storage: State<'_, Arc<SessionStorage>>) -> Result<Vec<clips::Clip>, String> {
+    with_storage(&storage, |owner| owner.list_clips()).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn get_clip_playback_path(storage: State<'_, Arc<SessionStorage>>, clip_id: String) -> Result<String, String> {
+    with_storage(&storage, move |owner| owner.clip_playback_path(&clip_id).map(|p| p.to_string_lossy().into_owned()))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn delete_clip(storage: State<'_, Arc<SessionStorage>>, clip_id: String) -> Result<(), String> {
+    with_storage(&storage, move |owner| owner.delete_clip(&clip_id)).await.map_err(|_| "Session storage failed.".to_string())?
 }
 
 /// Single takes in Trash (2.23).
@@ -1243,6 +1327,13 @@ pub fn run() {
             empty_trash,
             move_take_to_trash,
             set_session_focus,
+            choose_clip_file,
+            get_clip_staging_path,
+            discard_clip_staging,
+            save_clip,
+            list_clips,
+            get_clip_playback_path,
+            delete_clip,
             set_session_reflection,
             restore_take,
             delete_takes_permanently,

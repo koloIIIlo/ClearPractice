@@ -33,6 +33,8 @@ tauri-plugin-dialog = "=2.8.1"
 zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2"] }
 # zip disables flate2 defaults; select the pure-Rust backend explicitly.
 flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
+# Decodes clips the user imports (WAV, MP3, M4A/AAC, FLAC, OGG) in pure Rust (4.4a).
+symphonia = { version = "=0.5.4", features = ["mp3", "aac", "isomp4"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security_Credentials", "Win32_System_ProcessStatus"] }

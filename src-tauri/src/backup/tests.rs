@@ -193,10 +193,33 @@ fn asset_hashes(root: &Path) -> BTreeMap<String, String> {
 #[test]
 fn restore_into_an_empty_profile_matches_records_and_asset_checksums() {
     let (source, owner) = profile_with_two_takes();
+    // An imported reference clip (4.4a) travels with the backup.
+    let take = source.0.join("recordings/take-a/audio.wav");
+    let staged = crate::clips::stage(&source.0, &take).unwrap();
+    let details = crate::clips::ClipDetails { title: "My clip", source: "My own recording", transcript: None };
+    let clip = crate::clips::commit(&source.0, &staged.staging_id, 0, 900, &details, "user").err();
+    assert!(clip.is_some(), "a 1 s take is too short for a 3 s clip");
+    let long = source.0.join("long.wav");
+    let one_second = fs::read(&take).unwrap();
+    let mut data = one_second[44..].to_vec();
+    for _ in 0..4 { data.extend_from_slice(&one_second[44..]); }
+    let mut wav = recording::wav_header(48_000, data.len() as u32).to_vec();
+    wav.extend_from_slice(&data);
+    fs::write(&long, wav).unwrap();
+    let staged = crate::clips::stage(&source.0, &long).unwrap();
+    let clip = crate::clips::commit(&source.0, &staged.staging_id, 0, 4_000, &details, "user").unwrap();
+    owner.insert_clip(&clip).unwrap();
     let destination = TestRoot::new();
     let folder = destination.0.join("backups");
     fs::create_dir(&folder).unwrap();
     let archive = folder.join(create(&owner, &folder, recording::now_ms()).unwrap().file_name);
+    let clips = owner.list_clips().unwrap();
+    assert_eq!(clips.len(), 1);
+    // An archive that lost the clip's audio is refused before anything changes.
+    let broken = folder.join("no-clip.zip");
+    rewrite(&archive, &broken, |name, bytes| (!name.starts_with("clips/")).then_some(bytes), |m| m.entries.retain(|e| !e.path.starts_with("clips/")));
+    assert!(inspect(&source.0, &broken, "stage-broken").unwrap_err().contains("clip"));
+    fs::remove_file(&broken).unwrap();
     let sessions = owner.list_sessions(None, None, false).unwrap();
     let trash = owner.list_trash().unwrap()["items"].clone();
 
@@ -214,6 +237,8 @@ fn restore_into_an_empty_profile_matches_records_and_asset_checksums() {
 
     assert_eq!(restored.list_sessions(None, None, false).unwrap(), sessions);
     assert_eq!(restored.list_trash().unwrap()["items"], trash);
+    assert_eq!(restored.list_clips().unwrap(), clips, "imported clips are restored");
+    assert_eq!(hash_file(&restored.clip_playback_path(&clips[0].id).unwrap()).unwrap(), clips[0].sha256);
     assert_eq!(asset_hashes(&empty.0), asset_hashes(&source.0));
     for id in ["take-a", "take-b"] {
         assert!(restored.checked_recording(id).is_ok());
