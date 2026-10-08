@@ -120,6 +120,9 @@ export interface IpcClient {
   previewClipNames(texts: string[], model?: CoachingModel): Promise<CoachingPreview>;
   requestClipNames(requestId: string, payloadSha256: string): Promise<ClipName[]>;
   /** AI chooses the best passages (4.4e): previews the transcript annotated with measured delivery (text only). */
+  /** Measures each sentence of a staged recording's transcript in the background (4.4g). Returns the sentence count. */
+  measureClipSource(stagingId: string): Promise<number>;
+  onClipMeasureProgress(listener: (progress: { stage: "preparing" | "measuring"; percent: number | null }) => void): Promise<() => void>;
   previewClipPicks(stagingId: string, options: { model?: CoachingModel; toneHint: boolean; wanted: number }): Promise<CoachingPreview>;
   requestClipPicks(stagingId: string, requestId: string, payloadSha256: string): Promise<PickedClip[]>;
   getLinkToolStatus(): Promise<LinkToolStatus>;

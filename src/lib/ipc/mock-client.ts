@@ -145,6 +145,8 @@ export function createMockClient(): IpcClient {
     saveClipSections: async () => { throw new IpcError("desktop_required", "Clips can be saved in the desktop app."); },
     previewClipNames: async () => { throw new IpcError("desktop_required", "AI suggestions run in the desktop app."); },
     requestClipNames: async () => { throw new IpcError("desktop_required", "AI suggestions run in the desktop app."); },
+    measureClipSource: async () => { throw new IpcError("desktop_required", "Measuring runs in the desktop app."); },
+    onClipMeasureProgress: async () => () => {},
     previewClipPicks: async () => { throw new IpcError("desktop_required", "AI choices run in the desktop app."); },
     requestClipPicks: async () => { throw new IpcError("desktop_required", "AI choices run in the desktop app."); },
     getLinkToolStatus: async () => ({ available: false, path: null }),

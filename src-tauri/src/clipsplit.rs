@@ -4,7 +4,7 @@
 //! long pauses. The user reviews, renames and keeps the candidates they want.
 use crate::audio::{prepare, whisper};
 use crate::clips;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
     io::{BufReader, BufWriter, Read, Write},
@@ -198,6 +198,8 @@ pub fn transcribe_local(
 pub fn save_segments(root: &Path, staging_id: &str, segments: &[(String, u64, u64)]) -> Result<()> {
     let dir = clips::staging_dir(root, staging_id)?;
     prepare::contained(root, &dir)?;
+    // Measures belong to one transcript; a new transcript is measured again.
+    let _ = fs::remove_file(dir.join(MEASURES));
     fs::write(dir.join("segments.json"), serde_json::to_vec(segments).map_err(|e| e.to_string())?).map_err(|_| "Cannot keep the transcript.".into())
 }
 
@@ -209,7 +211,7 @@ pub fn load_segments(root: &Path, staging_id: &str) -> Result<Vec<(String, u64, 
 
 /// Locally measured delivery of one sentence (4.4e, P.9). Values are Estimated;
 /// `None` means not enough voiced audio to say.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SentenceInfo {
     pub index: usize,
@@ -294,14 +296,62 @@ pub fn annotated_transcript(sentences: &[SentenceInfo]) -> String {
 }
 
 /// Measures the staged recording's sentences from its own audio.
-pub fn annotate_staged(root: &Path, staging_id: &str) -> Result<(Vec<SentenceInfo>, String)> {
-    let segments = load_segments(root, staging_id)?;
-    let (path, _) = resample_staged(root, staging_id, &AtomicBool::new(false))?;
-    let bytes = fs::read(&path).map_err(|_| "The prepared audio is unavailable.")?;
+const MEASURES: &str = "measures.json";
+
+#[derive(Deserialize, Serialize)]
+struct CachedMeasures {
+    /// SHA-256 of the transcript the measures were taken from.
+    segments_sha256: String,
+    sentences: Vec<SentenceInfo>,
+}
+
+/// Where measuring a staged recording has got to (for the progress line).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MeasureStage {
+    PreparingAudio,
+    Measuring(u8),
+}
+
+/// Measures every sentence of a staged recording's transcript (4.4e). Runs once
+/// per transcript: the result is kept next to it, so asking the AI again (or
+/// with other settings) is instant. Long recordings take a while, so this
+/// reports progress and can be stopped.
+pub fn measure_staged(root: &Path, staging_id: &str, cancel: &AtomicBool, progress: impl Fn(MeasureStage) + Sync) -> Result<Vec<SentenceInfo>> {
+    use sha2::{Digest, Sha256};
+    let dir = clips::staging_dir(root, staging_id)?;
+    prepare::contained(root, &dir)?;
+    let transcript = fs::read(dir.join("segments.json")).map_err(|_| "Transcribe the recording first.")?;
+    let hash = format!("{:x}", Sha256::digest(&transcript));
+    if let Ok(cached) = fs::read(dir.join(MEASURES)).map_err(|_| ()).and_then(|b| serde_json::from_slice::<CachedMeasures>(&b).map_err(|_| ())) {
+        if cached.segments_sha256 == hash {
+            return Ok(cached.sentences);
+        }
+    }
+    let segments: Vec<(String, u64, u64)> = serde_json::from_slice(&transcript).map_err(|_| "The transcript is damaged. Transcribe again.")?;
+    progress(MeasureStage::PreparingAudio);
+    let (path, _) = resample_staged(root, staging_id, cancel)?;
+    let bytes = fs::read(&path).map_err(|_| "The prepared audio is unavailable.");
     let _ = fs::remove_file(&path);
+    let bytes = bytes?;
     let samples: Vec<f32> = bytes.get(44..).unwrap_or(&[]).chunks_exact(2).map(|p| f32::from(i16::from_le_bytes([p[0], p[1]])) / 32768.0).collect();
-    let contour = crate::prosody::contour(&samples, prepare::RATE);
+    drop(bytes);
+    let last = std::sync::atomic::AtomicU8::new(0);
+    progress(MeasureStage::Measuring(0));
+    let contour = crate::prosody::contour_with(&samples, prepare::RATE, cancel, |done, total| {
+        let percent = (done * 100 / total.max(1)).min(100) as u8;
+        if percent > last.fetch_max(percent, Ordering::Relaxed) {
+            progress(MeasureStage::Measuring(percent));
+        }
+    })
+    .map_err(|e| if cancel.load(Ordering::Relaxed) { "Stopped. Nothing was sent.".to_string() } else { e })?;
     let sentences = measure_sentences(&segments, &contour.f0_hz, &contour.rms_db, contour.hop_ms);
+    let cached = CachedMeasures { segments_sha256: hash, sentences };
+    fs::write(dir.join(MEASURES), serde_json::to_vec(&cached).map_err(|e| e.to_string())?).map_err(|_| "Cannot keep the measures.")?;
+    Ok(cached.sentences)
+}
+
+pub fn annotate_staged(root: &Path, staging_id: &str) -> Result<(Vec<SentenceInfo>, String)> {
+    let sentences = measure_staged(root, staging_id, &AtomicBool::new(false), |_| {})?;
     let text = annotated_transcript(&sentences);
     Ok((sentences, text))
 }
@@ -438,6 +488,46 @@ mod tests {
         assert_eq!((clips[0].start_ms, clips[0].end_ms), (0, 11_500));
         assert_eq!(clips[0].text, "Sentence 0. Sentence 1.");
         assert!(picks_to_clips(&segments, &[pick(1, 6, "Too long")]).is_empty(), "35 s is too long");
+    }
+
+    #[test]
+    fn sentence_measures_are_kept_with_the_transcript_and_redone_after_a_new_one() {
+        use crate::storage::recording::{self, tests::TestRoot};
+        let root = TestRoot::new();
+        // 4 s at 48 kHz: a steady 150 Hz voice, falling to 110 Hz in the last second.
+        let rate = 48_000u32;
+        let mut phase = 0.0f64;
+        let pcm: Vec<u8> = (0..rate * 4)
+            .flat_map(|i| {
+                let t = f64::from(i) / f64::from(rate);
+                let f0 = if t < 3.0 { 150.0 } else { 150.0 - 40.0 * (t - 3.0) };
+                phase += std::f64::consts::TAU * f0 / f64::from(rate);
+                let v = (1..=5).map(|h| (phase * h as f64).sin() / h as f64).sum::<f64>() * 0.25;
+                ((v * 32767.0) as i16).to_le_bytes()
+            })
+            .collect();
+        let mut wav = recording::wav_header(rate, pcm.len() as u32).to_vec();
+        wav.extend_from_slice(&pcm);
+        let file = root.0.join("talk.wav");
+        fs::write(&file, wav).unwrap();
+        let staged = clips::stage(&root.0, &file).unwrap();
+        let id = staged.staging_id.as_str();
+        assert!(measure_staged(&root.0, id, &AtomicBool::new(false), |_| {}).unwrap_err().contains("Transcribe"));
+        save_segments(&root.0, id, &[seg("A steady start.", 0, 2_000), seg("And a falling end.", 2_000, 4_000)]).unwrap();
+        let stages = std::sync::Mutex::new(Vec::new());
+        let first = measure_staged(&root.0, id, &AtomicBool::new(false), |s| stages.lock().unwrap().push(s)).unwrap();
+        let stages = stages.into_inner().unwrap();
+        assert_eq!(stages.first(), Some(&MeasureStage::PreparingAudio));
+        assert_eq!(stages.last(), Some(&MeasureStage::Measuring(100)));
+        assert_eq!(first.len(), 2);
+        assert!(first[1].ending_semitones.unwrap() < -1.0, "{:?}", first[1]);
+        // Kept: the second call reports nothing and returns the same measures.
+        let again = measure_staged(&root.0, id, &AtomicBool::new(false), |_| panic!("measured twice")).unwrap();
+        assert_eq!(again, first);
+        // A new transcript is measured again; a stopped run keeps nothing.
+        save_segments(&root.0, id, &[seg("All of it.", 0, 4_000)]).unwrap();
+        assert!(measure_staged(&root.0, id, &AtomicBool::new(true), |_| {}).is_err());
+        assert_eq!(measure_staged(&root.0, id, &AtomicBool::new(false), |_| {}).unwrap().len(), 1);
     }
 
     #[test]

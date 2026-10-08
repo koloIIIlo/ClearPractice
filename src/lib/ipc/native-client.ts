@@ -42,6 +42,9 @@ export function createNativeClient(): IpcClient {
     saveClipSections: (stagingId, sections) => command("save_clip_sections", S.ReferenceClip.array(), { stagingId, sections }),
     previewClipNames: (texts, model) => command("preview_clip_names", S.CoachingPreview, { texts, model: model ?? null }),
     requestClipNames: (requestId, payloadSha256) => command("request_clip_names", S.ClipName.array(), { requestId, payloadSha256 }),
+    measureClipSource: (stagingId) => command("measure_clip_source", z.number().int().nonnegative(), { stagingId }),
+    onClipMeasureProgress: (listener) =>
+      listen("clip_measure_progress", (e) => listener(z.object({ stage: z.enum(["preparing", "measuring"]), percent: z.number().int().min(0).max(100).nullable() }).parse(e.payload))),
     previewClipPicks: (stagingId, { model, toneHint, wanted }) => command("preview_clip_picks", S.CoachingPreview, { stagingId, model: model ?? null, toneHint, wanted }),
     requestClipPicks: (stagingId, requestId, payloadSha256) => command("request_clip_picks", S.PickedClip.array(), { stagingId, requestId, payloadSha256 }),
     getLinkToolStatus: () => command("get_link_tool_status", S.LinkToolStatus),

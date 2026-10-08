@@ -4,6 +4,10 @@
 //! are on the original timeline at a 10 ms hop; unvoiced or silent frames carry
 //! `None`, never zero (§11: no prosody value is a score). All values Estimated.
 use serde::Serialize;
+use std::sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Mutex,
+};
 
 pub const HOP_MS: u64 = 10;
 const WINDOW_MS: u64 = 40;
@@ -94,23 +98,70 @@ fn percentile(sorted: &[f32], p: f64) -> f32 {
 
 /// Contour for mono samples in −1..1 on the original timeline.
 pub fn contour(samples: &[f32], sample_rate: u32) -> Contour {
+    contour_with(samples, sample_rate, &AtomicBool::new(false), |_, _| {}).unwrap_or_else(|reason| unavailable(sample_rate, &reason))
+}
+
+fn unavailable(sample_rate: u32, reason: &str) -> Contour {
+    Contour { algorithm: "yin-v1", source: "Estimated", hop_ms: HOP_MS, sample_rate, f0_hz: vec![], rms_db: vec![], median_f0_hz: None, range_semitones: None, loudness_range_db: None, unavailable_reason: Some(reason.into()) }
+}
+
+/// Frames analysed per unit of parallel work (10 s of audio).
+const CHUNK_FRAMES: usize = 1_000;
+
+/// Same contour as [`contour`], computed on several cores for long recordings
+/// (imported sources run to 15 minutes). Frames are independent, so the result
+/// is identical. `progress` gets (frames done, frames total); `cancel` stops it.
+pub fn contour_with(samples: &[f32], sample_rate: u32, cancel: &AtomicBool, progress: impl Fn(usize, usize) + Sync) -> Result<Contour, String> {
     let hop = (u64::from(sample_rate) * HOP_MS / 1000) as usize;
     let window = (u64::from(sample_rate) * WINDOW_MS / 1000) as usize;
-    let mut f0 = Vec::new();
-    let mut rms = Vec::new();
     if hop == 0 || window == 0 {
-        return Contour { algorithm: "yin-v1", source: "Estimated", hop_ms: HOP_MS, sample_rate, f0_hz: f0, rms_db: rms, median_f0_hz: None, range_semitones: None, loudness_range_db: None, unavailable_reason: Some("Invalid sample rate.".into()) };
+        return Ok(unavailable(sample_rate, "Invalid sample rate."));
     }
-    let mut start = 0usize;
-    while start < samples.len() {
+    let total = samples.len().div_ceil(hop);
+    let frame = |index: usize| -> (Option<f32>, Option<f32>) {
+        let start = index * hop;
         let end = (start + window).min(samples.len());
         let frame = &samples[start..end];
         let energy = frame.iter().map(|s| f64::from(*s) * f64::from(*s)).sum::<f64>() / frame.len().max(1) as f64;
         let db = (energy > 0.0).then(|| 10.0 * energy.log10());
-        rms.push(db.map(|d| d as f32));
         let voiced = db.is_some_and(|d| d > SILENCE_DB) && frame.len() == window;
-        f0.push(if voiced { yin(frame, sample_rate).map(|v| v as f32) } else { None });
-        start += hop;
+        (if voiced { yin(frame, sample_rate).map(|v| v as f32) } else { None }, db.map(|d| d as f32))
+    };
+    let chunks = total.div_ceil(CHUNK_FRAMES);
+    let workers = std::thread::available_parallelism().map_or(1, |n| n.get()).clamp(1, 8).min(chunks.max(1));
+    let next = AtomicUsize::new(0);
+    let done = AtomicUsize::new(0);
+    let results: Vec<Mutex<Vec<(Option<f32>, Option<f32>)>>> = (0..chunks).map(|_| Mutex::new(Vec::new())).collect();
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| loop {
+                let chunk = next.fetch_add(1, Ordering::Relaxed);
+                if chunk >= chunks || cancel.load(Ordering::Relaxed) {
+                    break;
+                }
+                let range = chunk * CHUNK_FRAMES..((chunk + 1) * CHUNK_FRAMES).min(total);
+                let count = range.len();
+                let out: Vec<_> = range.map(frame).collect();
+                if let Ok(mut slot) = results[chunk].lock() {
+                    *slot = out;
+                }
+                progress(done.fetch_add(count, Ordering::Relaxed) + count, total);
+            });
+        }
+    });
+    if cancel.load(Ordering::Relaxed) {
+        return Err("Stopped.".into());
+    }
+    let mut f0 = Vec::with_capacity(total);
+    let mut rms = Vec::with_capacity(total);
+    for slot in results {
+        for (pitch, db) in slot.into_inner().map_err(|_| "Pitch analysis failed.")? {
+            f0.push(pitch);
+            rms.push(db);
+        }
+    }
+    if f0.len() != total {
+        return Err("Pitch analysis failed.".into());
     }
     let mut voiced: Vec<f32> = f0.iter().flatten().copied().collect();
     voiced.sort_by(|a, b| a.total_cmp(b));
@@ -136,7 +187,7 @@ pub fn contour(samples: &[f32], sample_rate: u32) -> Contour {
     let reliable = reason.is_none();
     let range = range.filter(|_| reliable);
     let loudness = (enough && reliable).then(|| percentile(&loud, 0.95) - percentile(&loud, 0.05));
-    Contour {
+    Ok(Contour {
         algorithm: "yin-v1",
         source: "Estimated",
         hop_ms: HOP_MS,
@@ -147,7 +198,7 @@ pub fn contour(samples: &[f32], sample_rate: u32) -> Contour {
         range_semitones: range,
         loudness_range_db: loudness,
         unavailable_reason: reason.map(str::to_string),
-    }
+    })
 }
 
 /// Analysis definition stored with every track (P.3); bump when frames would change.
@@ -264,6 +315,33 @@ mod tests {
             assert!(c.range_semitones.unwrap() < 0.5, "steady tone has almost no range");
             assert!(c.loudness_range_db.unwrap() < 1.0, "steady tone has steady loudness");
         }
+    }
+
+    #[test]
+    fn long_recordings_are_measured_in_parallel_with_the_same_frames_progress_and_stop() {
+        // 25 s spans three work chunks; the last chunk is partial.
+        let mut samples = voice(|t| 120.0 + 40.0 * (t * 0.7).sin(), 25.0);
+        for s in &mut samples[160_000..176_000] {
+            *s = 0.0; // a silent second in the middle
+        }
+        let hop = (RATE as u64 * HOP_MS / 1000) as usize;
+        let window = (RATE as u64 * WINDOW_MS / 1000) as usize;
+        let reference: Vec<Option<f32>> = (0..samples.len().div_ceil(hop))
+            .map(|i| {
+                let frame = &samples[i * hop..(i * hop + window).min(samples.len())];
+                let energy = frame.iter().map(|s| f64::from(*s) * f64::from(*s)).sum::<f64>() / frame.len() as f64;
+                let loud = energy > 0.0 && 10.0 * energy.log10() > SILENCE_DB && frame.len() == window;
+                if loud { yin(frame, RATE).map(|v| v as f32) } else { None }
+            })
+            .collect();
+        let seen = Mutex::new(Vec::new());
+        let c = contour_with(&samples, RATE, &AtomicBool::new(false), |done, total| seen.lock().unwrap().push((done, total))).unwrap();
+        assert_eq!(c.f0_hz, reference);
+        assert_eq!(c.f0_hz.len(), c.rms_db.len());
+        let seen = seen.into_inner().unwrap();
+        assert_eq!(seen.len(), 3);
+        assert!(seen.iter().any(|(done, total)| done == total), "{seen:?}");
+        assert!(contour_with(&samples, RATE, &AtomicBool::new(true), |_, _| {}).is_err(), "a stopped analysis returns nothing");
     }
 
     #[test]

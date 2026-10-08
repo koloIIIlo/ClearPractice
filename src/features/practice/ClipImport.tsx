@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileAudio, Link2, Loader2, Play, Scissors } from "lucide-react";
+import { CheckCircle2, Circle, FileAudio, Link2, Loader2, Play, Scissors } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,60 +19,204 @@ type Feature = "emphasis" | "rhythm" | "endings";
 type Proposal = ClipCandidate & { keep: boolean; description: string; feature: Feature | null; suggested: boolean; reason?: string };
 const FEATURE_LABELS: Record<Feature, string> = { emphasis: "Emphasis", rhythm: "Phrase rhythm", endings: "Clear endings" };
 
+/** Settings for the AI choice, kept by the dialog so toggling the option never loses them. */
+export type AiPickSettings = { model: CoachingModel; toneHint: boolean; wanted: number };
+export const DEFAULT_AI_PICK: AiPickSettings = { model: "gpt-6-luna", toneHint: false, wanted: 8 };
+
+type PickStage =
+  | { kind: "idle" }
+  | { kind: "preparing" }
+  | { kind: "measuring"; percent: number }
+  | { kind: "measured"; sentences: number }
+  | { kind: "previewing"; sentences: number }
+  | { kind: "approval"; sentences: number; preview: CoachingPreview }
+  | { kind: "waiting"; sentences: number; since: number }
+  | { kind: "done"; sentences: number; clips: number };
+
+const STEP_ORDER = ["measure", "preview", "approve", "send", "place"] as const;
+type Step = (typeof STEP_ORDER)[number];
+const STEP_LABELS: Record<Step, string> = {
+  measure: "Measure each sentence's delivery on this computer",
+  preview: "Prepare the request (text only)",
+  approve: "Your approval",
+  send: "Send to OpenAI and wait for the answer",
+  place: "Check the answer and place the clips",
+};
+function currentStep(stage: PickStage): Step {
+  switch (stage.kind) {
+    case "idle": case "preparing": case "measuring": return "measure";
+    case "measured": case "previewing": return "preview";
+    case "approval": return "approve";
+    case "waiting": return "send";
+    case "done": return "place";
+  }
+}
+
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
+  return <>{Math.max(0, Math.round((now - since) / 1000))} s</>;
+}
+
 /**
- * AI chooses the best parts (4.4e): the transcript is annotated on this computer
- * with measured delivery per sentence and only that text is sent, after the usual
- * preview and an explicit Send. Picks replace the automatic proposals.
+ * AI chooses the best parts (4.4e, 4.4g): each sentence is measured on this
+ * computer first (free, with progress and Stop; kept with the transcript), then
+ * only the annotated text is previewed and sent after an explicit Send. Each
+ * stage is shown with what is happening now. Picks replace the automatic list.
  */
-function AiPick({ stagingId, onPicked }: { stagingId: string; onPicked: (picks: PickedClip[]) => void }) {
+function AiPick({ stagingId, active, settings, onSettings, onPicked }: {
+  stagingId: string;
+  active: boolean;
+  settings: AiPickSettings;
+  onSettings: (next: AiPickSettings) => void;
+  onPicked: (picks: PickedClip[]) => void;
+}) {
   const ipc = useIpc();
   const key = useQuery({ queryKey: ["api-key-status"], queryFn: () => ipc.getApiKeyStatus(), retry: false });
-  const [model, setModel] = useState<CoachingModel>("gpt-6-luna");
-  const [toneHint, setToneHint] = useState(false);
-  const [wanted, setWanted] = useState(8);
-  const [preview, setPreview] = useState<CoachingPreview | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState<PickStage>({ kind: "idle" });
   const [error, setError] = useState<string | null>(null);
+  const measuredFor = useRef<string | null>(null);
+  const { model, toneHint, wanted } = settings;
+  const change = (next: Partial<AiPickSettings>) => {
+    onSettings({ ...settings, ...next });
+    // A changed setting needs a new preview; the measures stay.
+    setStage((s) => (s.kind === "approval" ? { kind: "measured", sentences: s.sentences } : s));
+  };
+
+  useEffect(() => {
+    let remove: (() => void) | undefined;
+    let disposed = false;
+    void ipc
+      .onClipMeasureProgress((p) => setStage((s) => (s.kind === "preparing" || s.kind === "measuring" ? (p.stage === "preparing" ? { kind: "preparing" } : { kind: "measuring", percent: p.percent ?? 0 }) : s)))
+      .then((u) => (disposed ? u() : (remove = u)))
+      .catch(() => {});
+    return () => { disposed = true; remove?.(); };
+  }, [ipc]);
+
+  const measure = async () => {
+    measuredFor.current = stagingId;
+    setError(null);
+    setStage({ kind: "preparing" });
+    try {
+      const sentences = await ipc.measureClipSource(stagingId);
+      setStage({ kind: "measured", sentences });
+    } catch (e) {
+      measuredFor.current = null;
+      setStage({ kind: "idle" });
+      setError(e instanceof Error ? e.message : "The recording could not be measured.");
+    }
+  };
+  // Measuring is local and free, so it starts as soon as the option is on.
+  useEffect(() => {
+    if (active && key.data?.present && measuredFor.current !== stagingId) void measure();
+  }, [active, stagingId, key.data?.present]);
+
   if (!key.data?.present) {
     return <p className="text-meta text-muted-foreground">Letting AI choose needs an OpenAI key (Settings → Coaching). The automatic proposals below still work.</p>;
   }
+  const sentences = "sentences" in stage ? stage.sentences : 0;
   const prepare = async () => {
-    setBusy(true); setError(null);
-    try { setPreview(await ipc.previewClipPicks(stagingId, { model, toneHint, wanted })); } catch (e) { setError(e instanceof Error ? e.message : "Could not prepare the request."); } finally { setBusy(false); }
+    setError(null);
+    setStage({ kind: "previewing", sentences });
+    try {
+      setStage({ kind: "approval", sentences, preview: await ipc.previewClipPicks(stagingId, { model, toneHint, wanted }) });
+    } catch (e) {
+      setStage({ kind: "measured", sentences });
+      setError(e instanceof Error ? e.message : "Could not prepare the request.");
+    }
   };
   const send = async () => {
-    if (!preview) return;
-    const approved = preview;
-    setPreview(null); setBusy(true); setError(null);
-    try { onPicked(await ipc.requestClipPicks(stagingId, approved.requestId, approved.payloadSha256)); } catch (e) { setError(e instanceof Error ? e.message : "The request did not finish; the charge may be uncertain."); } finally { setBusy(false); }
+    if (stage.kind !== "approval") return;
+    const approved = stage.preview;
+    setError(null);
+    setStage({ kind: "waiting", sentences, since: Date.now() });
+    try {
+      const picks = await ipc.requestClipPicks(stagingId, approved.requestId, approved.payloadSha256);
+      onPicked(picks);
+      setStage({ kind: "done", sentences, clips: picks.length });
+    } catch (e) {
+      setStage({ kind: "measured", sentences });
+      setError(e instanceof Error ? e.message : "The request did not finish; the charge may be uncertain.");
+    }
   };
+  const working = stage.kind === "preparing" || stage.kind === "measuring" || stage.kind === "previewing" || stage.kind === "waiting";
+  const now = currentStep(stage);
+  const nowIndex = STEP_ORDER.indexOf(now);
+  const status = (() => {
+    switch (stage.kind) {
+      case "idle": return "Not started.";
+      case "preparing": return "Preparing the audio for measuring…";
+      case "measuring": return `Measuring pitch, loudness and pace of every sentence… ${stage.percent}%`;
+      case "measured": return `Measured ${stage.sentences} sentences. Ready to prepare the request.`;
+      case "previewing": return "Preparing the request text…";
+      case "approval": return "Waiting for your approval. Nothing has been sent.";
+      case "waiting": return "Sent to OpenAI. Waiting for the answer";
+      case "done": return `Done: the AI chose ${stage.clips} ${stage.clips === 1 ? "part" : "parts"}. They replace the automatic list below.`;
+    }
+  })();
+
   return (
-    <div className="space-y-2 rounded-md border p-2">
+    <div className="space-y-3 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2 text-meta">
         <Label htmlFor="pick-model" className="text-meta">AI model</Label>
-        <select id="pick-model" className="h-9 rounded-md border bg-background px-2 text-meta" value={model} disabled={busy} onChange={(e) => { setModel(e.target.value as CoachingModel); setPreview(null); }}>
+        <select id="pick-model" className="h-9 rounded-md border bg-background px-2 text-meta" value={model} disabled={working} onChange={(e) => change({ model: e.target.value as CoachingModel })}>
           {COACHING_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} · {m.note}</option>)}
         </select>
         <Label htmlFor="pick-wanted" className="text-meta">Up to</Label>
-        <Input id="pick-wanted" type="number" min={1} max={20} className="h-9 w-16" value={wanted} onChange={(e) => { setWanted(Math.max(1, Math.min(20, Number(e.target.value) || 1))); setPreview(null); }} />
+        <Input id="pick-wanted" type="number" min={1} max={20} className="h-9 w-16" value={wanted} disabled={working} onChange={(e) => change({ wanted: Math.max(1, Math.min(20, Number(e.target.value) || 1)) })} />
         <span>clips</span>
         <label className="flex items-center gap-2">
-          <input type="checkbox" checked={toneHint} onChange={(e) => { setToneHint(e.target.checked); setPreview(null); }} /> Experimental: let AI guess the speaker's tone as a hint
+          <input type="checkbox" checked={toneHint} disabled={working} onChange={(e) => change({ toneHint: e.target.checked })} /> Experimental: let AI guess the speaker's tone as a hint
         </label>
-        <Button variant="outline" size="sm" disabled={busy} onClick={() => void prepare()}>Ask AI to choose…</Button>
       </div>
-      {preview && (
+
+      <ol className="space-y-1 text-meta" aria-label="Steps">
+        {STEP_ORDER.map((step, i) => {
+          const done = i < nowIndex || stage.kind === "done";
+          const current = i === nowIndex && stage.kind !== "done";
+          return (
+            <li key={step} className={cn("flex items-center gap-2", !done && !current && "text-muted-foreground")} aria-current={current ? "step" : undefined}>
+              {done ? <CheckCircle2 aria-hidden className="size-4 text-primary" /> : current && working ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <Circle aria-hidden className="size-4" />}
+              {STEP_LABELS[step]}
+            </li>
+          );
+        })}
+      </ol>
+
+      <div role="status" aria-label="AI choice progress" className="space-y-1 text-meta">
+        <p>
+          {status}
+          {stage.kind === "waiting" && <> · <Elapsed since={stage.since} /> (usually under a minute)</>}
+        </p>
+        {(stage.kind === "preparing" || stage.kind === "measuring" || stage.kind === "previewing" || stage.kind === "waiting") && (
+          <progress className="h-2 w-full" max={100} value={stage.kind === "measuring" ? stage.percent : undefined} aria-label="Progress" />
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {(stage.kind === "preparing" || stage.kind === "measuring") && (
+          <Button variant="ghost" size="sm" onClick={() => void ipc.cancelClipWork()}>Stop measuring</Button>
+        )}
+        {stage.kind === "idle" && <Button variant="outline" size="sm" onClick={() => void measure()}>Measure the sentences</Button>}
+        {(stage.kind === "measured" || stage.kind === "done") && (
+          <Button variant="outline" size="sm" onClick={() => void prepare()}>{stage.kind === "done" ? "Ask AI again…" : "Ask AI to choose…"}</Button>
+        )}
+      </div>
+
+      {stage.kind === "approval" && (
         <div className="space-y-2 text-meta" role="group" aria-label="AI clip choice request preview">
-          <p className="font-medium">Recipient: OpenAI · {preview.model}</p>
-          <p>Estimated upper reservation: {money(preview.estimatedMaximumCostMicroUsd)} within the shared monthly limit. Only the transcript and its measured numbers are sent, never audio.</p>
-          <details><summary className="cursor-pointer">Text that will be sent</summary><pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap">{preview.selectedText}</pre></details>
+          <p className="font-medium">Recipient: OpenAI · {stage.preview.model}</p>
+          <p>Estimated upper reservation: {money(stage.preview.estimatedMaximumCostMicroUsd)} within the shared monthly limit. Only the transcript and its measured numbers are sent, never audio. This approval expires in 5 minutes.</p>
+          <details><summary className="cursor-pointer">Text that will be sent ({sentences} sentences)</summary><pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap">{stage.preview.selectedText}</pre></details>
           <div className="flex gap-2">
-            <Button size="sm" disabled={busy} onClick={() => void send()}>Send transcript · may be billed</Button>
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setPreview(null)}>Cancel</Button>
+            <Button size="sm" onClick={() => void send()}>Send transcript · may be billed</Button>
+            <Button size="sm" variant="ghost" onClick={() => setStage({ kind: "measured", sentences })}>Cancel</Button>
           </div>
         </div>
       )}
-      {busy && <p role="status" className="text-meta">Working…</p>}
       {error && <p role="alert" className="text-meta text-destructive">{error}</p>}
     </div>
   );
@@ -158,6 +303,9 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
   const keys = useQuery({ queryKey: ["transcription-api-keys"], queryFn: () => ipc.getTranscriptionApiKeys(), retry: false });
   const [engine, setEngine] = useState<"local" | "api" | null>(null);
   const [aiChoose, setAiChoose] = useState(false);
+  const [aiSettings, setAiSettings] = useState<AiPickSettings>(DEFAULT_AI_PICK);
+  // The automatic proposals, kept so the AI's choice can be compared or undone.
+  const [automatic, setAutomatic] = useState<Proposal[] | null>(null);
   const splitEngine = engine ?? preference.data?.mode ?? "local";
   const stored = keys.data?.filter((k) => k.present).map((k) => k.provider) ?? [];
   const cloudProvider: AudioProvider | undefined = stored.includes(preference.data?.provider ?? "deepgram") ? (preference.data?.provider ?? "deepgram") : stored[0];
@@ -204,6 +352,7 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
     try {
       const found = await ipc.splitClipSource(staged.stagingId);
       setProposals(found.map(toProposal));
+      setAutomatic(found.map(toProposal));
     } catch (e) {
       setError(e instanceof Error ? e.message : "The recording could not be split.");
     } finally {
@@ -356,6 +505,7 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
                 sendFn={async (requestId, sha) => {
                   const found = await ipc.requestSplitTranscription(requestId, sha);
                   setProposals(found.map(toProposal));
+                  setAutomatic(found.map(toProposal));
                 }}
               />
             ) : (
@@ -370,19 +520,26 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
             {proposals && (
               <div className="space-y-2">
                 <p className="text-meta">{proposals.length} {proposals.length === 1 ? "clip" : "clips"} found. Untick any you don't want, and rename them if you like.</p>
-                {aiChoose && (
+                {/* Both stay mounted, so switching the option keeps each panel's state. */}
+                <div hidden={!aiChoose}>
                   <AiPick
                     stagingId={staged.stagingId}
+                    active={aiChoose}
+                    settings={aiSettings}
+                    onSettings={setAiSettings}
                     onPicked={(picks) => setProposals(picks.map((p) => ({ startMs: p.startMs, endMs: p.endMs, text: p.text, title: p.title, keep: true, description: p.description, feature: p.feature, suggested: true, reason: p.reason })))}
                   />
+                </div>
+                {automatic && proposals.some((p) => p.reason) && (
+                  <Button variant="ghost" size="sm" onClick={() => setProposals(automatic)}>Show the automatic proposals again</Button>
                 )}
-                {!aiChoose && <AiNaming
+                <div hidden={aiChoose}><AiNaming
                   proposals={proposals}
                   onNames={(names) => setProposals((all) => all!.map((p, i) => {
                     const n = names.find((x) => x.index === i + 1);
                     return n ? { ...p, title: n.title, description: n.description, feature: n.feature, suggested: true } : p;
                   }))}
-                />}
+                /></div>
                 <ol className="space-y-2">
                   {proposals.map((p, i) => (
                     <li key={`${p.startMs}`} className="space-y-1 rounded-md border p-2">

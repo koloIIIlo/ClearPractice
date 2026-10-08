@@ -136,9 +136,13 @@ it("suggests titles, descriptions and features with AI only after a preview of t
   ]));
 });
 
-it("lets AI choose the best parts from the annotated transcript, with the tone hint only when ticked (4.4e)", async () => {
+it("lets AI choose the best parts from the annotated transcript, with the tone hint only when ticked (4.4e, 4.4g)", async () => {
   const user = userEvent.setup();
+  let report: (p: { stage: "preparing" | "measuring"; percent: number | null }) => void = () => {};
+  let measured: (count: number) => void = () => {};
   const { client } = setup({
+    onClipMeasureProgress: async (listener) => { report = listener; return () => {}; },
+    measureClipSource: vi.fn(() => new Promise<number>((resolve) => { measured = resolve; })),
     chooseClipFile: async () => ({ stagingId: "stage-5", fileName: "talk.wav", durationMs: 300_000 }),
     getApiKeyStatus: async () => ({ provider: "OpenAI" as const, present: true }),
     splitClipSource: async () => [{ startMs: 0, endMs: 12_000, text: "Mechanical proposal.", title: "Mechanical proposal." }],
@@ -155,13 +159,40 @@ it("lets AI choose the best parts from the annotated transcript, with the tone h
   await user.click(screen.getByRole("button", { name: "Transcribe and split" }));
   await screen.findByText(/1 clip found/);
   expect(screen.queryByRole("button", { name: "Suggest titles with AI…" })).not.toBeInTheDocument();
+  // Measuring starts on its own (local, free) and shows where it is.
+  await waitFor(() => expect(client.measureClipSource).toHaveBeenCalledWith("stage-5"));
+  const progress = screen.getByRole("status", { name: "AI choice progress" });
+  expect(progress).toHaveTextContent("Preparing the audio");
+  act(() => report({ stage: "measuring", percent: 40 }));
+  expect(progress).toHaveTextContent("Measuring pitch, loudness and pace of every sentence… 40%");
+  expect(screen.getByRole("button", { name: "Stop measuring" })).toBeInTheDocument();
+  await act(async () => measured(40));
+  expect(progress).toHaveTextContent("Measured 40 sentences.");
+  // Settings survive switching the option off and on; nothing is measured twice.
   await user.click(screen.getByRole("checkbox", { name: /Experimental: let AI guess the speaker's tone/ }));
+  await user.selectOptions(screen.getByRole("combobox", { name: "AI model" }), "gpt-6.1-sol");
+  await user.click(screen.getByRole("checkbox", { name: /Let AI choose the best parts/ }));
+  expect(screen.getByRole("button", { name: "Suggest titles with AI…" })).toBeInTheDocument();
+  await user.click(screen.getByRole("checkbox", { name: /Let AI choose the best parts/ }));
+  expect(screen.getByRole("checkbox", { name: /Experimental: let AI guess the speaker's tone/ })).toBeChecked();
+  expect(screen.getByRole("combobox", { name: "AI model" })).toHaveValue("gpt-6.1-sol");
+  expect(client.measureClipSource).toHaveBeenCalledOnce();
+  await user.selectOptions(screen.getByRole("combobox", { name: "AI model" }), "gpt-6-luna");
   await user.click(screen.getByRole("button", { name: "Ask AI to choose…" }));
   expect(client.previewClipPicks).toHaveBeenCalledWith("stage-5", { model: "gpt-6-luna", toneHint: true, wanted: 8 });
   expect(await screen.findByRole("group", { name: "AI clip choice request preview" })).toHaveTextContent("never audio");
   expect(client.requestClipPicks).not.toHaveBeenCalled();
+  expect(progress).toHaveTextContent("Waiting for your approval. Nothing has been sent.");
   await user.click(screen.getByRole("button", { name: "Send transcript · may be billed" }));
   expect(client.requestClipPicks).toHaveBeenCalledWith("stage-5", "picks-1", "d".repeat(64));
+  await waitFor(() => expect(screen.getByLabelText("Title of clip 1")).toHaveValue("The best part"));
+  expect(progress).toHaveTextContent("Done: the AI chose 1 part.");
+  // The automatic list can come back.
+  await user.click(screen.getByRole("button", { name: "Show the automatic proposals again" }));
+  expect(screen.getByLabelText("Title of clip 1")).toHaveValue("Mechanical proposal.");
+  await user.click(screen.getByRole("button", { name: "Ask AI again…" }));
+  await screen.findByRole("group", { name: "AI clip choice request preview" });
+  await user.click(screen.getByRole("button", { name: "Send transcript · may be billed" }));
   await waitFor(() => expect(screen.getByLabelText("Title of clip 1")).toHaveValue("The best part"));
   expect(screen.getByText("Why: ending falling -4.0 st")).toBeInTheDocument();
   expect(screen.getByLabelText("Description of clip 1")).toHaveValue("Calm, clear falling endings.");

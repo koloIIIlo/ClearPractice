@@ -58,6 +58,9 @@ impl ApiTransport {
             .post("https://api.openai.com/v1/responses")
             .header(AUTHORIZATION, header)
             .header(CONTENT_TYPE, "application/json")
+            // Choosing passages from a long transcript with a reasoning model can
+            // take well over a minute; a timeout would leave the charge uncertain.
+            .timeout(Duration::from_secs(180))
             .body(body)
             .build()
             .map_err(|_| "Cannot prepare the approved API request.".into())

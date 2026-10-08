@@ -673,12 +673,16 @@ async fn split_clip_source(
     if let Ok(mut slot) = work.split.lock() {
         *slot = Some(cancel.clone());
     }
-    let result = with_storage(&storage, move |owner| {
-        let config = transcribe::load_config(owner)?;
-        let segments = clipsplit::transcribe_local(&config, owner.root(), &staging_id, &cancel, |percent| {
+    // Only reading the setup needs storage; transcribing runs without holding it,
+    // so the rest of the app stays responsive for the minutes this can take.
+    let (config, root) = with_storage(&storage, |owner| Ok((transcribe::load_config(owner)?, owner.root().to_path_buf())))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())??;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let segments = clipsplit::transcribe_local(&config, &root, &staging_id, &cancel, |percent| {
             let _ = app.emit("clip_split_progress", percent);
         })?;
-        clipsplit::save_segments(owner.root(), &staging_id, &segments)?;
+        clipsplit::save_segments(&root, &staging_id, &segments)?;
         let candidates = clipsplit::propose(&segments);
         if candidates.is_empty() {
             return Err("No clips of 8–20 seconds with whole sentences were found. You can still keep a section by hand.".into());
@@ -686,7 +690,7 @@ async fn split_clip_source(
         Ok(candidates)
     })
     .await
-    .map_err(|_| "Session storage failed.".to_string())?;
+    .map_err(|_| "Splitting failed.".to_string())?;
     if let Ok(mut slot) = work.split.lock() {
         *slot = None;
     }
@@ -726,8 +730,45 @@ async fn request_clip_names(
     owner.send_clip_names(budget, &accounting.1, &request_id, &payload_sha256).await
 }
 
-/// AI chooses the best passages (4.4e): measures each sentence locally and
-/// previews the annotated transcript (text only). Nothing is sent here.
+/// Measures every sentence of a staged recording's transcript (4.4e, 4.4g) in
+/// the background, with progress events and Stop. Kept with the transcript, so
+/// the AI preview afterwards is instant. Returns the number of sentences.
+#[tauri::command]
+async fn measure_clip_source(
+    app: tauri::AppHandle,
+    storage: State<'_, Arc<SessionStorage>>,
+    work: State<'_, Arc<ClipWork>>,
+    staging_id: String,
+) -> Result<usize, String> {
+    let root = storage.with(|owner| Ok(owner.root().to_path_buf()))?;
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    if let Ok(mut slot) = work.split.lock() {
+        *slot = Some(cancel.clone());
+    }
+    let flag = cancel.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        clipsplit::measure_staged(&root, &staging_id, &flag, |stage| {
+            let (name, percent) = match stage {
+                clipsplit::MeasureStage::PreparingAudio => ("preparing", None),
+                clipsplit::MeasureStage::Measuring(p) => ("measuring", Some(p)),
+            };
+            let _ = app.emit("clip_measure_progress", serde_json::json!({ "stage": name, "percent": percent }));
+        })
+        .map(|sentences| sentences.len())
+    })
+    .await
+    .map_err(|_| "Measuring failed.".to_string())?;
+    if let Ok(mut slot) = work.split.lock() {
+        if slot.as_ref().is_some_and(|f| Arc::ptr_eq(f, &cancel)) {
+            *slot = None;
+        }
+    }
+    result
+}
+
+/// AI chooses the best passages (4.4e): measures each sentence locally (kept
+/// from `measure_clip_source` when it ran) and previews the annotated
+/// transcript (text only). Nothing is sent here.
 #[tauri::command]
 async fn preview_clip_picks(
     storage: State<'_, Arc<SessionStorage>>,
@@ -738,8 +779,9 @@ async fn preview_clip_picks(
     wanted: usize,
 ) -> Result<api::coaching::Preview, String> {
     let owner = owner.inner().clone();
-    with_storage(&storage, move |db| {
-        let (sentences, annotated) = clipsplit::annotate_staged(db.root(), &staging_id)?;
+    let root = storage.with(|db| Ok(db.root().to_path_buf()))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let (sentences, annotated) = clipsplit::annotate_staged(&root, &staging_id)?;
         owner.preview_clip_picks(&annotated, sentences.len(), wanted, model.unwrap_or_default(), tone_hint)
     })
     .await
@@ -1678,6 +1720,7 @@ pub fn run() {
             save_clip,
             split_clip_source,
             preview_clip_names,
+            measure_clip_source,
             preview_clip_picks,
             request_clip_picks,
             request_clip_names,
