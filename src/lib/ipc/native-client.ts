@@ -38,6 +38,7 @@ export function createNativeClient(): IpcClient {
     getTranscriptionSetup: () => command("get_transcription_setup", S.TranscriptionSetup),
     chooseTranscriptionSetup: () => command("choose_transcription_setup", S.TranscriptionSetup),
     getAttemptTranscript: (attemptId) => command("get_attempt_transcript", S.AttemptTranscript, { attemptId }),
+    saveTranscriptCorrection: (attemptId, parentRevisionId, text) => command("save_transcript_correction", S.Id, { attemptId, parentRevisionId, text }),
     transcribeAttempt: (attemptId) => command("transcribe_attempt", S.Id, { attemptId }),
     cancelTranscription: () => command("cancel_transcription", S.Id.nullable()),
     onTranscriptionEvent: async (listener) => {

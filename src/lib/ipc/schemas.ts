@@ -265,6 +265,11 @@ export const AttemptTranscript = z.object({
       measures: TranscriptMeasures,
     })
     .nullable(),
+  /** Your corrected wording (a child revision); the machine transcript above is never changed. */
+  correction: z
+    .object({ id: Id, parentId: Id, text: z.string(), createdAt: z.string(), fillerCount: z.number().int().nonnegative(), wordCount: z.number().int().nonnegative() })
+    .nullable()
+    .default(null),
   job: TranscriptJob.nullable(),
 });
 export type AttemptTranscript = z.infer<typeof AttemptTranscript>;

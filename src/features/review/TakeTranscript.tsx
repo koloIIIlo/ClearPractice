@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, Loader2, X } from "lucide-react";
 import { EvidenceLabel } from "@/components/evidence";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
 import type { AttemptTranscript, TranscriptMeasures, TranscriptionEvent } from "@/lib/ipc/schemas";
@@ -57,6 +59,53 @@ function Measures({ m }: { m: TranscriptMeasures }) {
         </dd>
       )}
     </dl>
+  );
+}
+
+/** "My corrections" (plan 3.9): saved as a child revision; the machine transcript is never edited. */
+function Corrections({ data, onSaved }: { data: AttemptTranscript; onSaved: () => void }) {
+  const ipc = useIpc();
+  const revision = data.revision!;
+  const [draft, setDraft] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: (text: string) => ipc.saveTranscriptCorrection(data.attemptId, revision.id, text),
+    onSuccess: () => {
+      setDraft(null);
+      onSaved();
+    },
+  });
+  const id = `correction-${data.attemptId}`;
+  if (draft !== null)
+    return (
+      <form
+        className="space-y-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save.mutate(draft);
+        }}
+      >
+        <Label htmlFor={id}>My corrections</Label>
+        <Textarea id={id} value={draft} rows={5} maxLength={64_000} disabled={save.isPending} onChange={(e) => setDraft(e.target.value)} />
+        <p className="text-meta text-muted-foreground">Fix words the model misheard. The original transcript and its measures stay as they are.</p>
+        <div className="flex gap-2">
+          <Button type="submit" disabled={save.isPending || !draft.trim()}>{save.isPending ? "Saving…" : "Save corrections"}</Button>
+          <Button type="button" variant="ghost" disabled={save.isPending} onClick={() => setDraft(null)}>Cancel</Button>
+        </div>
+        {save.error && <p role="alert" className="text-meta text-destructive">{save.error.message}</p>}
+      </form>
+    );
+  return data.correction ? (
+    <div className="space-y-1 rounded-md bg-secondary/50 p-2">
+      <p className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground">
+        <EvidenceLabel source="note" /> My corrections · {data.correction.wordCount} words, {data.correction.fillerCount} filler candidates
+        <Button variant="ghost" className="ml-auto" onClick={() => setDraft(data.correction!.text)}>Edit corrections</Button>
+      </p>
+      <p>{data.correction.text}</p>
+    </div>
+  ) : (
+    <Button variant="outline" onClick={() => setDraft(revision.segments.map((s) => s.text.trim()).filter(Boolean).join(" "))}>
+      Correct the transcript
+    </Button>
   );
 }
 
@@ -184,6 +233,7 @@ export function TakeTranscript({ attemptId }: { attemptId: string }) {
             )}
           </ol>
           <Measures m={revision.measures} />
+          {data && <Corrections data={data} onSaved={() => void qc.invalidateQueries({ queryKey: key })} />}
           <p className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground">
             <EvidenceLabel source="estimated" /> Times and measures are estimated from the model's segments. Fillers such as “uh” and
             “um” are kept on purpose; highlighted words are candidates to review, not errors.

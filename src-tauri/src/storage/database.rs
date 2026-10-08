@@ -749,6 +749,31 @@ impl DatabaseOwner {
         tx.commit().map_err(db_error)
     }
 
+    /// Saves your corrected wording as a child revision of a machine transcript.
+    /// The original revision, its segments and measures are never changed.
+    pub fn save_transcript_correction(&self, attempt_id: &str, parent_id: &str, text: &str, now_ms: u64) -> Result<String> {
+        recording::validate_id(attempt_id)?;
+        recording::validate_id(parent_id)?;
+        if text.trim().is_empty() || text.len() > 64_000 || text.contains(' ') {
+            return Err("Write the corrected transcript (up to 64 KB).".into());
+        }
+        let now = i64::try_from(now_ms).map_err(|_| "Invalid date.")?;
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let parent: Option<String> = conn.query_row("SELECT source FROM transcript_revisions WHERE id=?1 AND attempt_id=?2",params![parent_id,attempt_id],|r|r.get(0)).optional().map_err(db_error)?;
+        match parent.as_deref() {
+            None => return Err("The transcript you corrected is no longer available.".into()),
+            Some("user") => return Err("Corrections start from the machine transcript.".into()),
+            Some(_) => {}
+        }
+        let id = format!("{parent_id}--edit-{now_ms}");
+        recording::validate_id(&id)?;
+        conn.execute("INSERT INTO transcript_revisions(id,attempt_id,parent_id,source,text,created_at_ms) VALUES (?1,?2,?3,'user',?4,?5)",params![id,attempt_id,parent_id,text.trim(),now]).map_err(db_error)?;
+        Ok(id)
+    }
+
     /// The newest transcript revision of a take plus its newest job, either may be null.
     pub fn attempt_transcript(&self, attempt_id: &str) -> Result<Value> {
         recording::validate_id(attempt_id)?;
@@ -758,7 +783,7 @@ impl DatabaseOwner {
             .map_err(|_| "Session storage owner is unavailable.")?;
         let job = conn.query_row("SELECT id,state,error_message,created_at_ms,finished_at_ms FROM jobs WHERE attempt_id=?1 ORDER BY created_at_ms DESC,id DESC LIMIT 1",[attempt_id],
             |r|Ok(json!({"id":r.get::<_,String>(0)?,"state":r.get::<_,String>(1)?,"errorMessage":r.get::<_,Option<String>>(2)?,"createdAt":r.get::<_,Option<i64>>(3)?.map(iso),"finishedAt":r.get::<_,Option<i64>>(4)?.map(iso)}))).optional().map_err(db_error)?;
-        let revision = conn.query_row("SELECT id,source,provider,model_id,backend,prompt,language,text,worker_elapsed_ms,created_at_ms FROM transcript_revisions WHERE attempt_id=?1 ORDER BY created_at_ms DESC,id DESC LIMIT 1",[attempt_id],
+        let revision = conn.query_row("SELECT id,source,provider,model_id,backend,prompt,language,text,worker_elapsed_ms,created_at_ms FROM transcript_revisions WHERE attempt_id=?1 AND source<>'user' ORDER BY created_at_ms DESC,id DESC LIMIT 1",[attempt_id],
             |r|Ok(json!({"id":r.get::<_,String>(0)?,"source":r.get::<_,String>(1)?,"provider":r.get::<_,Option<String>>(2)?,"modelId":r.get::<_,Option<String>>(3)?,"backend":r.get::<_,Option<String>>(4)?,"prompt":r.get::<_,Option<String>>(5)?,"language":r.get::<_,Option<String>>(6)?,"text":r.get::<_,String>(7)?,"workerElapsedMs":r.get::<_,Option<i64>>(8)?,"createdAt":iso(r.get(9)?)}))).optional().map_err(db_error)?;
         let revision = match revision {
             Some(mut revision) => {
@@ -779,7 +804,16 @@ impl DatabaseOwner {
             }
             None => Value::Null,
         };
-        Ok(json!({"attemptId":attempt_id,"revision":revision,"job":job.unwrap_or(Value::Null)}))
+        let correction = match revision["id"].as_str() {
+            Some(original) => conn.query_row("SELECT id,text,created_at_ms FROM transcript_revisions WHERE attempt_id=?1 AND source='user' AND parent_id=?2 ORDER BY created_at_ms DESC,id DESC LIMIT 1",params![attempt_id,original],
+                |r| Ok((r.get::<_,String>(0)?, r.get::<_,String>(1)?, r.get::<_,i64>(2)?))).optional().map_err(db_error)?
+                .map(|(id,text,created)| {
+                    let measures = crate::analysis::measure(&[crate::analysis::SegmentInput { text: &text, start_ms: None, end_ms: None }]);
+                    json!({"id":id,"parentId":original,"text":text,"createdAt":iso(created),"fillerCount":measures.fillers.len(),"wordCount":measures.word_count})
+                }),
+            None => None,
+        };
+        Ok(json!({"attemptId":attempt_id,"revision":revision,"correction":correction,"job":job.unwrap_or(Value::Null)}))
     }
 
     pub fn root(&self) -> &Path {
@@ -1370,6 +1404,35 @@ mod tests {
             .collect();
         assert!(snapshots.iter().any(|n| n.starts_with("before-v3-")));
         assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
+    }
+    #[test]
+    fn corrections_are_child_revisions_and_leave_the_original_untouched() {
+        let root = TestRoot::new();
+        saved(&root.0, "take");
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        assert!(owner.save_transcript_correction("take", "missing", "Hi", 1).is_err());
+        let transcript = crate::audio::whisper::Transcript {
+            version: 1, run_id: "take--1".into(), asset_id: "take".into(), provider: "whisper.cpp".into(),
+            model_id: "base".into(), model_sha256: "a".repeat(64), runtime_version: "1.9.1".into(),
+            backend: crate::audio::whisper::Backend::Cpu, threads: 4, prompt: None, source_sha256: "b".repeat(64),
+            prepared_sha256: "c".repeat(64), language: "en".into(), raw_text: " Index is, uh, fast.".into(),
+            segments: vec![crate::audio::whisper::Segment { text: " Index is, uh, fast.".into(), start_ms: Some(0), end_ms: Some(900), timing_source: "Estimated".into(), timing_unavailable_reason: None }],
+            elapsed_ms: 10, peak_ram_bytes: None, peak_ram_unavailable_reason: None, created_at_ms: 1,
+        };
+        owner.start_job("job-1", "take", 1).unwrap();
+        owner.save_local_transcript("job-1", "take", &transcript, 2).unwrap();
+        assert!(owner.save_transcript_correction("take", "take--1", "   ", 3).is_err());
+        let id = owner.save_transcript_correction("take", "take--1", "Indexes are, uh, fast.", 3).unwrap();
+        assert!(owner.save_transcript_correction("take", &id, "Again", 4).is_err(), "corrections hang off the machine transcript");
+        let view = owner.attempt_transcript("take").unwrap();
+        assert_eq!(view["revision"]["id"], "take--1");
+        assert_eq!(view["revision"]["text"], "Index is, uh, fast.");
+        assert_eq!(view["correction"]["text"], "Indexes are, uh, fast.");
+        assert_eq!(view["correction"]["fillerCount"], 1);
+        // Trash purges corrections together with their originals.
+        owner.move_to_trash("take", 10).unwrap();
+        owner.delete_permanently(&["take".into()]).unwrap();
+        assert!(owner.attempt_transcript("take").unwrap()["revision"].is_null());
     }
     #[cfg(windows)]
     #[test]

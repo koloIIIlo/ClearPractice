@@ -34,7 +34,7 @@ it("points to Settings when local transcription is not set up", async () => {
 it("shows progress, then the saved transcript with estimated timings and kept fillers", async () => {
   const user = userEvent.setup();
   let listener: (event: TranscriptionEvent) => void = () => {};
-  let stored: AttemptTranscript = { attemptId: "take-1", revision: null, job: null };
+  let stored: AttemptTranscript = { attemptId: "take-1", revision: null, correction: null, job: null };
   const client = setup({
     getTranscriptionSetup: configured,
     getAttemptTranscript: vi.fn(async () => stored),
@@ -53,6 +53,7 @@ it("shows progress, then the saved transcript with estimated timings and kept fi
 
   stored = {
     attemptId: "take-1",
+    correction: null,
     job: { id: "job-1", state: "completed", errorMessage: null, createdAt: "2026-10-08T01:00:00.000Z", finishedAt: "2026-10-08T01:00:14.000Z" },
     revision: {
       id: "take-1--1", source: "local", provider: "whisper.cpp", modelId: "large-v3-turbo-q5_0", backend: "cuda", prompt: "uh",
@@ -75,6 +76,22 @@ it("shows progress, then the saved transcript with estimated timings and kept fi
   expect(screen.getByText(/As transcribed · local large-v3-turbo-q5_0 \(CUDA\) · 12 s/)).toBeInTheDocument();
   expect(screen.getByText(/kept on\s+purpose/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Transcribe again" })).toBeEnabled();
+
+  // Corrections are saved as a child of the machine transcript, which stays visible.
+  client.saveTranscriptCorrection = vi.fn(async () => {
+    stored = { ...stored, correction: { id: "take-1--1--edit-2", parentId: "take-1--1", text: "Well, uh, indexes speed up reads a lot.", createdAt: "2026-10-08T01:01:00.000Z", fillerCount: 1, wordCount: 7 } };
+    return "take-1--1--edit-2";
+  });
+  await user.click(screen.getByRole("button", { name: "Correct the transcript" }));
+  const box = screen.getByLabelText("My corrections");
+  expect(box).toHaveValue("Well, uh, indexes speed up reads.");
+  await user.clear(box);
+  await user.type(box, "Well, uh, indexes speed up reads a lot.");
+  await user.click(screen.getByRole("button", { name: "Save corrections" }));
+  expect(client.saveTranscriptCorrection).toHaveBeenCalledWith("take-1", "take-1--1", "Well, uh, indexes speed up reads a lot.");
+  expect(await screen.findByText("Well, uh, indexes speed up reads a lot.")).toBeInTheDocument();
+  expect(screen.getByText(/7 words, 1 filler candidates/)).toBeInTheDocument();
+  expect(screen.getByTitle("Filler candidate").closest("li")).toHaveTextContent("Well, uh, indexes speed up reads.");
 });
 
 it("explains a failed job and keeps the take available for another try", async () => {
@@ -83,6 +100,7 @@ it("explains a failed job and keeps the take available for another try", async (
     getAttemptTranscript: async () => ({
       attemptId: "take-1",
       revision: null,
+      correction: null,
       job: { id: "job-1", state: "interrupted", errorMessage: "ClearPractice closed before this transcription finished.", createdAt: "2026-10-08T01:00:00.000Z", finishedAt: null },
     }),
   });

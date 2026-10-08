@@ -91,6 +91,8 @@ export interface IpcClient {
   /** Opens the native file picker and verifies the Whisper runtime and model before storing the setup. */
   chooseTranscriptionSetup(): Promise<TranscriptionSetup>;
   getAttemptTranscript(attemptId: string): Promise<AttemptTranscript>;
+  /** Saves corrected wording as a new revision; resolves with its ID. */
+  saveTranscriptCorrection(attemptId: string, parentRevisionId: string, text: string): Promise<string>;
   /** Starts a background local transcription; resolves with its job ID. */
   transcribeAttempt(attemptId: string): Promise<string>;
   /** Cancels the running transcription; resolves with its attempt ID, or null when none was running. */

@@ -616,6 +616,20 @@ async fn get_attempt_transcript(
         .map_err(|_| "Session storage failed.".to_string())?
 }
 
+#[tauri::command]
+async fn save_transcript_correction(
+    storage: State<'_, Arc<SessionStorage>>,
+    attempt_id: String,
+    parent_revision_id: String,
+    text: String,
+) -> Result<String, String> {
+    with_storage(&storage, move |owner| {
+        owner.save_transcript_correction(&attempt_id, &parent_revision_id, &text, storage::recording::now_ms())
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TranscriptionEvent {
@@ -885,6 +899,7 @@ pub fn run() {
             get_transcription_setup,
             choose_transcription_setup,
             get_attempt_transcript,
+            save_transcript_correction,
             transcribe_attempt,
             cancel_transcription,
             close_after_recording
