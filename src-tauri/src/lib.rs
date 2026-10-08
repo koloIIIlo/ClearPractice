@@ -7,6 +7,7 @@ mod audio_devices;
 pub mod credentials;
 pub mod mic_test;
 pub mod models;
+pub mod prosody;
 pub mod storage;
 pub mod transcribe;
 

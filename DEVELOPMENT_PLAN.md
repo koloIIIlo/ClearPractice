@@ -30,7 +30,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 2. User (optional): store a Deepgram and/or AssemblyAI key in Settings → Transcription → API transcription test, preview a take and approve one Send (closes 0.22); then plan 0.23.
 3. M3 remaining code: stored analysis runs/metric values (3.4), API transcription in the product behind its gate (3.14–3.19).
 4. Physical check: unplug a USB microphone mid-take (2.9). M1: empty/error-state pass (1.9).
-5. Then milestone P (pitch tracker choice, P.1) and M4 content (start the licensed reference-clip search early).
+5. Milestone P: run the YIN contour on saved takes, store it (P.3) and draw it under the player (P.4); compare pYIN/McLeod (P.1). Then M4 content (start the licensed reference-clip search early).
 
 **Standing notes (not blockers)**
 - Do not request another personal speech sample or repeat the completed paid coaching test; the public benchmark (D-24) stands in for personal audio.
@@ -96,7 +96,7 @@ Resolves the hardware open questions in §10 and §18.
 | D-14 | shadcn preset `radix-nova`; primitives customised in place (buttons ≥ 40 px, sidebar 216 px, `nav` breakpoint 800 px, CommandDialog a11y fix) | Chosen | 2026-09-29 |
 | D-15 | Until native commands exist, the UI runs on `createMockClient()`, which parses through the same Zod schemas as the future Tauri client | Chosen | 2026-09-29 |
 | D-16 | Turbo CUDA with initial prompt `Umm, so, uh, I think, like, you know.`; all filler events remain review candidates | Chosen: 13/14 UH/UM retained, zero inserted in four public trials; no verified word alignment | 2026-10-07 |
-| D-17 | Pitch tracker for prosody (YIN / pYIN / McLeod vs. CREPE-tiny) → decided by P.1 | **Open** | |
+| D-17 | Pitch tracker for prosody → provisionally **YIN** (`prosody.rs`, yin-v1: CMND, threshold 0.15, parabolic interpolation, 60–500 Hz, 40 ms window, 10 ms hop), pure Rust with no new dependency. Synthetic tests show no octave errors at 85–380 Hz; real 62 s speech in 0.30 s (release). pYIN/McLeod comparison on noisy or weak-microphone takes and the Praat spot-check (gate P) remain before it is final | Provisional | 2026-10-08 |
 | D-18 | Mood/emotion detection from voice: **not built**. Acted-emotion training data makes it unreliable for second-language speech; self-reported ease + energy/pitch-range measures cover the need. Revisit only as a local experiment | Deferred | 2026-09-29 |
 | D-19 | Content focus: explaining complex topics, debating, and teaching; subject pool includes sport, economics, religion, crypto, programming, anime, and books | Confirmed | 2026-09-29 |
 | D-20 | Add optional API audio transcription. Transcription modes are Local / API / Off, independent of Coaching API / Local LLM / Off. Local remains the default; a saved take is uploaded only after its audio preview is approved | API option requested; default and interaction are working design choices | 2026-10-04 |
@@ -262,14 +262,14 @@ The API tasks below add an estimated 3–5 days. Implement the shared budget fou
 Goal: show *how* the voice moved (pitch rising or falling, which words carried stress) as a measured visual aid, mainly for Listen and imitate. Runs after M3 because it reuses analysis runs and the original timeline, and before M4 so 4.8 can use it.
 Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion labels (D-18), and no pronunciation grade (§11). Everything runs locally.
 
-- [ ] P.1 Choose the pitch tracker (→ D-17). Compare classic trackers in Rust (YIN / pYIN / McLeod; check available crates and licences) on the M3 evaluation set. Consider CREPE-tiny through ONNX Runtime only if classic trackers fail on noisy or weak-mic recordings, since it adds a runtime dependency. Criteria: octave errors, voiced/unvoiced accuracy, CPU time per minute. Praat is only a dev-time reference (GPL, not bundled)
-- [ ] P.2 Compute an F0 contour (Hz, plus semitones relative to the speaker's median), voicing flags, and RMS energy (dB) at a 10 ms hop on the **original recording timeline** (never VAD-trimmed audio, §9)
+- [~] P.1 Choose the pitch tracker (→ D-17). YIN implemented first as the classic baseline (no runtime dependency) and provisionally chosen; octave errors and voicing checked on synthetic voices and real speech. Remaining: compare pYIN/McLeod on noisy and weak-mic takes, Praat as dev-time reference
+- [~] P.2 Compute an F0 contour (Hz, plus semitones relative to the speaker's median), voicing flags, and RMS energy (dB) at a 10 ms hop on the **original recording timeline** (never VAD-trimmed audio, §9). `prosody::contour`: F0 per frame (None when unvoiced or silent, never 0), RMS dBFS (None for digital silence), median F0 and 5th–95th percentile range in semitones, with a reason when there is too little voicing. Remaining: run it on saved takes in the app and store/show it (P.3–P.4)
 - [ ] P.3 Storage: a versioned, regenerable analysis artifact (compact binary) plus a `prosody_tracks` record (run_id, attempt_id, algorithm, settings, hop_ms, definition_version, checksum). Metrics: pitch range (5th–95th percentile, semitones) and loudness variation, labelled **Estimated**; unavailable with a reason when there is too little voiced speech, clipping, or heavy noise
 - [ ] P.4 Contour view in Session review: pitch line + energy band under the transport, synced playhead, click to seek, gaps where the voice is unvoiced or silent (never drawn as zero), neutral colours only
 - [ ] P.5 Imitation overlay (feeds 4.8): reference clip vs. attempt, aligned at speech onset with optional time-normalisation. The user picks one feature (sentence-final fall/rise, stressed word, phrase rhythm) and compares by listening and looking. **No similarity score**. Untimed API text permits audio contours and audio-only comparison; word-linked stress requires separately verified alignment
 - [ ] P.6 Contours for bundled and imported reference clips are computed at import and versioned with the clip (links to 4.4)
 - [ ] P.7 Accessible equivalent: keyboard navigation between phrase endings, with a text readout per phrase ending (rising / falling / level, Estimated). Treat it as data, not advice
-- [ ] P.8 Tests: synthetic tones and sweeps with known F0 (unit), octave-error checks on low and high voices, alignment after resampling (with A-6), CPU time per 60 s take (target ≤ 5 s, to validate)
+- [~] P.8 Tests: synthetic tones and sweeps with known F0 (unit), octave-error checks on low and high voices, alignment after resampling (with A-6), CPU time per 60 s take (target ≤ 5 s, to validate). Done: harmonic tones at 85/120/220/380 Hz within 0.5 semitone, an octave glide, silence as gaps, noise unvoiced; real public sample 0.30 s for 61.9 s in release (42% voiced, median 118 Hz, 9.9 semitone range). Remaining: alignment after resampling (A-6)
 
 **Exit gate P**
 - [ ] Contours for ~10 recordings of the evaluation set spot-checked against Praat without systematic octave errors
@@ -368,6 +368,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Milestone P started: YIN pitch contour (P.1/P.2/P.8). Debug timing (8–11 s per 62 s) is not representative; the release build takes 0.30 s. Rust prosody 4/4 in release.
 - 2026-10-08: Model pack registry (3.3): Rust models 3/3 incl. real base-pack import; Vitest settings + ipc 19/19.
 - 2026-10-08: Final checks before push: Rust 56 passed (9 hardware tests ignored by default; the 8 original ones passed earlier tonight, the transcription one again after the voice-activity change, and the new real model-pack import passed), Vitest 47/47 in 17 files, production build. Double-checked this plan and the handout: removed six stale rows of the old status table that an earlier cleanup had left below the new one, and refreshed status and next actions.
 - 2026-10-08: Voice-activity pauses (3.5): Rust analysis 4/4, CUDA hardware run shows a 1.4 s pause from the audio; Vitest review + ipc 17/17.
