@@ -281,7 +281,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 **Content pack (resources/content, versioned)**
 - [~] 4.1 40 reviewed prompts with situation tags and task demands. Written: `src/content/prompts.ts` (curriculum version 1): the 12 starters plus 28 on the D-19 subjects (programming, economics, crypto, sport, religion and belief, anime, books, teaching, unexpected), 23 unfamiliar / 17 familiar, 11 with a follow-up, audiences named where it changes the task; content test checks count, unique ids, schema and coverage. Remaining: the user's review of the wording
-- [ ] 4.2 12 thought-group passages (40–80 words, pause marks)
+- [~] 4.2 12 thought-group passages (40–80 words, pause marks). Written: `src/content/passages.ts` (original text on the D-19 subjects, " / " pause marks, helpers for word count and groups); content test checks 40–80 words, at least 5 groups and at most 12 words per group. Remaining: the user's review, and showing them in the Thought groups exercise (4.7)
 - [ ] 4.3 8 offline guides (pauses, main-point structure, self-review, limits of automatic feedback, …)
 - [ ] 4.4 10 licensed or original reference clips with transcripts + attribution file. Sourcing started early (see `resources/content/SOURCES.md`): VOA Learning English is the first choice (its own page states its texts and MP3s are public domain, reusable commercially with credit; news-agency material excluded), LibriVox for read passages, original recordings with a speaker release; per-clip record format drafted. No clip downloaded yet
 - [ ] 4.5 Curriculum versioning; sessions snapshot the version they used
@@ -370,6 +370,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Thought-group passages (4.2): 12 passages in `src/content/passages.ts`; content tests 4/4.
 - 2026-10-08: Prompt pack (4.1, M4 started at the user's request): 40 prompts in `src/content/prompts.ts`; Vitest 73/73 in 23 files; typecheck clean.
 - 2026-10-08: Local / cloud transcription choice (D-26): Rust preference test (defaults to local, survives restart, unreadable means local) and 70 passed / 12 ignored; Vitest 71/71 in 22 files (take switch starts in the Settings default, cloud offers only a preview, local still transcribes; Settings stores mode and provider and sends nothing); typecheck clean; Settings section checked in the browser preview.
 - 2026-10-08: Desktop-pass feedback from the user, fixed: saved takes open their player directly (the Listen to recording button only gated loading and stayed visible once a take's player was cached); playback speeds up to 2× (0.75–2×, pitch-preserving); the collapsed sidebar shows icons only (labels were leaking as one letter); Today's recordings section sits in the plan's column with the normal 24 px gap (checked in the browser preview: same left edge and width as This week); coaching model choice (Luna / 6.1 Sol / Astra). Rust coaching 3/3, Vitest 70/70 in 21 files, typecheck clean.
