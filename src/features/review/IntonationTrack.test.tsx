@@ -65,3 +65,21 @@ it("follows the linked player and seeks it when the plot is clicked", async () =
   fireEvent.click(plot, { clientX: 150 });
   expect(seek).toHaveBeenCalledWith(15);
 });
+
+it("lists phrase endings as text and jumps to one from the keyboard", async () => {
+  const user = userEvent.setup();
+  const glide = Array.from({ length: 40 }, (_, i) => 150 * (110 / 150) ** (i / 39));
+  const falling: IntonationContour = { ...contour, f0Hz: glide, rmsDb: glide.map(() => -20) };
+  const client: IpcClient = { ...createMockClient(), recordingMode: "native", getTakeProsody: vi.fn(async () => falling) };
+  const link = createPlayerLink();
+  const seek = vi.fn();
+  link.attach(seek);
+  render(<QueryClientProvider client={new QueryClient()}><IpcContext.Provider value={client}><IntonationTrack attemptId="take-1" link={link} /></IpcContext.Provider></QueryClientProvider>);
+  await user.click(screen.getByRole("button", { name: "Show intonation" }));
+  await user.click(await screen.findByText("Phrase endings (1)"));
+  expect(screen.getByText(/Phrase 1, 0:00\.0–0:00\.4: falling \(−/)).toBeInTheDocument();
+  screen.getByRole("button", { name: "Jump to phrase 1" }).focus();
+  await user.keyboard("{Enter}");
+  expect(seek).toHaveBeenCalledWith(0);
+  expect(document.body.textContent).not.toMatch(/score|correct|grade/i);
+});

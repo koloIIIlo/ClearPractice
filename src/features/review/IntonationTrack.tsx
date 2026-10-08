@@ -7,6 +7,8 @@ import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
 import type { IntonationContour } from "@/lib/ipc/schemas";
 import { useLinkedPosition, type PlayerLink } from "./player-link";
+import { phraseEndings } from "./phrases";
+import { formatClockTenths } from "./waveform";
 
 const SPAN_SEMITONES = 12; // ±12 around the median fills the height
 
@@ -113,6 +115,38 @@ export function IntonationTrack({ attemptId, link }: { attemptId: string; link?:
           ? c.unavailableReason
           : `Pitch over ${formatClock(durationMs)}: median ${Math.round(c.medianF0Hz!)} Hz, range ${c.rangeSemitones!.toFixed(1)} semitones (5th–95th percentile)${c.loudnessRangeDb != null ? `; loudness varies by ${c.loudnessRangeDb.toFixed(0)} dB` : ""}. The dashed line is your median pitch, the faint line along the bottom is loudness; gaps are unvoiced or silent.${positionMs != null ? " The upright line follows playback; click the plot to jump there." : ""}`}
       </figcaption>
+      <PhraseEndings contour={c} link={positionMs != null ? link : undefined} />
     </figure>
+  );
+}
+
+/** Text equivalent of the plot (P.7): one line per phrase ending, reachable by keyboard. */
+function PhraseEndings({ contour, link }: { contour: IntonationContour; link?: PlayerLink }) {
+  const endings = phraseEndings(contour);
+  if (endings.length === 0) return null;
+  return (
+    <details className="text-meta">
+      <summary className="cursor-pointer py-1">Phrase endings ({endings.length})</summary>
+      <p className="text-muted-foreground">
+        Whether the voice rose, fell or stayed level over the last quarter second of each phrase. Estimated from the pitch line; none is right or wrong.
+      </p>
+      <ol className="mt-1 space-y-1">
+        {endings.map((e) => {
+          const change = `${e.changeSemitones >= 0 ? "+" : "−"}${Math.abs(e.changeSemitones).toFixed(1)}`;
+          return (
+            <li key={e.index} className="flex flex-wrap items-center gap-2">
+              <span>
+                Phrase {e.index}, {formatClockTenths(e.startMs)}–{formatClockTenths(e.endMs)}: {e.direction} ({change} semitones)
+              </span>
+              {link && (
+                <Button variant="ghost" size="sm" onClick={() => link.seek(e.startMs)} aria-label={`Jump to phrase ${e.index}`}>
+                  Jump
+                </Button>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </details>
   );
 }

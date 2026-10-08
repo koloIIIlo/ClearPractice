@@ -1710,6 +1710,30 @@ mod tests {
         assert_eq!(rows, 0, "track records purged with the take");
     }
     #[test]
+    fn intonation_frames_stay_aligned_to_the_original_timeline_after_resampling() {
+        // A 48 kHz take stepping from 150 Hz to 220 Hz at exactly 0.75 s (P.8, A-6):
+        // after resampling to 16 kHz, frames that end before the step read 150 Hz
+        // and frames that start at it read 220 Hz.
+        let root = TestRoot::new();
+        let mut writer = ChunkWriter::create(&root.0, &manifest("step")).unwrap();
+        let mut phase = 0.0f64;
+        for i in 0..72_000 {
+            let f0 = if i < 36_000 { 150.0 } else { 220.0 };
+            phase += std::f64::consts::TAU * f0 / 48_000.0;
+            let s: f64 = (1..=5).map(|h| (phase * h as f64).sin() / h as f64).sum();
+            writer.push((s * 8_000.0) as i16).unwrap();
+        }
+        writer.flush().unwrap();
+        drop(writer);
+        recording::finalize(&root.0, "step", false).unwrap();
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        let c = owner.prosody("step").unwrap();
+        let near = |i: usize, hz: f32| c.f0_hz[i].is_some_and(|f| (f - hz).abs() < 3.0);
+        // Frame i covers i·10 ms to i·10 + 40 ms.
+        assert!((60..=71).all(|i| near(i, 150.0)), "before the step: {:?}", &c.f0_hz[60..=71]);
+        assert!((75..=90).all(|i| near(i, 220.0)), "from the step: {:?}", &c.f0_hz[75..=90]);
+    }
+    #[test]
     fn search_finds_titles_notes_and_transcripts_follows_edits_and_skips_trash() {
         let root = TestRoot::new();
         saved(&root.0, "indexes");
