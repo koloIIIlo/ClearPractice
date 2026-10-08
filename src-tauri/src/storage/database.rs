@@ -14,7 +14,7 @@ use std::{
 };
 
 type Result<T> = std::result::Result<T, String>;
-const VERSION: i64 = 7;
+const VERSION: i64 = 8;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
@@ -152,7 +152,10 @@ impl DatabaseOwner {
             if version < 6 {
                 migrate(&mut connection, include_str!("schema-v6.sql"))?;
             }
-            migrate(&mut connection, include_str!("schema-v7.sql"))?;
+            if version < 7 {
+                migrate(&mut connection, include_str!("schema-v7.sql"))?;
+            }
+            migrate(&mut connection, include_str!("schema-v8.sql"))?;
         }
         backfill_measures(&connection)?;
         connection
@@ -420,7 +423,7 @@ impl DatabaseOwner {
             .connection
             .lock()
             .map_err(|_| "Session storage owner is unavailable.")?;
-        let mut stmt=conn.prepare("SELECT s.id,s.title,s.local_date,s.started_at_ms,e.type,s.favorite,s.notes,s.tags,s.status,COALESCE(SUM(aa.duration_ms),0),COUNT(a.asset_id) FROM sessions s JOIN session_steps st ON st.session_id=s.id JOIN exercise_definitions e ON e.id=st.exercise_id AND e.version=st.exercise_version JOIN attempts a ON a.step_id=st.id LEFT JOIN audio_assets aa ON aa.id=a.asset_id WHERE s.deleted_at_ms IS NULL GROUP BY s.id HAVING COUNT(a.asset_id)>0 ORDER BY s.started_at_ms DESC,s.id DESC").map_err(db_error)?;
+        let mut stmt=conn.prepare("SELECT s.id,s.title,s.local_date,s.started_at_ms,e.type,s.favorite,s.notes,s.tags,s.status,COALESCE(SUM(aa.duration_ms),0),COUNT(a.asset_id) FROM sessions s JOIN session_steps st ON st.session_id=s.id JOIN exercise_definitions e ON e.id=st.exercise_id AND e.version=st.exercise_version LEFT JOIN attempts a ON a.step_id=st.id AND a.deleted_at_ms IS NULL LEFT JOIN audio_assets aa ON aa.id=a.asset_id WHERE s.deleted_at_ms IS NULL GROUP BY s.id HAVING COUNT(a.asset_id)>0 OR s.status='completed' ORDER BY s.started_at_ms DESC,s.id DESC").map_err(db_error)?;
         let rows=stmt.query_map([],|r|Ok(json!({"id":r.get::<_,String>(0)?,"title":r.get::<_,String>(1)?,"localDate":r.get::<_,String>(2)?,"startedAt":iso(r.get(3)?),"exerciseType":r.get::<_,Option<String>>(4)?,"favorite":r.get::<_,bool>(5)?,"hasNote":!r.get::<_,String>(6)?.is_empty(),"tags":serde_json::from_str::<Value>(&r.get::<_,String>(7)?).unwrap_or(json!([])),"status":r.get::<_,String>(8)?,"durationMs":r.get::<_,i64>(9)?,"attemptCount":r.get::<_,i64>(10)?}))).map_err(db_error)?;
         let mut out = Vec::new();
         for row in rows {
@@ -478,7 +481,7 @@ impl DatabaseOwner {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .map_err(db_error)?;
-        let mut stmt=conn.prepare("SELECT a.id,a.ordinal,a.created_at_ms,aa.duration_ms,aa.unavailable_reason,t.familiarity,t.preparation_seconds,t.target_seconds,t.audience,t.follow_up FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN audio_assets aa ON aa.id=a.asset_id LEFT JOIN task_conditions t ON t.attempt_id=a.id WHERE st.session_id=?1 ORDER BY a.ordinal").map_err(db_error)?;
+        let mut stmt=conn.prepare("SELECT a.id,a.ordinal,a.created_at_ms,aa.duration_ms,aa.unavailable_reason,t.familiarity,t.preparation_seconds,t.target_seconds,t.audience,t.follow_up FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN audio_assets aa ON aa.id=a.asset_id LEFT JOIN task_conditions t ON t.attempt_id=a.id WHERE st.session_id=?1 AND a.deleted_at_ms IS NULL ORDER BY a.ordinal").map_err(db_error)?;
         let mut conditions = Value::Null;
         let mut attempts = Vec::new();
         let mut rows = stmt.query([id]).map_err(db_error)?;
@@ -627,7 +630,10 @@ impl DatabaseOwner {
         let items = rows
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(db_error)?;
-        Ok(json!({"retentionDays":days,"items":items}))
+        let mut stmt=conn.prepare("SELECT a.id,s.id,s.title,a.ordinal,a.deleted_at_ms,COALESCE(aa.duration_ms,0),COALESCE(aa.bytes,0) FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id LEFT JOIN audio_assets aa ON aa.id=a.asset_id WHERE a.deleted_at_ms IS NOT NULL AND s.deleted_at_ms IS NULL ORDER BY a.deleted_at_ms DESC,a.id").map_err(db_error)?;
+        let takes=stmt.query_map([],|r|{let deleted:i64=r.get(4)?;Ok(json!({"id":r.get::<_,String>(0)?,"sessionId":r.get::<_,String>(1)?,"sessionTitle":r.get::<_,String>(2)?,"ordinal":r.get::<_,i64>(3)?,"deletedAt":iso(deleted),"purgeAt":iso(deleted+i64::from(days)*DAY_MS),"durationMs":r.get::<_,i64>(5)?,"audioBytes":r.get::<_,i64>(6)?}))}).map_err(db_error)?
+            .collect::<rusqlite::Result<Vec<_>>>().map_err(db_error)?;
+        Ok(json!({"retentionDays":days,"items":items,"takes":takes}))
     }
 
     /// Takes the recording library must not show: trashed sessions and unfinished purges.
@@ -636,7 +642,7 @@ impl DatabaseOwner {
             .connection
             .lock()
             .map_err(|_| "Session storage owner is unavailable.")?;
-        let mut stmt=conn.prepare("SELECT a.id FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id WHERE s.deleted_at_ms IS NOT NULL UNION SELECT id FROM purged_assets").map_err(db_error)?;
+        let mut stmt=conn.prepare("SELECT a.id FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id WHERE s.deleted_at_ms IS NOT NULL OR a.deleted_at_ms IS NOT NULL UNION SELECT id FROM purged_assets").map_err(db_error)?;
         let rows = stmt.query_map([], |r| r.get(0)).map_err(db_error)?;
         rows.collect::<rusqlite::Result<_>>().map_err(db_error)
     }
@@ -684,16 +690,7 @@ impl DatabaseOwner {
                 if trashed != Some(true) {
                     return Err("Only sessions in Trash can be deleted permanently.".into());
                 }
-                tx.execute(&format!("INSERT OR IGNORE INTO purged_assets(id,purged_at_ms) SELECT id,?2 FROM ({takes})"),params![id,now]).map_err(db_error)?;
-                tx.execute(&format!("DELETE FROM task_conditions WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
-                tx.execute(&format!("DELETE FROM api_runs WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
-                tx.execute(&format!("DELETE FROM metric_values WHERE run_id IN (SELECT id FROM analysis_runs WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
-                tx.execute(&format!("DELETE FROM analysis_runs WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
-                tx.execute(&format!("DELETE FROM annotations WHERE revision_id IN (SELECT id FROM transcript_revisions WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
-                tx.execute(&format!("DELETE FROM transcript_segments WHERE revision_id IN (SELECT id FROM transcript_revisions WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
-                tx.execute(&format!("DELETE FROM transcript_revisions WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
-                tx.execute(&format!("DELETE FROM jobs WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
-                tx.execute(&format!("DELETE FROM prosody_tracks WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
+                purge_take_rows(&tx, takes, id, now)?;
                 tx.execute("DELETE FROM attempts WHERE step_id IN (SELECT id FROM session_steps WHERE session_id=?1)",[id]).map_err(db_error)?;
                 tx.execute("DELETE FROM audio_assets WHERE id IN (SELECT id FROM purged_assets) AND id NOT IN (SELECT asset_id FROM attempts WHERE asset_id IS NOT NULL)",[]).map_err(db_error)?;
                 tx.execute("DELETE FROM session_steps WHERE session_id=?1", [id])
@@ -707,11 +704,77 @@ impl DatabaseOwner {
     }
 
     pub fn empty_trash(&self) -> Result<bool> {
+        let takes = self.trashed_takes_before(i64::MAX)?;
+        let mut pending = !takes.is_empty() && self.delete_takes_permanently(&takes)?;
         let ids = self.trashed_before(i64::MAX)?;
-        if ids.is_empty() {
-            return Ok(false);
+        if !ids.is_empty() {
+            pending |= self.delete_permanently(&ids)?;
         }
-        self.delete_permanently(&ids)
+        Ok(pending)
+    }
+
+    /// Moves one saved take to Trash (2.23). It disappears from its session,
+    /// search, the library and new jobs; the other takes keep their numbers.
+    pub fn move_take_to_trash(&self, attempt_id: &str, now_ms: u64) -> Result<()> {
+        recording::validate_id(attempt_id)?;
+        let now = i64::try_from(now_ms).map_err(|_| "Invalid date.")?;
+        let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+        let count = conn.execute(
+            "UPDATE attempts SET deleted_at_ms=?1 WHERE id=?2 AND capture_state='saved' AND deleted_at_ms IS NULL AND step_id IN (SELECT st.id FROM session_steps st JOIN sessions s ON s.id=st.session_id WHERE s.deleted_at_ms IS NULL)",
+            params![now, attempt_id],
+        ).map_err(db_error)?;
+        if count != 1 {
+            return Err("This take is unavailable.".into());
+        }
+        Ok(())
+    }
+
+    pub fn restore_take(&self, attempt_id: &str) -> Result<()> {
+        recording::validate_id(attempt_id)?;
+        let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+        let count = conn
+            .execute("UPDATE attempts SET deleted_at_ms=NULL WHERE id=?1 AND deleted_at_ms IS NOT NULL", [attempt_id])
+            .map_err(db_error)?;
+        if count != 1 {
+            return Err("This take is no longer in Trash.".into());
+        }
+        Ok(())
+    }
+
+    /// Permanently deletes takes that are in Trash, with everything derived
+    /// from them. Returns true when file removal is still pending.
+    pub fn delete_takes_permanently(&self, ids: &[String]) -> Result<bool> {
+        if ids.is_empty() || ids.len() > 1000 {
+            return Err("Select between 1 and 1000 takes.".into());
+        }
+        for id in ids {
+            recording::validate_id(id)?;
+        }
+        {
+            let mut conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+            let tx = conn.transaction().map_err(db_error)?;
+            let now = i64::try_from(recording::now_ms()).map_err(|_| "Invalid date.")?;
+            let takes = "SELECT id FROM attempts WHERE id=?1 AND deleted_at_ms IS NOT NULL";
+            for id in ids {
+                let trashed: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM attempts WHERE id=?1 AND deleted_at_ms IS NOT NULL)", [id], |r| r.get(0)).map_err(db_error)?;
+                if !trashed {
+                    return Err("Only takes in Trash can be deleted permanently.".into());
+                }
+                purge_take_rows(&tx, takes, id, now)?;
+                tx.execute("DELETE FROM attempts WHERE id=?1", [id]).map_err(db_error)?;
+                tx.execute("DELETE FROM audio_assets WHERE id IN (SELECT id FROM purged_assets) AND id NOT IN (SELECT asset_id FROM attempts WHERE asset_id IS NOT NULL)",[]).map_err(db_error)?;
+            }
+            tx.commit().map_err(db_error)?;
+        }
+        Ok(self.finish_purges().is_err())
+    }
+
+    fn trashed_takes_before(&self, cutoff: i64) -> Result<Vec<String>> {
+        let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+        // Takes of a trashed session are purged with their session.
+        let mut stmt = conn.prepare("SELECT a.id FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id WHERE a.deleted_at_ms IS NOT NULL AND a.deleted_at_ms<=?1 AND s.deleted_at_ms IS NULL ORDER BY a.deleted_at_ms LIMIT 1000").map_err(db_error)?;
+        let rows = stmt.query_map([cutoff], |r| r.get(0)).map_err(db_error)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(db_error)
     }
 
     fn trashed_before(&self, cutoff: i64) -> Result<Vec<String>> {
@@ -730,6 +793,10 @@ impl DatabaseOwner {
         let ids = self.trashed_before(cutoff)?;
         if !ids.is_empty() {
             self.delete_permanently(&ids)?;
+        }
+        let takes = self.trashed_takes_before(cutoff)?;
+        if !takes.is_empty() {
+            self.delete_takes_permanently(&takes)?;
         }
         Ok(())
     }
@@ -772,7 +839,7 @@ impl DatabaseOwner {
             .connection
             .lock()
             .map_err(|_| "Session storage owner is unavailable.")?;
-        let usable: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id JOIN audio_assets aa ON aa.id=a.asset_id WHERE a.id=?1 AND a.capture_state='saved' AND s.deleted_at_ms IS NULL AND aa.unavailable_reason IS NULL)",[attempt_id],|r|r.get(0)).map_err(db_error)?;
+        let usable: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id JOIN audio_assets aa ON aa.id=a.asset_id WHERE a.id=?1 AND a.capture_state='saved' AND a.deleted_at_ms IS NULL AND s.deleted_at_ms IS NULL AND aa.unavailable_reason IS NULL)",[attempt_id],|r|r.get(0)).map_err(db_error)?;
         if !usable {
             return Err("This take is unavailable for transcription.".into());
         }
@@ -1070,7 +1137,7 @@ impl DatabaseOwner {
             .lock()
             .map_err(|_| "Search is unavailable.")?;
         if *built != Some(conn.total_changes()) {
-            let visible = "s.deleted_at_ms IS NULL AND EXISTS(SELECT 1 FROM session_steps st2 JOIN attempts a2 ON a2.step_id=st2.id WHERE st2.session_id=s.id AND a2.asset_id IS NOT NULL)";
+            let visible = "s.deleted_at_ms IS NULL AND EXISTS(SELECT 1 FROM session_steps st2 JOIN attempts a2 ON a2.step_id=st2.id WHERE st2.session_id=s.id AND a2.asset_id IS NOT NULL AND a2.deleted_at_ms IS NULL)";
             conn.execute_batch(&format!(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS temp.search_index USING fts5(session_id UNINDEXED, field UNINDEXED, body, tokenize='unicode61 remove_diacritics 2');
                  DELETE FROM temp.search_index;
@@ -1079,7 +1146,7 @@ impl DatabaseOwner {
                  INSERT INTO temp.search_index(session_id,field,body) SELECT s.id,'tags',s.tags FROM sessions s WHERE s.tags<>'[]' AND {visible};
                  INSERT INTO temp.search_index(session_id,field,body) SELECT s.id,'prompt',s.prompt_snapshot FROM sessions s WHERE s.prompt_snapshot IS NOT NULL AND {visible};
                  INSERT INTO temp.search_index(session_id,field,body) SELECT s.id,CASE tr.source WHEN 'user' THEN 'correction' ELSE 'transcript' END,tr.text
-                   FROM transcript_revisions tr JOIN attempts a ON a.id=tr.attempt_id JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id WHERE {visible};"
+                   FROM transcript_revisions tr JOIN attempts a ON a.id=tr.attempt_id JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id WHERE a.deleted_at_ms IS NULL AND {visible};"
             ))
             .map_err(db_error)?;
             *built = Some(conn.total_changes());
@@ -1212,6 +1279,23 @@ impl DatabaseOwner {
             .map_err(|_| "Session storage owner is unavailable.")?;
         snapshot(&conn, &self.root, id)
     }
+}
+
+/// Deletes every row derived from the takes `takes` selects (with `?1` = `id`)
+/// and writes their purge tombstones; shared by session and single-take purges.
+fn purge_take_rows(tx: &Transaction, takes: &str, id: &str, now: i64) -> Result<()> {
+    tx.execute(&format!("INSERT OR IGNORE INTO purged_assets(id,purged_at_ms) SELECT id,?2 FROM ({takes})"),params![id,now]).map_err(db_error)?;
+    for table in ["task_conditions", "api_runs"] {
+        tx.execute(&format!("DELETE FROM {table} WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
+    }
+    tx.execute(&format!("DELETE FROM metric_values WHERE run_id IN (SELECT id FROM analysis_runs WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
+    tx.execute(&format!("DELETE FROM analysis_runs WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
+    tx.execute(&format!("DELETE FROM annotations WHERE revision_id IN (SELECT id FROM transcript_revisions WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
+    tx.execute(&format!("DELETE FROM transcript_segments WHERE revision_id IN (SELECT id FROM transcript_revisions WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
+    for table in ["transcript_revisions", "jobs", "prosody_tracks"] {
+        tx.execute(&format!("DELETE FROM {table} WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
+    }
+    Ok(())
 }
 
 /// Stores the transcript measures of one revision as an analysis run with one
@@ -1592,6 +1676,75 @@ mod tests {
         );
     }
     #[test]
+    fn single_takes_go_to_trash_restore_and_purge_while_the_session_stays() {
+        let root = TestRoot::new();
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        let context = PracticeContext {
+            session_id: "session".into(), exercise_id: "ex-repeat".into(), exercise_version: 1, exercise_type: "repeat".into(),
+            prompt: "Explain a trade-off".into(),
+            outline: Outline { point: String::new(), reason: String::new(), example: String::new() },
+            conditions: Conditions { familiarity: "familiar".into(), preparation_seconds: 15, target_seconds: 60, audience: None, follow_up: false },
+        };
+        for n in 1..=2 {
+            owner.reserve(&format!("take-{n}"), &format!("op-{n}"), "Test take", Some(&context)).unwrap();
+            owner.commit_recording(&saved(&root.0, &format!("take-{n}"))).unwrap();
+        }
+        owner.update_session("session", "Trade-offs", "Keep this note", &[], false).unwrap();
+        let takes = |o: &DatabaseOwner| -> Vec<u64> {
+            o.get_session("session").unwrap()["attempts"].as_array().unwrap().iter().map(|a| a["ordinal"].as_u64().unwrap()).collect()
+        };
+        assert_eq!(takes(&owner), [1, 2]);
+
+        // Move take 1 to Trash: hidden everywhere, take 2 keeps its number.
+        owner.move_take_to_trash("take-1", 10).unwrap();
+        assert!(owner.move_take_to_trash("take-1", 11).is_err(), "already in Trash");
+        assert_eq!(takes(&owner), [2]);
+        assert_eq!(owner.list_sessions(None, None, false).unwrap()[0]["attemptCount"], 1);
+        assert!(owner.hidden_asset_ids().unwrap().contains("take-1"));
+        assert!(owner.start_job("job-x", "take-1", 12).is_err(), "no new jobs on a trashed take");
+        let trash = owner.list_trash().unwrap();
+        assert_eq!(trash["items"].as_array().unwrap().len(), 0, "the session itself is not in Trash");
+        assert_eq!(trash["takes"][0]["id"], "take-1");
+        assert_eq!(trash["takes"][0]["ordinal"], 1);
+        assert_eq!(trash["takes"][0]["sessionTitle"], "Trade-offs");
+
+        // Restore brings it back with its number.
+        owner.restore_take("take-1").unwrap();
+        assert_eq!(takes(&owner), [1, 2]);
+        assert!(owner.restore_take("take-1").is_err());
+
+        // Permanent delete removes the take's files and rows; restart does not re-import it.
+        owner.move_take_to_trash("take-1", 20).unwrap();
+        assert!(owner.delete_takes_permanently(&["take-2".into()]).is_err(), "only takes in Trash");
+        assert!(!owner.delete_takes_permanently(&["take-1".into()]).unwrap());
+        assert!(!root.0.join("recordings/take-1").exists());
+        assert!(owner.list_trash().unwrap()["takes"].as_array().unwrap().is_empty());
+        drop(owner);
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        assert_eq!(takes(&owner), [2]);
+
+        // Removing the last take keeps the session and its note.
+        owner.move_take_to_trash("take-2", 30).unwrap();
+        assert!(owner.empty_trash().is_ok());
+        let sessions = owner.list_sessions(None, None, false).unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0]["attemptCount"], 0);
+        assert_eq!(owner.get_session("session").unwrap()["notes"], "Keep this note");
+        assert!(!root.0.join("recordings/take-2").exists());
+    }
+
+    #[test]
+    fn expired_single_takes_are_purged_with_the_retention_setting() {
+        let root = TestRoot::new();
+        saved(&root.0, "old");
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        owner.move_take_to_trash("old", 1).unwrap();
+        owner.purge_expired(1 + 31 * DAY_MS as u64).unwrap();
+        assert!(owner.list_trash().unwrap()["takes"].as_array().unwrap().is_empty());
+        assert!(!root.0.join("recordings/old").exists());
+    }
+
+    #[test]
     fn concurrent_retakes_keep_conditions_and_identity_across_restart() {
         let root = TestRoot::new();
         let owner = std::sync::Arc::new(DatabaseOwner::open(&root.0).unwrap());
@@ -1762,7 +1915,7 @@ mod tests {
             .unwrap();
         {
             let conn = owner.connection.lock().unwrap();
-            conn.execute_batch("DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+            conn.execute_batch("DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
         }
         drop(owner);
         let upgraded = DatabaseOwner::open(&root.0).unwrap();
@@ -1772,7 +1925,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v7-")));
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v8-")));
         assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
     }
     fn api_result(take: &SavedRecording, run: &str, words: Option<Vec<(&str, u64, u64)>>) -> crate::audio::transcription::TranscriptionResult {

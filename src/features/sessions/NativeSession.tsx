@@ -11,7 +11,7 @@ import { useIpc } from "@/lib/ipc";
 import type { SessionDetail } from "@/lib/ipc/schemas";
 import { formatClock, formatLongDay } from "@/lib/format";
 import { SavedAudio } from "@/features/practice/RecordingLibrary";
-import { MoveToTrashButton } from "./TrashPage";
+import { MoveTakeToTrashButton, MoveToTrashButton } from "./TrashPage";
 import { TakeTranscript } from "@/features/review/TakeTranscript";
 import { IntonationTrack } from "@/features/review/IntonationTrack";
 import { Download } from "lucide-react";
@@ -37,7 +37,10 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
     <p className="text-meta text-muted-foreground">Listen, transcribe a take on this computer, review fillers and pauses, and keep your own notes. Coaching feedback is still being developed.</p>
     {attempts.length === 0 && <p role="status">This take is unavailable.</p>}
     {attempts.map((a) => <Panel key={a.id} className="space-y-3">
-      <h2 className="font-semibold">Take {a.ordinal} · {formatClock(a.durationMs)} <span className="text-meta font-normal text-muted-foreground">Measured duration</span></h2>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="font-semibold">Take {a.ordinal} · {formatClock(a.durationMs)} <span className="text-meta font-normal text-muted-foreground">Measured duration</span></h2>
+        <div className="ml-auto"><MoveTakeToTrashButton take={a} sessionTitle={session.title} /></div>
+      </div>
       {a.audioUnavailableReason ? <p role="alert">Audio unavailable: {a.audioUnavailableReason}</p> : <LinkedTake attemptId={a.id} />}
     </Panel>)}
     <Panel>

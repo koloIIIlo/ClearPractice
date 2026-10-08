@@ -561,6 +561,28 @@ async fn delete_sessions_permanently(
     .map_err(|_| "Session storage failed.".to_string())?
 }
 
+/// Single takes in Trash (2.23).
+#[tauri::command]
+async fn move_take_to_trash(storage: State<'_, Arc<SessionStorage>>, attempt_id: String) -> Result<(), String> {
+    with_storage(&storage, move |owner| owner.move_take_to_trash(&attempt_id, storage::recording::now_ms()))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn restore_take(storage: State<'_, Arc<SessionStorage>>, attempt_id: String) -> Result<(), String> {
+    with_storage(&storage, move |owner| owner.restore_take(&attempt_id))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn delete_takes_permanently(storage: State<'_, Arc<SessionStorage>>, attempt_ids: Vec<String>) -> Result<PurgeOutcome, String> {
+    with_storage(&storage, move |owner| owner.delete_takes_permanently(&attempt_ids).map(|files_pending| PurgeOutcome { files_pending }))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
 #[tauri::command]
 async fn empty_trash(storage: State<'_, Arc<SessionStorage>>) -> Result<PurgeOutcome, String> {
     with_storage(&storage, |owner| {
@@ -1200,6 +1222,9 @@ pub fn run() {
             restore_session,
             delete_sessions_permanently,
             empty_trash,
+            move_take_to_trash,
+            restore_take,
+            delete_takes_permanently,
             set_trash_retention,
             get_backup_status,
             choose_backup_destination,

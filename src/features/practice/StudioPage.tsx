@@ -26,6 +26,7 @@ import { describeDemands } from "@/features/exercises/describe";
 import { useRecorder, type Recorder } from "./recorder";
 import { LiveWaveform } from "@/components/live-waveform";
 import { RecordingLibrary, SavedAudio } from "./RecordingLibrary";
+import { MoveTakeToTrashButton } from "@/features/sessions/TrashPage";
 import { PASSAGES, type Passage } from "@/content/passages";
 import { passagePrompt, ThoughtGroupPassage } from "./ThoughtGroupPassage";
 
@@ -67,6 +68,7 @@ function Studio({ exercise, prompt, passage }: { exercise: ExerciseDefinition; p
   const rec = useRecorder(prompt.text, { sessionId, exerciseId: exercise.id, exerciseVersion: exercise.version,
     exerciseType: exercise.type, prompt: prompt.text, outline, conditions: prompt.conditions });
   const [announcement, setAnnouncement] = useState("");
+  const [trashed, setTrashed] = useState<Set<string>>(() => new Set());
   const studioRef = useRef<HTMLDivElement>(null);
 
   const takeNumber = rec.takes.length + (rec.phase === "saved" || rec.phase === "interrupted" ? 0 : 1);
@@ -231,9 +233,21 @@ function Studio({ exercise, prompt, passage }: { exercise: ExerciseDefinition; p
                   <CheckCircle2 aria-hidden className="size-4 text-primary" />
                 <span className="flex-1">Take {t.ordinal}</span>
                 <span className="text-meta text-muted-foreground tabular-nums">{formatClock(t.durationMs)}</span>
-                <span className="text-meta">{native ? "Saved" : "Simulated"}</span>
+                <span className="text-meta">{trashed.has(t.asset.assetId) ? "In Trash" : native ? "Saved" : "Simulated"}</span>
+                {native && !trashed.has(t.asset.assetId) && (
+                  <MoveTakeToTrashButton
+                    take={{ id: t.asset.assetId, ordinal: t.ordinal, durationMs: t.durationMs }}
+                    sessionTitle={prompt.text}
+                    onMoved={() => setTrashed((s) => new Set(s).add(t.asset.assetId))}
+                    onRestored={() => setTrashed((s) => { const next = new Set(s); next.delete(t.asset.assetId); return next; })}
+                  />
+                )}
                 </div>
-                <SavedAudio recording={t.asset} />
+                {trashed.has(t.asset.assetId) ? (
+                  <p className="text-meta text-muted-foreground">Moved to Trash. Restore it from the toast or from Sessions → Trash.</p>
+                ) : (
+                  <SavedAudio recording={t.asset} />
+                )}
               </li>
             ))}
           </ol>

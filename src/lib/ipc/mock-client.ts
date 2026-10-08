@@ -110,7 +110,7 @@ export function createMockClient(): IpcClient {
           purgeAt: new Date(deletedAtMs + retentionDays * 86_400_000).toISOString(),
           attemptCount: s.attemptCount, durationMs: s.durationMs, audioBytes: 0, unsavedTakeCount: 0,
         }));
-      return respond(S.TrashList, { retentionDays, items });
+      return respond(S.TrashList, { retentionDays, items, takes: [] });
     },
     moveSessionToTrash: async (sessionId) => {
       const index = sessions.findIndex((s) => s.id === sessionId);
@@ -130,6 +130,9 @@ export function createMockClient(): IpcClient {
       sessionIds.forEach((id) => trash.delete(id));
       return { filesPending: false };
     },
+    moveTakeToTrash: async () => { throw new IpcError("desktop_required", "Takes can be moved to Trash in the desktop app."); },
+    restoreTake: async () => { throw new IpcError("desktop_required", "Takes can be restored in the desktop app."); },
+    deleteTakesPermanently: async () => { throw new IpcError("desktop_required", "Takes can be deleted in the desktop app."); },
     emptyTrash: async () => {
       trash.clear();
       return { filesPending: false };

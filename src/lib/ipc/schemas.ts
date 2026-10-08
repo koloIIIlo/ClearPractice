@@ -141,7 +141,20 @@ export const TrashItem = z.object({
 });
 export type TrashItem = z.infer<typeof TrashItem>;
 
-export const TrashList = z.object({ retentionDays: TrashRetentionDays, items: z.array(TrashItem) });
+/** A single take in Trash whose session is still in use (2.23). */
+export const TrashTake = z.object({
+  id: Id,
+  sessionId: Id,
+  sessionTitle: z.string(),
+  ordinal: z.number().int().positive(),
+  deletedAt: z.string(),
+  purgeAt: z.string(),
+  durationMs: z.number().int().nonnegative(),
+  audioBytes: z.number().int().nonnegative(),
+});
+export type TrashTake = z.infer<typeof TrashTake>;
+
+export const TrashList = z.object({ retentionDays: TrashRetentionDays, items: z.array(TrashItem), takes: z.array(TrashTake) });
 export type TrashList = z.infer<typeof TrashList>;
 
 export const PurgeOutcome = z.object({ filesPending: z.boolean() });

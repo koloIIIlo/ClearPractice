@@ -83,6 +83,10 @@ export interface IpcClient {
   restoreSession(sessionId: string): Promise<void>;
   deleteSessionsPermanently(sessionIds: string[]): Promise<PurgeOutcome>;
   emptyTrash(): Promise<PurgeOutcome>;
+  /** Moves one saved take to Trash; its session and other takes stay (2.23). */
+  moveTakeToTrash(attemptId: string): Promise<void>;
+  restoreTake(attemptId: string): Promise<void>;
+  deleteTakesPermanently(attemptIds: string[]): Promise<PurgeOutcome>;
   setTrashRetention(days: TrashRetentionDays): Promise<void>;
   getBackupStatus(): Promise<BackupStatus>;
   /** Opens the native folder picker; cancelling keeps the current folder. */

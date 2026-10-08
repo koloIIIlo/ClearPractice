@@ -6,7 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 import { IpcContext, type IpcClient } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
 import { sessions } from "@/lib/ipc/mock-data";
-import { MoveToTrashButton, TrashPage } from "./TrashPage";
+import { MoveTakeToTrashButton, MoveToTrashButton, TrashPage } from "./TrashPage";
+import type { TrashTake } from "@/lib/ipc/schemas";
 
 function renderWith(client: ReturnType<typeof createMockClient>, ui: React.ReactNode) {
   return render(
@@ -67,5 +68,40 @@ describe("Trash", () => {
     await screen.findByText("Trash is empty");
     expect(failing.deleteSessionsPermanently).toHaveBeenCalledWith([sessions[0].id]);
     await waitFor(async () => expect((await client.listTrash()).items).toHaveLength(0));
+  });
+});
+
+describe("single takes in Trash (2.23)", () => {
+  it("names the take and its length, moves only that take, and offers it back from Trash", async () => {
+    const user = userEvent.setup();
+    const trashed: TrashTake[] = [];
+    const base = createMockClient();
+    const client = {
+      ...base,
+      moveTakeToTrash: vi.fn(async (id: string) => {
+        trashed.push({ id, sessionId: "s-1", sessionTitle: "Trade-offs", ordinal: 2, deletedAt: new Date().toISOString(), purgeAt: new Date(Date.now() + 30 * 86_400_000).toISOString(), durationMs: 61_000, audioBytes: 2_000_000 });
+      }),
+      restoreTake: vi.fn(async (id: string) => { trashed.splice(trashed.findIndex((t) => t.id === id), 1); }),
+      deleteTakesPermanently: vi.fn(async () => ({ filesPending: false })),
+      listTrash: async () => ({ ...(await base.listTrash()), takes: [...trashed] }),
+    };
+    renderWith(client, <><MoveTakeToTrashButton take={{ id: "take-2", ordinal: 2, durationMs: 61_000 }} sessionTitle="Trade-offs" /><TrashPage /></>);
+    await screen.findByText("Trash is empty");
+
+    await user.click(screen.getByRole("button", { name: "Move take 2 to Trash" }));
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog).toHaveTextContent("Move Take 2 (1:01) to Trash?");
+    expect(dialog).toHaveTextContent("The session, its notes and the other takes stay");
+    await user.click(within(dialog).getByRole("button", { name: "Move to Trash" }));
+    expect(client.moveTakeToTrash).toHaveBeenCalledWith("take-2");
+
+    const row = (await screen.findByText("Take 2 of “Trade-offs”")).closest("tr")!;
+    await user.click(within(row).getByRole("button", { name: /Delete take 2 of Trade-offs permanently/ }));
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("The session and its other takes stay");
+    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Cancel" }));
+    await user.click(within(row).getByRole("button", { name: "Restore take 2 of Trade-offs" }));
+    expect(client.restoreTake).toHaveBeenCalledWith("take-2");
+    await waitFor(() => expect(screen.getByText("Trash is empty")).toBeInTheDocument());
+    expect(client.deleteTakesPermanently).not.toHaveBeenCalled();
   });
 });
