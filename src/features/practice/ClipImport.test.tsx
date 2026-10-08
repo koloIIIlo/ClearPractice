@@ -43,7 +43,7 @@ it("splits a long recording into proposed clips, lets the user untick and rename
   await user.type(screen.getByLabelText("Title of clip 1"), "Grassy field");
   await user.click(screen.getByRole("button", { name: "Save 1 clip" }));
   expect(client.saveClipSections).toHaveBeenCalledWith("stage-1", [
-    { startMs: 6_000, endMs: 17_800, title: "Grassy field", source: "A Speaker, A Talk, 2024", transcript: "Imagine you are sitting in a grassy field. That does not sound very interesting." },
+    { startMs: 6_000, endMs: 17_800, title: "Grassy field", source: "A Speaker, A Talk, 2024", transcript: "Imagine you are sitting in a grassy field. That does not sound very interesting.", description: null, feature: null },
   ]);
   await waitFor(() => expect(onSaved).toHaveBeenCalledWith([saved("Grassy field")]));
 });
@@ -97,4 +97,41 @@ it("splits with a cloud provider only after the usual preview and an explicit Se
   expect(client.requestSplitTranscription).toHaveBeenCalledWith("api-deepgram-9", "b".repeat(64));
   expect(await screen.findByText("1 clip found. Untick any you don't want, and rename them if you like.")).toBeInTheDocument();
   expect(client.splitClipSource).not.toHaveBeenCalled();
+});
+
+it("suggests titles, descriptions and features with AI only after a preview of the transcripts and an explicit Send", async () => {
+  const user = userEvent.setup();
+  const { client } = setup({
+    chooseClipFile: async () => ({ stagingId: "stage-4", fileName: "talk.wav", durationMs: 120_000 }),
+    getApiKeyStatus: async () => ({ provider: "OpenAI" as const, present: true }),
+    splitClipSource: async () => [
+      { startMs: 0, endMs: 12_000, text: "First whole sentence here.", title: "First whole sentence here." },
+      { startMs: 13_000, endMs: 25_000, text: "Second whole sentence here.", title: "Second whole sentence here." },
+    ],
+    previewClipNames: vi.fn(async (texts: string[]) => ({
+      version: 1 as const, requestId: "naming-1", payloadSha256: "c".repeat(64), recipient: "https://api.openai.com/v1/responses" as const, model: "gpt-6-luna",
+      selectedText: texts.map((t, i) => `${i + 1}. ${t}`).join(" | "), prompt: "p", focus: "f", instructions: "i", maximumOutputTokens: 2048,
+      estimatedMaximumCostMicroUsd: 5_000, priceDate: "2026-10-08", priceSource: "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      inputUsdPerMillionTokens: "0.10", outputUsdPerMillionTokens: "0.50", costExplanation: "c", expiresAtMs: Date.now() + 300_000,
+    })),
+    requestClipNames: vi.fn(async () => [{ index: 2, title: "A second idea", description: "Clear falling end.", feature: "endings" as const }]),
+    saveClipSections: vi.fn(async () => []),
+  });
+  await user.click(screen.getByRole("button", { name: "Choose an audio file…" }));
+  await user.click(await screen.findByRole("button", { name: "Transcribe and split" }));
+  await user.click(await screen.findByRole("button", { name: "Suggest titles with AI…" }));
+  expect(client.previewClipNames).toHaveBeenCalledWith(["First whole sentence here.", "Second whole sentence here."], "gpt-6-luna");
+  const box = await screen.findByRole("group", { name: "AI naming request preview" });
+  expect(box).toHaveTextContent("never audio");
+  expect(client.requestClipNames).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Send transcripts · may be billed" }));
+  expect(client.requestClipNames).toHaveBeenCalledWith("naming-1", "c".repeat(64));
+  await waitFor(() => expect(screen.getByLabelText("Title of clip 2")).toHaveValue("A second idea"));
+  expect(screen.getByLabelText("Title of clip 1")).toHaveValue("First whole sentence here."); // untouched
+  expect(screen.getByLabelText("Description of clip 2")).toHaveValue("Clear falling end.");
+  expect(screen.getByText("AI suggestion · edit freely")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Save 2 clips" }));
+  expect(client.saveClipSections).toHaveBeenCalledWith("stage-4", expect.arrayContaining([
+    expect.objectContaining({ title: "A second idea", description: "Clear falling end.", feature: "endings" }),
+  ]));
 });

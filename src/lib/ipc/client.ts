@@ -34,6 +34,7 @@ import type {
   ReferenceClip,
   ClipStaged,
   ClipCandidate,
+  ClipName,
   LinkToolStatus,
   LinkAudio,
   TranscriptionSetup,
@@ -112,7 +113,10 @@ export interface IpcClient {
   onClipSplitProgress(listener: (percent: number) => void): Promise<() => void>;
   /** Stops a running split or link download. */
   cancelClipWork(): Promise<void>;
-  saveClipSections(stagingId: string, sections: { startMs: number; endMs: number; title: string; source: string; transcript: string | null }[]): Promise<ReferenceClip[]>;
+  saveClipSections(stagingId: string, sections: { startMs: number; endMs: number; title: string; source: string; transcript: string | null; description?: string | null; feature?: "emphasis" | "rhythm" | "endings" | null }[]): Promise<ReferenceClip[]>;
+  /** Optional AI titles for proposed clips: previews a text-only request (transcripts only). */
+  previewClipNames(texts: string[], model?: CoachingModel): Promise<CoachingPreview>;
+  requestClipNames(requestId: string, payloadSha256: string): Promise<ClipName[]>;
   getLinkToolStatus(): Promise<LinkToolStatus>;
   chooseLinkTool(): Promise<LinkToolStatus>;
   fetchLinkAudio(url: string): Promise<LinkAudio>;

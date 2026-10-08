@@ -196,7 +196,7 @@ fn restore_into_an_empty_profile_matches_records_and_asset_checksums() {
     // An imported reference clip (4.4a) travels with the backup.
     let take = source.0.join("recordings/take-a/audio.wav");
     let staged = crate::clips::stage(&source.0, &take).unwrap();
-    let details = crate::clips::ClipDetails { title: "My clip", source: "My own recording", transcript: None };
+    let details = crate::clips::ClipDetails { title: "My clip", source: "My own recording", transcript: None, description: None, feature: None };
     let clip = crate::clips::commit(&source.0, &staged.staging_id, 0, 900, &details, "user", false).err();
     assert!(clip.is_some(), "a 1 s take is too short for a 3 s clip");
     let long = source.0.join("long.wav");

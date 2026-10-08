@@ -637,7 +637,7 @@ async fn save_clip(
     transcript: Option<String>,
 ) -> Result<clips::Clip, String> {
     with_storage(&storage, move |owner| {
-        let details = clips::ClipDetails { title: &title, source: &source, transcript: transcript.as_deref() };
+        let details = clips::ClipDetails { title: &title, source: &source, transcript: transcript.as_deref(), description: None, feature: None };
         let clip = clips::commit(owner.root(), &staging_id, start_ms, end_ms, &details, "user", false)?;
         if let Err(error) = owner.insert_clip(&clip) {
             let _ = clips::remove_files(owner.root(), &clip.id);
@@ -698,6 +698,30 @@ fn cancel_clip_work(work: State<'_, Arc<ClipWork>>) {
             flag.store(true, std::sync::atomic::Ordering::Relaxed);
         }
     }
+}
+
+/// Optional AI titles and descriptions for proposed clips (4.4c): previews a
+/// text-only request (transcripts only). Nothing is sent here.
+#[tauri::command]
+fn preview_clip_names(
+    owner: State<'_, Arc<api::coaching::PreviewOwner>>,
+    texts: Vec<String>,
+    model: Option<api::coaching::CoachingModel>,
+) -> Result<api::coaching::Preview, String> {
+    owner.preview_clip_names(&texts, model.unwrap_or_default())
+}
+
+#[tauri::command]
+async fn request_clip_names(
+    owner: State<'_, Arc<api::coaching::PreviewOwner>>,
+    accounting: State<'_, Arc<ApiAccounting>>,
+    request_id: String,
+    payload_sha256: String,
+) -> Result<Vec<api::coaching::ClipName>, String> {
+    let owner = owner.inner().clone();
+    let accounting = accounting.inner().clone();
+    let budget = accounting.0.as_ref().map_err(Clone::clone)?;
+    owner.send_clip_names(budget, &accounting.1, &request_id, &payload_sha256).await
 }
 
 /// Cloud transcription for a split (4.4c): the same preview → explicit Send
@@ -774,6 +798,10 @@ struct SectionToSave {
     title: String,
     source: String,
     transcript: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    feature: Option<String>,
 }
 
 /// Saves several sections of one staged file as clips, then drops the staging copy.
@@ -785,7 +813,13 @@ async fn save_clip_sections(storage: State<'_, Arc<SessionStorage>>, staging_id:
     with_storage(&storage, move |owner| {
         let mut saved = Vec::new();
         for section in &sections {
-            let details = clips::ClipDetails { title: &section.title, source: &section.source, transcript: section.transcript.as_deref() };
+            let details = clips::ClipDetails {
+                title: &section.title,
+                source: &section.source,
+                transcript: section.transcript.as_deref(),
+                description: section.description.as_deref(),
+                feature: section.feature.as_deref(),
+            };
             let clip = clips::commit(owner.root(), &staging_id, section.start_ms, section.end_ms, &details, "user", true)?;
             if let Err(error) = owner.insert_clip(&clip) {
                 let _ = clips::remove_files(owner.root(), &clip.id);
@@ -1554,6 +1588,8 @@ pub fn run() {
             discard_clip_staging,
             save_clip,
             split_clip_source,
+            preview_clip_names,
+            request_clip_names,
             preview_split_transcription,
             request_split_transcription,
             cancel_clip_work,

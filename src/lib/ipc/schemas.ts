@@ -148,6 +148,8 @@ export const ReferenceClip = z.object({
   title: z.string(),
   source: z.string(),
   transcript: z.string().nullable(),
+  description: z.string().nullable().optional(),
+  feature: z.enum(["emphasis", "rhythm", "endings"]).nullable().optional(),
   durationMs: z.number().int().positive(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
   createdAtMs: z.number().int().nonnegative(),
@@ -159,6 +161,9 @@ export type ClipStaged = z.infer<typeof ClipStaged>;
 /** A proposed clip from a long recording (4.4c): whole sentences, 8–20 s. */
 export const ClipCandidate = z.object({ startMs: z.number().int().nonnegative(), endMs: z.number().int().positive(), text: z.string(), title: z.string() });
 export type ClipCandidate = z.infer<typeof ClipCandidate>;
+/** AI suggestion for one proposed clip (4.4c), labelled as such and editable. */
+export const ClipName = z.object({ index: z.number().int().positive(), title: z.string(), description: z.string(), feature: z.enum(["emphasis", "rhythm", "endings"]) });
+export type ClipName = z.infer<typeof ClipName>;
 export const LinkToolStatus = z.object({ available: z.boolean(), path: z.string().nullable() });
 export type LinkToolStatus = z.infer<typeof LinkToolStatus>;
 /** Audio fetched from a YouTube link with the user's yt-dlp (4.4d), staged like an imported file. */

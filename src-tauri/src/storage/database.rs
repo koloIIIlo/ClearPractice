@@ -14,7 +14,7 @@ use std::{
 };
 
 type Result<T> = std::result::Result<T, String>;
-const VERSION: i64 = 11;
+const VERSION: i64 = 12;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
@@ -169,7 +169,10 @@ impl DatabaseOwner {
             if version < 10 {
                 migrate(&mut connection, include_str!("schema-v10.sql"))?;
             }
-            migrate(&mut connection, include_str!("schema-v11.sql"))?;
+            if version < 11 {
+                migrate(&mut connection, include_str!("schema-v11.sql"))?;
+            }
+            migrate(&mut connection, include_str!("schema-v12.sql"))?;
         }
         backfill_measures(&connection)?;
         connection
@@ -612,9 +615,9 @@ impl DatabaseOwner {
 
     pub fn insert_clip(&self, clip: &crate::clips::Clip) -> Result<()> {
         let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
-        conn.execute("INSERT INTO reference_clips(id,origin,title,source,transcript,duration_ms,sha256,created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+        conn.execute("INSERT INTO reference_clips(id,origin,title,source,transcript,duration_ms,sha256,created_at_ms,description,feature) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
             params![clip.id, clip.origin, clip.title, clip.source, clip.transcript, i64::try_from(clip.duration_ms).map_err(|_| "Invalid duration.")?, clip.sha256,
-                i64::try_from(clip.created_at_ms).map_err(|_| "Invalid date.")?]).map_err(db_error)?;
+                i64::try_from(clip.created_at_ms).map_err(|_| "Invalid date.")?, clip.description, clip.feature]).map_err(db_error)?;
         Ok(())
     }
 
@@ -625,9 +628,9 @@ impl DatabaseOwner {
     /// Reference clips whose audio is present, bundled first, then newest imports.
     pub fn list_clips(&self) -> Result<Vec<crate::clips::Clip>> {
         let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
-        let mut stmt = conn.prepare("SELECT id,origin,title,source,transcript,duration_ms,sha256,created_at_ms FROM reference_clips ORDER BY origin='user', created_at_ms DESC, id").map_err(db_error)?;
+        let mut stmt = conn.prepare("SELECT id,origin,title,source,transcript,duration_ms,sha256,created_at_ms,description,feature FROM reference_clips ORDER BY origin='user', created_at_ms DESC, id").map_err(db_error)?;
         let rows = stmt.query_map([], |r| Ok(crate::clips::Clip {
-            id: r.get(0)?, origin: r.get(1)?, title: r.get(2)?, source: r.get(3)?, transcript: r.get(4)?,
+            id: r.get(0)?, origin: r.get(1)?, title: r.get(2)?, source: r.get(3)?, transcript: r.get(4)?, description: r.get(8)?, feature: r.get(9)?,
             duration_ms: r.get::<_, i64>(5)?.max(0) as u64, sha256: r.get(6)?, created_at_ms: r.get::<_, i64>(7)?.max(0) as u64,
         })).map_err(db_error)?;
         let clips: Vec<crate::clips::Clip> = rows.collect::<rusqlite::Result<_>>().map_err(db_error)?;
@@ -2062,7 +2065,7 @@ mod tests {
             .unwrap();
         {
             let conn = owner.connection.lock().unwrap();
-            conn.execute_batch("DROP TABLE reference_clips; ALTER TABLE sessions DROP COLUMN ease; ALTER TABLE sessions DROP COLUMN takeaway; ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+            conn.execute_batch("ALTER TABLE reference_clips DROP COLUMN description; ALTER TABLE reference_clips DROP COLUMN feature; DROP TABLE reference_clips; ALTER TABLE sessions DROP COLUMN ease; ALTER TABLE sessions DROP COLUMN takeaway; ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
         }
         drop(owner);
         let upgraded = DatabaseOwner::open(&root.0).unwrap();
@@ -2072,7 +2075,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v11-")));
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v12-")));
         assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
     }
     fn api_result(take: &SavedRecording, run: &str, words: Option<Vec<(&str, u64, u64)>>) -> crate::audio::transcription::TranscriptionResult {

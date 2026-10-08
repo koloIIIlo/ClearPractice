@@ -42,6 +42,12 @@ function ClipPlayer({ clip }: { clip: ReferenceClip }) {
           <p className="mt-1 whitespace-pre-wrap">{clip.transcript}</p>
         </details>
       )}
+      {(clip.description || clip.feature) && (
+        <p className="text-meta">
+          {clip.feature && <span className="font-medium">Listen for: {{ emphasis: "emphasis", rhythm: "phrase rhythm", endings: "clear endings" }[clip.feature]}. </span>}
+          {clip.description}
+        </p>
+      )}
       <p className="text-meta text-muted-foreground">Source: {clip.source || "not given"}</p>
     </div>
   );

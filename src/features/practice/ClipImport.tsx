@@ -7,12 +7,66 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
-import type { ClipCandidate, ClipStaged, ReferenceClip } from "@/lib/ipc/schemas";
+import type { ClipCandidate, ClipName, ClipStaged, CoachingModel, CoachingPreview, ReferenceClip } from "@/lib/ipc/schemas";
+import { COACHING_MODELS } from "@/features/settings/CoachingSpike";
+import { money } from "@/features/review/ApiTranscribe";
 import { formatClockTenths, parseClock } from "@/features/review/waveform";
 import { API_LABELS, ApiRequestFlow } from "@/features/review/ApiTranscribe";
 import type { AudioProvider } from "@/lib/ipc/schemas";
 
-type Proposal = ClipCandidate & { keep: boolean };
+type Feature = "emphasis" | "rhythm" | "endings";
+type Proposal = ClipCandidate & { keep: boolean; description: string; feature: Feature | null; suggested: boolean };
+const FEATURE_LABELS: Record<Feature, string> = { emphasis: "Emphasis", rhythm: "Phrase rhythm", endings: "Clear endings" };
+
+/**
+ * Optional AI titles, descriptions and features for proposed clips (4.4c). Only
+ * the numbered transcripts are sent, after the usual preview and an explicit Send.
+ */
+function AiNaming({ proposals, onNames }: { proposals: Proposal[]; onNames: (names: ClipName[]) => void }) {
+  const ipc = useIpc();
+  const key = useQuery({ queryKey: ["api-key-status"], queryFn: () => ipc.getApiKeyStatus(), retry: false });
+  const [model, setModel] = useState<CoachingModel>("gpt-6-luna");
+  const [preview, setPreview] = useState<CoachingPreview | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!key.data?.present) {
+    return <p className="text-meta text-muted-foreground">AI titles and descriptions need an OpenAI key (Settings → Coaching). You can name the clips yourself.</p>;
+  }
+  const prepare = async () => {
+    setBusy(true); setError(null);
+    try { setPreview(await ipc.previewClipNames(proposals.map((p) => p.text), model)); } catch (e) { setError(e instanceof Error ? e.message : "Could not prepare the request."); } finally { setBusy(false); }
+  };
+  const send = async () => {
+    if (!preview) return;
+    const approved = preview;
+    setPreview(null); setBusy(true); setError(null);
+    try { onNames(await ipc.requestClipNames(approved.requestId, approved.payloadSha256)); } catch (e) { setError(e instanceof Error ? e.message : "The request did not finish; the charge may be uncertain."); } finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-2 rounded-md border p-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Label htmlFor="naming-model" className="text-meta">AI model</Label>
+        <select id="naming-model" className="h-9 rounded-md border bg-background px-2 text-meta" value={model} disabled={busy} onChange={(e) => { setModel(e.target.value as CoachingModel); setPreview(null); }}>
+          {COACHING_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} · {m.note}</option>)}
+        </select>
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => void prepare()}>Suggest titles with AI…</Button>
+      </div>
+      {preview && (
+        <div className="space-y-2 text-meta" role="group" aria-label="AI naming request preview">
+          <p className="font-medium">Recipient: OpenAI · {preview.model}</p>
+          <p>Estimated upper reservation: {money(preview.estimatedMaximumCostMicroUsd)} within the shared monthly limit. Only the transcripts below are sent, never audio.</p>
+          <details><summary className="cursor-pointer">Text that will be sent</summary><pre className="mt-1 whitespace-pre-wrap">{preview.selectedText}</pre></details>
+          <div className="flex gap-2">
+            <Button size="sm" disabled={busy} onClick={() => void send()}>Send transcripts · may be billed</Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setPreview(null)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+      {busy && <p role="status" className="text-meta">Working…</p>}
+      {error && <p role="alert" className="text-meta text-destructive">{error}</p>}
+    </div>
+  );
+}
 
 /**
  * Import clips (4.4a, 4.4c, 4.4d): from a local file or a YouTube link (with the
@@ -20,6 +74,8 @@ type Proposal = ClipCandidate & { keep: boolean };
  * with local Whisper, or keep one section by hand. Everything stays on this
  * computer; the user is responsible for having the right to keep the audio.
  */
+const toProposal = (c: ClipCandidate): Proposal => ({ ...c, keep: true, description: "", feature: null, suggested: false });
+
 export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceClip[]) => void; onCancel: () => void }) {
   const ipc = useIpc();
   const qc = useQueryClient();
@@ -76,7 +132,7 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
     setBusy("split"); setError(null); setProgress(0);
     try {
       const found = await ipc.splitClipSource(staged.stagingId);
-      setProposals(found.map((c) => ({ ...c, keep: true })));
+      setProposals(found.map(toProposal));
     } catch (e) {
       setError(e instanceof Error ? e.message : "The recording could not be split.");
     } finally {
@@ -116,7 +172,7 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
     if (kept.some((p) => !p.title.trim())) return setError("Give every kept clip a title.");
     setBusy("save"); setError(null);
     try {
-      const saved = await ipc.saveClipSections(staged.stagingId, kept.map((p) => ({ startMs: p.startMs, endMs: p.endMs, title: p.title.trim(), source: source.trim(), transcript: p.text })));
+      const saved = await ipc.saveClipSections(staged.stagingId, kept.map((p) => ({ startMs: p.startMs, endMs: p.endMs, title: p.title.trim(), source: source.trim(), transcript: p.text, description: p.description.trim() || null, feature: p.feature })));
       stagedRef.current = null;
       onSaved(saved);
     } catch (e) {
@@ -209,7 +265,7 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
                 previewFn={(provider) => ipc.previewSplitTranscription(staged.stagingId, provider)}
                 sendFn={async (requestId, sha) => {
                   const found = await ipc.requestSplitTranscription(requestId, sha);
-                  setProposals(found.map((c) => ({ ...c, keep: true })));
+                  setProposals(found.map(toProposal));
                 }}
               />
             ) : (
@@ -224,6 +280,13 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
             {proposals && (
               <div className="space-y-2">
                 <p className="text-meta">{proposals.length} {proposals.length === 1 ? "clip" : "clips"} found. Untick any you don't want, and rename them if you like.</p>
+                <AiNaming
+                  proposals={proposals}
+                  onNames={(names) => setProposals((all) => all!.map((p, i) => {
+                    const n = names.find((x) => x.index === i + 1);
+                    return n ? { ...p, title: n.title, description: n.description, feature: n.feature, suggested: true } : p;
+                  }))}
+                />
                 <ol className="space-y-2">
                   {proposals.map((p, i) => (
                     <li key={`${p.startMs}`} className="space-y-1 rounded-md border p-2">
@@ -247,6 +310,26 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
                         </Button>
                       </div>
                       <p className="text-meta text-muted-foreground">{p.text}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          aria-label={`Description of clip ${i + 1}`}
+                          className="h-9 min-w-56 flex-1"
+                          maxLength={300}
+                          placeholder="What is worth imitating (optional)"
+                          value={p.description}
+                          onChange={(e) => setProposals((all) => all!.map((q, j) => (j === i ? { ...q, description: e.target.value } : q)))}
+                        />
+                        <select
+                          aria-label={`Feature of clip ${i + 1}`}
+                          className="h-9 rounded-md border bg-background px-2 text-meta"
+                          value={p.feature ?? ""}
+                          onChange={(e) => setProposals((all) => all!.map((q, j) => (j === i ? { ...q, feature: (e.target.value || null) as Feature | null } : q)))}
+                        >
+                          <option value="">Feature…</option>
+                          {(Object.keys(FEATURE_LABELS) as Feature[]).map((f) => <option key={f} value={f}>{FEATURE_LABELS[f]}</option>)}
+                        </select>
+                        {p.suggested && <span className="text-meta text-muted-foreground">AI suggestion · edit freely</span>}
+                      </div>
                     </li>
                   ))}
                 </ol>

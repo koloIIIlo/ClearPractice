@@ -40,6 +40,8 @@ export function createNativeClient(): IpcClient {
     onClipSplitProgress: (listener) => listen<number>("clip_split_progress", (e) => listener(z.number().int().min(0).max(100).parse(e.payload))),
     cancelClipWork: async () => { await command("cancel_clip_work", z.null()); },
     saveClipSections: (stagingId, sections) => command("save_clip_sections", S.ReferenceClip.array(), { stagingId, sections }),
+    previewClipNames: (texts, model) => command("preview_clip_names", S.CoachingPreview, { texts, model: model ?? null }),
+    requestClipNames: (requestId, payloadSha256) => command("request_clip_names", S.ClipName.array(), { requestId, payloadSha256 }),
     getLinkToolStatus: () => command("get_link_tool_status", S.LinkToolStatus),
     chooseLinkTool: () => command("choose_link_tool", S.LinkToolStatus),
     fetchLinkAudio: (url) => command("fetch_link_audio", S.LinkAudio, { url }),

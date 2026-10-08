@@ -45,6 +45,9 @@ pub struct Clip {
     pub title: String,
     pub source: String,
     pub transcript: Option<String>,
+    pub description: Option<String>,
+    /// emphasis, rhythm or endings
+    pub feature: Option<String>,
     pub duration_ms: u64,
     pub sha256: String,
     pub created_at_ms: u64,
@@ -173,11 +176,16 @@ pub struct ClipDetails<'a> {
     pub title: &'a str,
     pub source: &'a str,
     pub transcript: Option<&'a str>,
+    pub description: Option<&'a str>,
+    pub feature: Option<&'a str>,
 }
 
 impl ClipDetails<'_> {
     fn validate(&self) -> Result<()> {
         let bad = |s: &str, max: usize| s.len() > max || s.contains('\0');
+        if self.feature.is_some_and(|f| !["emphasis", "rhythm", "endings"].contains(&f)) || self.description.is_some_and(|d| bad(d, 300)) {
+            return Err("Keep the description under 300 characters and choose emphasis, rhythm or endings.".into());
+        }
         if self.title.trim().is_empty() || bad(self.title, 200) || bad(self.source, 500) || self.transcript.is_some_and(|t| bad(t, 4000)) {
             return Err("Give the clip a title (up to 200 characters); keep the source under 500 and the transcript under 4,000.".into());
         }
@@ -223,6 +231,8 @@ pub fn commit(root: &Path, staging_id: &str, start_ms: u64, end_ms: u64, details
         title: details.title.trim().into(),
         source: details.source.trim().into(),
         transcript: details.transcript.map(str::trim).filter(|t| !t.is_empty()).map(String::from),
+        description: details.description.map(str::trim).filter(|t| !t.is_empty()).map(String::from),
+        feature: details.feature.map(String::from),
         duration_ms: ((to - from) as u64) * 1000 / u64::from(rate),
         sha256: hash_file(&path)?,
         created_at_ms: now,
@@ -244,6 +254,8 @@ struct BundledEntry {
     title: String,
     source: String,
     transcript: Option<String>,
+    #[serde(default)]
+    feature: Option<String>,
 }
 
 /// Installs the bundled clips (4.4) listed in `dir/manifest.json` that are not
@@ -280,6 +292,13 @@ pub fn install_bundled(
                 title: entry.title.clone(),
                 source: entry.source.clone(),
                 transcript: entry.transcript.clone(),
+                description: None,
+                feature: entry.feature.as_deref().and_then(|f| match f.to_ascii_lowercase().as_str() {
+                    "emphasis" => Some("emphasis".to_string()),
+                    "phrase rhythm" | "rhythm" => Some("rhythm".to_string()),
+                    "clear endings" | "endings" => Some("endings".to_string()),
+                    _ => None,
+                }),
                 duration_ms: samples.len() as u64 * 1000 / u64::from(rate),
                 sha256: hash_file(&path)?,
                 created_at_ms: recording::now_ms(),
@@ -337,7 +356,7 @@ mod tests {
         let staged = stage(&root.0, &source).unwrap();
         assert_eq!(staged.file_name, "talk.wav");
         assert_eq!(staged.duration_ms, 40_000);
-        let details = ClipDetails { title: "Opening", source: "My recording", transcript: Some(" Hello there. ") };
+        let details = ClipDetails { title: "Opening", source: "My recording", transcript: Some(" Hello there. "), description: None, feature: Some("emphasis") };
         assert!(commit(&root.0, &staged.staging_id, 0, 2_000, &details, "user", false).is_err(), "too short");
         assert!(commit(&root.0, &staged.staging_id, 0, 31_000, &details, "user", false).is_err(), "too long");
         assert!(commit(&root.0, &staged.staging_id, 1_000, 11_000, &ClipDetails { title: " ", ..details }, "user", false).is_err(), "needs a title");
