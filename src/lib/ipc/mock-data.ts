@@ -2,6 +2,7 @@
  * Illustrative sample content for developing the UI before the native core
  * exists (M1). Nothing here is a real recording or a real analysis result.
  */
+import { PROMPTS } from "@/content/prompts";
 import { addLocalDays, toLocalDate } from "@/lib/phrase-schedule";
 import type {
   Annotation,
@@ -96,20 +97,7 @@ const cond = (
   followUp = false,
 ) => ({ familiarity, preparationSeconds, targetSeconds, audience, followUp });
 
-export const prompts: PracticePrompt[] = [
-  { id: "p-habit", text: "Describe a habit you would like to change and why.", tags: ["daily_life"], conditions: cond("familiar", 15, 60), favorite: true, source: "bundled" },
-  { id: "p-process", text: "Explain how you prepare for a busy day.", tags: ["explanations", "daily_life"], conditions: cond("familiar", 15, 60), favorite: false, source: "bundled" },
-  { id: "p-tool", text: "Explain a tool you use at work to someone who has never seen it.", tags: ["work", "explanations"], conditions: cond("unfamiliar", 30, 90, "A beginner"), favorite: false, source: "bundled" },
-  { id: "p-remote", text: "Is working from home better than working in an office? Give your view.", tags: ["opinions", "work"], conditions: cond("familiar", 30, 90), favorite: false, source: "bundled" },
-  { id: "p-mistake", text: "Tell a short story about a mistake that taught you something.", tags: ["storytelling"], conditions: cond("familiar", 30, 120), favorite: true, source: "bundled" },
-  { id: "p-city", text: "What would you change about the place where you live?", tags: ["opinions", "daily_life"], conditions: cond("unfamiliar", 15, 60), favorite: false, source: "bundled" },
-  { id: "p-decision", text: "Explain a recent decision to a colleague, then answer a follow-up.", tags: ["work", "explanations"], conditions: cond("unfamiliar", 15, 90, "A colleague", true), favorite: false, source: "bundled" },
-  { id: "p-unexpected", text: "If you could learn any skill instantly, what would it be?", tags: ["unexpected"], conditions: cond("unfamiliar", 0, 60), favorite: false, source: "bundled" },
-  { id: "p-disagree", text: "A friend says learning languages is pointless with translation apps. Respond politely.", tags: ["opinions", "unexpected"], conditions: cond("unfamiliar", 15, 90, "A friend", true), favorite: false, source: "bundled" },
-  { id: "p-weekend", text: "Describe what a good weekend looks like for you.", tags: ["daily_life"], conditions: cond("familiar", 15, 60), favorite: false, source: "bundled" },
-  { id: "p-book", text: "Recommend a book, film, or series and explain why.", tags: ["opinions", "storytelling"], conditions: cond("familiar", 30, 90), favorite: false, source: "bundled" },
-  { id: "p-project", text: "Summarise a project you worked on for a new team member.", tags: ["work", "explanations"], conditions: cond("unfamiliar", 30, 120, "A new team member"), favorite: false, source: "bundled" },
-];
+export const prompts: PracticePrompt[] = PROMPTS;
 
 export const guides: Guide[] = [
   { id: "g-pauses", title: "Pauses are allowed", summary: "Why a short silence often helps a listener more than a filler.", minutes: 3 },
