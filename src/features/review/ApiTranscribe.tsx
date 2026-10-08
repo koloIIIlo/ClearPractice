@@ -31,6 +31,7 @@ export function ApiRequestFlow({ attemptId, provider, hasKey, keyHint }: { attem
   const previewRef = useRef<AudioPreview | null>(null);
   const [result, setResult] = useState<AudioResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const discard = () => {
@@ -59,7 +60,7 @@ export function ApiRequestFlow({ attemptId, provider, hasKey, keyHint }: { attem
     const approved = preview;
     previewRef.current = null;
     setPreview(null);
-    setBusy(true); setError(null);
+    setBusy(true); setError(null); setSending(approved.requestId);
     try {
       setResult(await ipc.requestApiTranscription(approved.requestId, approved.payloadSha256));
       void qc.invalidateQueries({ queryKey: ["attempt-transcript", approved.attemptId] });
@@ -67,6 +68,7 @@ export function ApiRequestFlow({ attemptId, provider, hasKey, keyHint }: { attem
       setError(`${e instanceof Error ? e.message : "The request did not finish."} Prepare a new preview to try again.`);
     } finally {
       setBusy(false);
+      setSending(null);
       void qc.invalidateQueries({ queryKey: ["api-usage"] });
     }
   }
@@ -105,7 +107,16 @@ export function ApiRequestFlow({ attemptId, provider, hasKey, keyHint }: { attem
           </div>
         </div>
       )}
-      {busy && <p role="status" className="text-meta">Working… a hosted transcription can take up to a few minutes.</p>}
+      {busy && (
+        <div className="flex flex-wrap items-center gap-2">
+          <p role="status" className="text-meta">Working… a hosted transcription can take up to a few minutes.</p>
+          {sending && (
+            <Button variant="outline" size="sm" onClick={() => void ipc.cancelApiTranscription(sending)}>
+              Stop waiting
+            </Button>
+          )}
+        </div>
+      )}
       {error && <p role="alert" className="text-meta text-destructive">{error}</p>}
       {result && (
         <div className="space-y-2 rounded-lg border p-3">

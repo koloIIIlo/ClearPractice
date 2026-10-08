@@ -299,6 +299,18 @@ impl AudioPreviewOwner {
     }
 }
 
+/// Accounting after the user stopped waiting for a request (3.18). Before
+/// dispatch nothing was sent and the reservation is released; after it the
+/// provider may still finish and bill, so the charge stays Uncertain.
+pub fn stopped(budget: &BudgetOwner, request_id: &str) -> String {
+    if budget.release_unsent(request_id).is_ok() {
+        "Stopped before anything was sent. Nothing was billed.".into()
+    } else {
+        let _ = budget.settle(request_id, None, None, None);
+        "Stopped waiting. The provider may still finish and bill this request, so its charge is uncertain; nothing is retried.".into()
+    }
+}
+
 /// Last resort when the session database cannot take a paid result: keep the raw
 /// response and result in the app's cache so the charge is not wasted silently.
 pub fn keep_unsaved(root: &Path, run: &ApiRun) -> Result<std::path::PathBuf> {

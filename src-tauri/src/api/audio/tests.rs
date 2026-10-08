@@ -105,3 +105,22 @@ fn transport_only_builds_requests_for_the_two_fixed_hosts_with_hidden_keys() {
         .is_err());
     assert_eq!(cost_for(AudioProvider::Deepgram, 61_000), 8_600, "billed per started minute");
 }
+
+#[test]
+fn stopping_releases_unsent_requests_and_keeps_dispatched_ones_uncertain() {
+    use super::super::budget::Purpose;
+    let root = TestRoot::new();
+    let budget = BudgetOwner::open(&root.0).unwrap();
+    let quote = || PriceQuote { currency: "USD".into(), source: "https://deepgram.com/pricing".into(), effective_date: PRICE_DATE.into(),
+        model: "nova-3".into(), billing_unit: "started audio minute".into(), rate_micro_usd: 4_300, maximum_cost_micro_usd: 4_300 };
+    let hash = "a".repeat(64);
+    budget.reserve("waiting", Purpose::Transcription, &hash, Some(quote())).unwrap();
+    assert!(stopped(&budget, "waiting").contains("Nothing was billed"));
+    assert_eq!(budget.summary().unwrap().counted_micro_usd, 0);
+
+    budget.reserve("sent", Purpose::Transcription, &hash, Some(quote())).unwrap();
+    budget.mark_dispatched("sent", &hash).unwrap();
+    assert!(stopped(&budget, "sent").contains("charge is uncertain"));
+    let summary = budget.summary().unwrap();
+    assert_eq!((summary.uncertain_micro_usd, summary.counted_micro_usd), (4_300, 4_300));
+}

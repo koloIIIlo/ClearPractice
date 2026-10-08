@@ -119,6 +119,8 @@ export interface IpcClient {
   /** Shows exactly what would be sent; sends nothing and reserves nothing. */
   previewApiTranscription(attemptId: string, provider: AudioProvider): Promise<AudioPreview>;
   cancelApiTranscriptionPreview(requestId: string): Promise<void>;
+  /** Stops waiting for a sent request; a dispatched one keeps an Uncertain charge. */
+  cancelApiTranscription(requestId: string): Promise<void>;
   /** Sends one previewed take; the approval is single-use and bound to the payload fingerprint. */
   requestApiTranscription(requestId: string, payloadSha256: string): Promise<AudioResult>;
   getMicTestPlaybackUrl(attemptId: string): Promise<string>;

@@ -23,6 +23,9 @@ struct Transcription {
 }
 
 struct ApiAccounting(Result<api::budget::BudgetOwner, String>, std::path::PathBuf);
+/// API transcriptions in flight, by request ID, each with a way to stop waiting (3.18).
+#[derive(Default)]
+struct InflightApi(std::sync::Mutex<std::collections::HashMap<String, Box<dyn Fn() + Send + Sync>>>);
 /// The session database owner. Restore swaps it under the write lock; every other
 /// command holds the read lock for the whole of its storage or file work.
 struct SessionStorage(std::sync::RwLock<Result<storage::database::DatabaseOwner, String>>);
@@ -199,6 +202,14 @@ async fn preview_api_transcription(
     .map_err(|_| "Preview failed.".to_string())?
 }
 
+/// Stops waiting for an API transcription that is in flight (3.18).
+#[tauri::command]
+fn cancel_api_transcription(inflight: State<'_, Arc<InflightApi>>, request_id: String) {
+    if let Some(stop) = inflight.0.lock().ok().and_then(|mut map| map.remove(&request_id)) {
+        stop();
+    }
+}
+
 #[tauri::command]
 fn cancel_api_transcription_preview(owner: State<'_, Arc<api::audio::AudioPreviewOwner>>, request_id: String) {
     owner.cancel(&request_id);
@@ -212,6 +223,7 @@ async fn request_api_transcription(
     storage: State<'_, Arc<SessionStorage>>,
     owner: State<'_, Arc<api::audio::AudioPreviewOwner>>,
     accounting: State<'_, Arc<ApiAccounting>>,
+    inflight: State<'_, Arc<InflightApi>>,
     request_id: String,
     payload_sha256: String,
 ) -> Result<api::audio::AudioResult, String> {
@@ -220,8 +232,32 @@ async fn request_api_transcription(
     }
     let owner = owner.inner().clone();
     let accounting = accounting.inner().clone();
-    let budget = accounting.0.as_ref().map_err(Clone::clone)?;
-    let run = owner.send(budget, &request_id, &payload_sha256).await?;
+    accounting.0.as_ref().map_err(Clone::clone)?;
+    let inflight = inflight.inner().clone();
+    let task = {
+        let (accounting, request_id, payload_sha256) = (accounting.clone(), request_id.clone(), payload_sha256.clone());
+        tauri::async_runtime::spawn(async move {
+            let budget = accounting.0.as_ref().map_err(Clone::clone)?;
+            owner.send(budget, &request_id, &payload_sha256).await
+        })
+    };
+    let abort = task.inner().abort_handle();
+    if let Ok(mut map) = inflight.0.lock() {
+        map.insert(request_id.clone(), Box::new(move || abort.abort()));
+    }
+    let outcome = task.await;
+    if let Ok(mut map) = inflight.0.lock() {
+        map.remove(&request_id);
+    }
+    let run = match outcome {
+        Ok(result) => result?,
+        Err(_) => {
+            // Stopped by the user. Before dispatch nothing was sent; after it the
+            // provider may still finish and bill, so the charge stays Uncertain.
+            let budget = accounting.0.as_ref().map_err(Clone::clone)?;
+            return Err(api::audio::stopped(budget, &request_id));
+        }
+    };
     // Store it with the take as its own revision (3.16). If that fails, the paid
     // result is kept in the app's cache and the user is told; nothing is resent.
     let run = Arc::new(run);
@@ -1073,6 +1109,7 @@ pub fn run() {
             )));
             app.manage(Arc::new(api::coaching::PreviewOwner::default()));
             app.manage(Arc::new(api::audio::AudioPreviewOwner::default()));
+            app.manage(Arc::new(InflightApi::default()));
             let mic_events = app.handle().clone();
             app.manage(Arc::new(mic_test::MicTest::new(
                 &root,
@@ -1163,6 +1200,7 @@ pub fn run() {
             remove_transcription_api_key,
             preview_api_transcription,
             cancel_api_transcription_preview,
+            cancel_api_transcription,
             request_api_transcription,
             start_mic_test,
             get_mic_test_playback_path,
