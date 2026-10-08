@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
@@ -124,4 +124,25 @@ it("explains a failed job and keeps the take available for another try", async (
   });
   expect(await screen.findByRole("alert")).toHaveTextContent("Transcription was interrupted. ClearPractice closed before this transcription finished. The recording is unchanged.");
   expect(screen.getByRole("button", { name: "Transcribe" })).toBeEnabled();
+});
+
+it("starts in the default mode from Settings and lets each take switch between this computer and the cloud", async () => {
+  const user = userEvent.setup();
+  const client = setup({
+    getTranscriptionSetup: configured,
+    getTranscriptionPreference: async () => ({ mode: "api" as const, provider: "assemblyai" as const }),
+    getTranscriptionApiKeys: async () => [{ provider: "deepgram" as const, present: false }, { provider: "assemblyai" as const, present: true }],
+    transcribeAttempt: vi.fn(async () => "job-1"),
+    previewApiTranscription: vi.fn(async () => { throw new Error("not in this test"); }),
+  });
+  // Cloud is the default: the take offers a preview, never an automatic send.
+  await waitFor(() => expect(screen.getByRole("radio", { name: "Cloud API" })).toBeChecked());
+  expect(await screen.findByRole("button", { name: "Preview request" })).toBeInTheDocument();
+  expect(screen.getByText(/Sends this whole take to AssemblyAI/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Transcribe" })).not.toBeInTheDocument();
+  expect(client.previewApiTranscription).not.toHaveBeenCalled();
+  // Switch this take to local Whisper.
+  await user.click(screen.getByRole("radio", { name: "This computer" }));
+  await user.click(screen.getByRole("button", { name: "Transcribe" }));
+  expect(client.transcribeAttempt).toHaveBeenCalledWith("take-1");
 });

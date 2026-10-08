@@ -34,7 +34,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 
 **Standing notes (not blockers)**
 - Do not request another personal speech sample or repeat the completed paid coaching test; the public benchmark (D-24) stands in for personal audio.
-- Optional API audio transcription stays out of the product until its enablement gate passes (see "Data that leaves this computer"); the take-level option is built but off (`API_MODE_ENABLED`), and the Settings test panel only sends after an explicit, previewed approval. A test result is saved as the take's newest transcript; older revisions and corrections stay stored.
+- Cloud transcription is available per take by the user's choice (D-26), before the enablement gate: every take is previewed and sent only on Send. Keep it that way (no automatic sending) until the gate passes. A cloud result is saved as the take's newest transcript; older revisions and corrections stay stored.
 - Backups deliberately exclude the API usage ledger: restoring an older ledger would undercount spending. Decide in M5 whether to export it read-only.
 - The desktop profile `%LOCALAPPDATA%\com.clearpractice.app` was created on 8 Oct and was empty; Codex-era takes and the USD 0.000227 ledger entry are not on this machine's profile.
 - Rebuild/reopen the desktop app after adding native commands; never interrupt an active recording or concurrent user input.
@@ -106,6 +106,7 @@ Resolves the hardware open questions in §10 and §18.
 | D-23 | First API transcription workflow submits one complete, verified saved take as derived 16 kHz mono WAV through Rust. No live microphone stream, automatic upload, batch dispatch, or automatic provider fallback. Intonation and pause analysis remain local | Working design choice | 2026-10-04 |
 | D-24 | Use a downloaded public reference sample for the current benchmark instead of asking for personal speech again. Eight complete Nyra Disfluency Speech English test clips total 61.934 s, concatenated without trimming; independent dataset annotations identify fillers/restarts | User requested internet audio; provisional public-sample results do not measure personal accuracy | 2026-10-04 |
 | D-25 | Backups are single ZIP files: `zip` 8.6.0 (Stored/Deflate only, `flate2` 1.1.10 pure-Rust backend) and `tauri-plugin-dialog` 2.8.1. Pickers open from Rust, so the UI never sends paths and needs no JS dialog permission | User chose ZIP + folder picker | 2026-10-08 |
+| D-26 | The user asked (2026-10-08) to choose per take between local Whisper and cloud transcription, so cloud mode is available on takes before the API enablement gate passes. Settings → Transcription → Default transcription (this computer / Cloud API + provider, stored in `app_settings`), and each take has a This computer / Cloud API switch. Every safeguard stays: a cloud take is previewed (audio, recipient, price) and sent only on Send, single-use approval, shared budget, Stop waiting, nothing sends by itself after recording. The gate still has to pass before cloud can become anything more automatic | Chosen by the user | 2026-10-08 |
 
 ---
 
@@ -369,6 +370,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Local / cloud transcription choice (D-26): Rust preference test (defaults to local, survives restart, unreadable means local) and 70 passed / 12 ignored; Vitest 71/71 in 22 files (take switch starts in the Settings default, cloud offers only a preview, local still transcribes; Settings stores mode and provider and sends nothing); typecheck clean; Settings section checked in the browser preview.
 - 2026-10-08: Desktop-pass feedback from the user, fixed: saved takes open their player directly (the Listen to recording button only gated loading and stayed visible once a take's player was cached); playback speeds up to 2× (0.75–2×, pitch-preserving); the collapsed sidebar shows icons only (labels were leaking as one letter); Today's recordings section sits in the plan's column with the normal 24 px gap (checked in the browser preview: same left edge and width as This week); coaching model choice (Luna / 6.1 Sol / Astra). Rust coaching 3/3, Vitest 70/70 in 21 files, typecheck clean.
 - 2026-10-08: Reference-clip sourcing for 4.4 (research only, no downloads): `resources/content/SOURCES.md`.
 - 2026-10-08: M3 gate, timing after resampling (hardware, 33 s): passes after clamping the padded final segment (previously the last 7 s of the public sample had no timing); Whisper unit test updated; Rust 68 passed / 12 ignored, both transcription hardware tests pass.

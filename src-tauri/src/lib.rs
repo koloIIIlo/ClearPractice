@@ -740,6 +740,22 @@ async fn get_transcription_setup(
         .map_err(|_| "Session storage failed.".to_string())?
 }
 
+#[tauri::command]
+async fn get_transcription_preference(storage: State<'_, Arc<SessionStorage>>) -> Result<transcribe::Preference, String> {
+    with_storage(&storage, transcribe::preference).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+/// Stores the default transcription mode. Choosing cloud mode sends nothing.
+#[tauri::command]
+async fn set_transcription_preference(
+    storage: State<'_, Arc<SessionStorage>>,
+    preference: transcribe::Preference,
+) -> Result<transcribe::Preference, String> {
+    with_storage(&storage, move |db| transcribe::set_preference(db, preference))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
 /// Picks a worker setup file natively, verifies the runtime and model, then stores it.
 #[tauri::command]
 async fn choose_transcription_setup(
@@ -1209,6 +1225,8 @@ pub fn run() {
             cancel_api_transcription_preview,
             cancel_api_transcription,
             get_api_preview_audio_path,
+            get_transcription_preference,
+            set_transcription_preference,
             request_api_transcription,
             start_mic_test,
             get_mic_test_playback_path,

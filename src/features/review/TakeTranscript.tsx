@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
-import { API_MODE_ENABLED, TakeApiTranscribe } from "./ApiTranscribe";
+import { CloudTranscribe } from "./ApiTranscribe";
 import type { AttemptTranscript, TranscriptMeasures, TranscriptionEvent } from "@/lib/ipc/schemas";
 
 const PHASES: Record<string, string> = {
@@ -183,6 +183,9 @@ export function TakeTranscript({ attemptId }: { attemptId: string }) {
   const transcript = useQuery({ queryKey: key, queryFn: () => ipc.getAttemptTranscript(attemptId) });
   const setup = useQuery({ queryKey: ["transcription-setup"], queryFn: () => ipc.getTranscriptionSetup(), staleTime: 60_000 });
   const [live, setLive] = useState<TranscriptionEvent | null>(null);
+  const preference = useQuery({ queryKey: ["transcription-preference"], queryFn: () => ipc.getTranscriptionPreference(), staleTime: 60_000 });
+  const [choice, setChoice] = useState<"local" | "api" | null>(null);
+  const mode = choice ?? preference.data?.mode ?? "local";
 
   useEffect(() => {
     let disposed = false;
@@ -238,16 +241,36 @@ export function TakeTranscript({ attemptId }: { attemptId: string }) {
               <X aria-hidden /> Cancel
             </Button>
           ) : (
-            <Button
-              variant={revision ? "ghost" : "default"}
-              disabled={start.isPending || !!notSetUp || !setup.data}
-              onClick={() => start.mutate()}
-            >
-              {revision ? "Transcribe again" : "Transcribe"}
-            </Button>
+            mode === "local" && (
+              <Button
+                variant={revision ? "ghost" : "default"}
+                disabled={start.isPending || !!notSetUp || !setup.data}
+                onClick={() => start.mutate()}
+              >
+                {revision ? "Transcribe again" : "Transcribe"}
+              </Button>
+            )
           )}
         </div>
       </div>
+
+      {!running && ipc.recordingMode === "native" && (
+        <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-1 text-meta">
+          <legend className="sr-only">Transcribe with</legend>
+          <span className="text-muted-foreground" aria-hidden>Transcribe with</span>
+          {(
+            [
+              ["local", "This computer"],
+              ["api", "Cloud API"],
+            ] as const
+          ).map(([value, label]) => (
+            <label key={value} className="flex min-h-8 items-center gap-2">
+              <input type="radio" name={`transcribe-mode-${attemptId}`} checked={mode === value} onChange={() => setChoice(value)} />
+              {label}
+            </label>
+          ))}
+        </fieldset>
+      )}
 
       {running && (
         <p role="status" className="flex items-center gap-2 text-meta text-muted-foreground">
@@ -256,12 +279,12 @@ export function TakeTranscript({ attemptId }: { attemptId: string }) {
           {live?.percent != null ? ` · ${live.percent}%` : "…"} Recording a new take cancels this; you can run it again.
         </p>
       )}
-      {notSetUp && !revision && (
+      {notSetUp && !revision && mode === "local" && (
         <p className="text-meta text-muted-foreground">
           Local transcription isn't set up yet. <Link className="underline" to="/settings/transcription">Set it up in Settings → Transcription</Link>.
         </p>
       )}
-      {API_MODE_ENABLED && !running && <TakeApiTranscribe attemptId={attemptId} />}
+      {mode === "api" && !running && <CloudTranscribe attemptId={attemptId} defaultProvider={preference.data?.provider ?? "deepgram"} />}
       {start.error && <p role="alert" className="text-meta text-destructive">{start.error.message}</p>}
       {transcript.error && <p role="alert" className="text-meta text-destructive">{transcript.error.message}</p>}
       {data && !running && <JobMessage data={data} />}

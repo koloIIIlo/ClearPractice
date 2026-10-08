@@ -1,16 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { formatClock, formatLongDay, UI_LOCALE } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
 import type { AudioPreview, AudioProvider, AudioResult } from "@/lib/ipc/schemas";
-
-/**
- * API mode on takes stays off until the plan's "API transcription enablement
- * gate" passes (live consented request, provider contract tests, failures,
- * restore). Until then only the Settings test panel can send, after a preview.
- */
-export const API_MODE_ENABLED = false;
 
 export const API_LABELS: Record<AudioProvider, string> = { deepgram: "Deepgram Nova-3", assemblyai: "AssemblyAI Universal-3.5 Pro" };
 export const money = (micro: number) =>
@@ -140,39 +134,33 @@ export function ApiRequestFlow({ attemptId, provider, hasKey, keyHint }: { attem
 }
 
 /**
- * Optional "Transcribe via API" on a saved take (3.15), shown only once a
- * provider key is stored in Settings and API mode is enabled. Opening it sends
- * nothing.
+ * Cloud transcription of one saved take (3.15), shown when the take's
+ * Transcribe choice is Cloud. Nothing is sent until the user reviews the
+ * preview and presses Send; the provider defaults to the one in Settings.
  */
-export function TakeApiTranscribe({ attemptId }: { attemptId: string }) {
+export function CloudTranscribe({ attemptId, defaultProvider }: { attemptId: string; defaultProvider: AudioProvider }) {
   const ipc = useIpc();
-  const native = ipc.recordingMode === "native";
-  const keys = useQuery({ queryKey: ["transcription-api-keys"], queryFn: () => ipc.getTranscriptionApiKeys(), enabled: native, retry: false });
-  const [open, setOpen] = useState(false);
+  const keys = useQuery({ queryKey: ["transcription-api-keys"], queryFn: () => ipc.getTranscriptionApiKeys(), retry: false });
   const [provider, setProvider] = useState<AudioProvider | null>(null);
+  if (keys.isPending) return <p role="status" className="text-meta text-muted-foreground">Checking stored API keys…</p>;
   const stored = keys.data?.filter((k) => k.present).map((k) => k.provider) ?? [];
-  if (stored.length === 0) return null;
-  const chosen = provider && stored.includes(provider) ? provider : stored[0];
-  if (!open)
+  if (stored.length === 0)
     return (
-      <Button variant="ghost" onClick={() => setOpen(true)}>
-        Transcribe via API…
-      </Button>
+      <p className="text-meta text-muted-foreground">
+        Cloud transcription needs a Deepgram or AssemblyAI key.{" "}
+        <Link className="underline" to="/settings/transcription">Store one in Settings → Transcription</Link>; it stays in Windows Credential Manager.
+      </p>
     );
+  const preferred = provider ?? defaultProvider;
+  const chosen = stored.includes(preferred) ? preferred : stored[0];
   return (
     <div className="space-y-3 rounded-lg border p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="font-medium">Transcribe via API</p>
-        <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setOpen(false)}>
-          Close
-        </Button>
-      </div>
       <p className="text-meta text-muted-foreground">
-        Sends this whole take to a hosted service after you review the preview. Your local transcript and corrections stay as they are.
+        Sends this whole take to {API_LABELS[chosen]} after you review the preview. Your local transcript and corrections stay as they are.
       </p>
       {stored.length > 1 && (
         <fieldset className="flex flex-wrap gap-4 text-meta">
-          <legend className="sr-only">Provider</legend>
+          <legend className="sr-only">Cloud provider</legend>
           {stored.map((p) => (
             <label key={p} className="flex min-h-10 items-center gap-2">
               <input type="radio" name={`api-provider-${attemptId}`} checked={chosen === p} onChange={() => setProvider(p)} /> {API_LABELS[p]}

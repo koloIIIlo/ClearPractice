@@ -30,6 +30,7 @@ import type {
   RestorePreview,
   RestoreOutcome,
   ExportSummary,
+  TranscriptionPreference,
   TranscriptionSetup,
   ModelPack,
   IntonationContour,
@@ -96,6 +97,9 @@ export interface IpcClient {
   /** Opens the native Save dialog and writes a readable session ZIP; null when cancelled. */
   exportSession(sessionId: string): Promise<ExportSummary | null>;
   getTranscriptionSetup(): Promise<TranscriptionSetup>;
+  getTranscriptionPreference(): Promise<TranscriptionPreference>;
+  /** Stores the default mode; choosing cloud sends nothing. */
+  setTranscriptionPreference(preference: TranscriptionPreference): Promise<TranscriptionPreference>;
   listModelPacks(): Promise<ModelPack[]>;
   getTakeProsody(attemptId: string): Promise<IntonationContour>;
   /** Opens the native picker; installs a known pack only after size and checksum match. */

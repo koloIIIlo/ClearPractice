@@ -4,7 +4,7 @@
 //! runs at a time; recording always takes priority.
 use crate::audio::whisper::{Backend, WorkerConfig};
 use crate::storage::database::DatabaseOwner;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     path::Path,
     sync::{
@@ -27,6 +27,45 @@ pub struct SetupStatus {
     pub prompt: Option<String>,
     /// Set when no usable setup is stored.
     pub unavailable_reason: Option<String>,
+}
+
+const PREFERENCE_KEY: &str = "transcription_preference";
+
+/// How takes are transcribed by default (§10 Transcription Local / API). Cloud
+/// mode never sends by itself: each take is still previewed and sent only after
+/// an explicit Send, under the shared budget.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TranscriptionMode {
+    #[default]
+    Local,
+    Api,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Preference {
+    pub mode: TranscriptionMode,
+    pub provider: crate::api::audio::AudioProvider,
+}
+
+impl Default for Preference {
+    fn default() -> Self {
+        Self { mode: TranscriptionMode::Local, provider: crate::api::audio::AudioProvider::Deepgram }
+    }
+}
+
+/// The stored preference; anything missing or unreadable means local.
+pub fn preference(owner: &DatabaseOwner) -> Result<Preference> {
+    Ok(owner
+        .setting(PREFERENCE_KEY)?
+        .and_then(|v| serde_json::from_str(&v).ok())
+        .unwrap_or_default())
+}
+
+pub fn set_preference(owner: &DatabaseOwner, preference: Preference) -> Result<Preference> {
+    owner.set_setting(PREFERENCE_KEY, &serde_json::to_string(&preference).map_err(|e| e.to_string())?)?;
+    Ok(preference)
 }
 
 /// Transcription runs are named `<attempt>--<started ms>` so Trash can find and
@@ -135,6 +174,22 @@ impl ActiveJob {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_preference_defaults_to_local_and_survives_a_restart() {
+        use crate::storage::recording::tests::TestRoot;
+        let root = TestRoot::new();
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        assert_eq!(preference(&owner).unwrap(), Preference::default());
+        let cloud = Preference { mode: TranscriptionMode::Api, provider: crate::api::audio::AudioProvider::Assemblyai };
+        set_preference(&owner, cloud).unwrap();
+        drop(owner);
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        assert_eq!(preference(&owner).unwrap(), cloud);
+        assert_eq!(serde_json::to_value(cloud).unwrap(), serde_json::json!({"mode": "api", "provider": "assemblyai"}));
+        owner.set_setting(PREFERENCE_KEY, "{\"mode\":\"telepathy\"}").unwrap();
+        assert_eq!(preference(&owner).unwrap(), Preference::default(), "unreadable means local");
+    }
 
     #[test]
     fn one_job_at_a_time_and_cancel_reaches_the_running_job() {

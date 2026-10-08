@@ -22,6 +22,7 @@ export function createMockClient(): IpcClient {
   const sessions = structuredClone(data.sessions);
   const trash = new Map<string, { session: (typeof sessions)[number]; deletedAtMs: number }>();
   let retentionDays: S.TrashRetentionDays = 30;
+  let transcriptionPreference: S.TranscriptionPreference = { mode: "local", provider: "deepgram" };
   const recordingListeners = new Set<(status: S.RecordingStatus) => void>();
   let recording: S.RecordingStatus | null = null;
   let started = 0;
@@ -147,6 +148,8 @@ export function createMockClient(): IpcClient {
     listModelPacks: async () => [],
     getTakeProsody: async () => { throw new IpcError("desktop_required", "Intonation runs in the desktop app."); },
     importModelPack: async () => { throw new IpcError("desktop_required", "Model packs are managed in the desktop app."); },
+    getTranscriptionPreference: async () => ({ ...transcriptionPreference }),
+    setTranscriptionPreference: async (preference) => (transcriptionPreference = { ...preference }),
     getTranscriptionSetup: () => respond(S.TranscriptionSetup, { configured: false, modelId: null, backend: null, prompt: null, unavailableReason: "Local transcription runs in the desktop app." }),
     chooseTranscriptionSetup: async () => { throw new IpcError("desktop_required", "Local transcription runs in the desktop app."); },
     getAttemptTranscript: (attemptId) => respond(S.AttemptTranscript, { attemptId, revision: null, correction: null, job: null }),

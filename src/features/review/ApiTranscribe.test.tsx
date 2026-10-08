@@ -5,7 +5,8 @@ import { expect, it, vi } from "vitest";
 import { IpcContext, type IpcClient } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
 import type { AudioPreview, AudioResult } from "@/lib/ipc/schemas";
-import { API_MODE_ENABLED, TakeApiTranscribe } from "./ApiTranscribe";
+import { MemoryRouter } from "react-router";
+import { CloudTranscribe } from "./ApiTranscribe";
 
 const preview: AudioPreview = {
   requestId: "api-assemblyai-1", provider: "assemblyai", providerLabel: "AssemblyAI", model: "universal-3-5-pro", recipient: "api.assemblyai.com",
@@ -29,22 +30,21 @@ function setup(keys: { provider: "deepgram" | "assemblyai"; present: boolean }[]
     })),
   };
   const invalidate = vi.spyOn(qc, "invalidateQueries");
-  const view = render(<QueryClientProvider client={qc}><IpcContext.Provider value={client}><TakeApiTranscribe attemptId="take-1" /></IpcContext.Provider></QueryClientProvider>);
+  const view = render(<MemoryRouter><QueryClientProvider client={qc}><IpcContext.Provider value={client}><CloudTranscribe attemptId="take-1" defaultProvider="deepgram" /></IpcContext.Provider></QueryClientProvider></MemoryRouter>);
   return { client, invalidate, view };
 }
 
-it("stays hidden until a provider key is stored", async () => {
-  const { view } = setup([{ provider: "deepgram", present: false }, { provider: "assemblyai", present: false }]);
-  await new Promise((r) => setTimeout(r, 0));
-  expect(view.container).toBeEmptyDOMElement();
+it("points to Settings when no provider key is stored and offers nothing to send", async () => {
+  setup([{ provider: "deepgram", present: false }, { provider: "assemblyai", present: false }]);
+  expect(await screen.findByRole("link", { name: /Store one in Settings/ })).toHaveAttribute("href", "/settings/transcription");
+  expect(screen.queryByRole("button", { name: "Preview request" })).not.toBeInTheDocument();
 });
 
-it("offers the stored provider, labels a repeat as a paid retranscription and refreshes the take", async () => {
+it("falls back to the stored provider, labels a repeat as a paid retranscription and refreshes the take", async () => {
   const user = userEvent.setup();
   const { client, invalidate } = setup([{ provider: "deepgram", present: false }, { provider: "assemblyai", present: true }]);
-  await user.click(await screen.findByRole("button", { name: "Transcribe via API…" }));
-  expect(client.previewApiTranscription).not.toHaveBeenCalled(); // opening sends nothing
-  await user.click(screen.getByRole("button", { name: "Preview request" }));
+  await user.click(await screen.findByRole("button", { name: "Preview request" }));
+  expect(client.requestApiTranscription).not.toHaveBeenCalled(); // a preview sends nothing
   expect(client.previewApiTranscription).toHaveBeenCalledWith("take-1", "assemblyai");
   expect(screen.getByText(/already transcribed with these settings.*Sending again is a new paid run/)).toBeInTheDocument();
   expect(await screen.findByLabelText("Listen to exactly the audio that Send uploads")).toHaveAttribute("src", "http://asset.localhost/prepared.wav");
@@ -54,19 +54,13 @@ it("offers the stored provider, labels a repeat as a paid retranscription and re
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["attempt-transcript", "take-1"] });
 });
 
-it("keeps API mode off on takes until the enablement gate passes", () => {
-  // Flip only together with ticking "API transcription enablement gate" in DEVELOPMENT_PLAN.md.
-  expect(API_MODE_ENABLED).toBe(false);
-});
-
 it("lets the user stop waiting for a sent request and shows why the charge is uncertain", async () => {
   const user = userEvent.setup();
   const { client } = setup([{ provider: "assemblyai", present: true }]);
   let fail: (e: Error) => void = () => {};
   client.requestApiTranscription = vi.fn(() => new Promise<AudioResult>((_, reject) => { fail = reject; }));
   client.cancelApiTranscription = vi.fn(async () => fail(new Error("Stopped waiting. The provider may still finish and bill this request, so its charge is uncertain; nothing is retried.")));
-  await user.click(await screen.findByRole("button", { name: "Transcribe via API…" }));
-  await user.click(screen.getByRole("button", { name: "Preview request" }));
+  await user.click(await screen.findByRole("button", { name: "Preview request" }));
   await user.click(await screen.findByRole("button", { name: "Retranscribe · may be billed" }));
   await user.click(await screen.findByRole("button", { name: "Stop waiting" }));
   expect(client.cancelApiTranscription).toHaveBeenCalledWith("api-assemblyai-1");

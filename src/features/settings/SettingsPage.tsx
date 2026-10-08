@@ -14,6 +14,7 @@ import { useInputDevices } from "@/lib/ipc/queries";
 import { cn } from "@/lib/utils";
 import { BackupSettings } from "./BackupSettings";
 import { TranscriptionSetup } from "./TranscriptionSetup";
+import { TranscriptionMode } from "./TranscriptionMode";
 import { MicrophoneTest } from "./MicrophoneTest";
 import { ApiTranscriptionTest } from "./ApiTranscriptionTest";
 import { ApiCredentialSettings } from "./ApiCredentialSettings";
@@ -208,6 +209,9 @@ function AppearanceSettings() {
 function TranscriptionSettings() {
   return (
     <>
+      <Section title="Default transcription" description="How new takes are transcribed. You can switch on any take.">
+        <TranscriptionMode />
+      </Section>
       <Section title="Local Whisper" description="Speech is transcribed on this computer. Audio is never uploaded.">
         <TranscriptionSetup />
       </Section>
@@ -226,7 +230,7 @@ function TranscriptionSettings() {
           ))}
         </RadioGroup>
       </Section>
-      <Section title="API transcription (optional)" description="Off by default. Local transcription stays the default; these providers keep fillers and return word timings (D-21).">
+      <Section title="Cloud API keys and test" description="Keys for cloud transcription. Both providers keep fillers and return word timings (D-21).">
         <ApiTranscriptionTest />
       </Section>
     </>

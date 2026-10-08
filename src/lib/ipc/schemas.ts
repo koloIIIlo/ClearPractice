@@ -555,6 +555,10 @@ export type MicTestFinished = z.infer<typeof MicTestFinished>;
 export const AudioProvider = z.enum(["deepgram", "assemblyai"]);
 export type AudioProvider = z.infer<typeof AudioProvider>;
 
+/** Default way to transcribe takes (§10). Cloud never sends by itself: each take is previewed and sent on Send. */
+export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api"]), provider: AudioProvider }).strict();
+export type TranscriptionPreference = z.infer<typeof TranscriptionPreference>;
+
 export const ProviderKeyStatus = z.object({ provider: AudioProvider, present: z.boolean() });
 export type ProviderKeyStatus = z.infer<typeof ProviderKeyStatus>;
 

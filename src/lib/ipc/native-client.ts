@@ -40,6 +40,8 @@ export function createNativeClient(): IpcClient {
     listModelPacks: () => command("list_model_packs", S.ModelPack.array()),
     importModelPack: () => command("import_model_pack", S.ModelPack.array()),
     getTranscriptionSetup: () => command("get_transcription_setup", S.TranscriptionSetup),
+    getTranscriptionPreference: () => command("get_transcription_preference", S.TranscriptionPreference),
+    setTranscriptionPreference: (preference) => command("set_transcription_preference", S.TranscriptionPreference, { preference }),
     chooseTranscriptionSetup: () => command("choose_transcription_setup", S.TranscriptionSetup),
     // Sessions come from SQLite; prompts, guides and phrases are still sample curriculum (M4).
     searchContent: async (query) => {
