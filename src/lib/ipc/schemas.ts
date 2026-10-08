@@ -221,6 +221,23 @@ export const SavedSegment = z.object({
 });
 export type SavedSegment = z.infer<typeof SavedSegment>;
 
+/** Transcript-derived review measures (plan 3.6–3.7); all Estimated, missing values carry a reason. */
+export const TranscriptMeasures = z.object({
+  definitionVersion: z.number().int().positive(),
+  source: z.literal("Estimated"),
+  wordCount: z.number().int().nonnegative(),
+  speechSpanMs: z.number().int().nonnegative().nullable(),
+  paceWpm: z.number().nonnegative().nullable(),
+  paceUnavailableReason: z.string().nullable(),
+  pauseThresholdMs: z.number().int().positive(),
+  pauses: z.array(z.object({ afterSegment: z.number().int().nonnegative(), startMs: z.number().int().nonnegative(), durationMs: z.number().int().nonnegative() })),
+  pausesUnavailableReason: z.string().nullable(),
+  fillers: z.array(z.object({ segment: z.number().int().nonnegative(), word: z.string(), segmentStartMs: z.number().int().nonnegative().nullable() })),
+  repeatedWords: z.array(z.string()),
+  untimedSegments: z.number().int().nonnegative(),
+});
+export type TranscriptMeasures = z.infer<typeof TranscriptMeasures>;
+
 export const TranscriptJob = z.object({
   id: Id,
   state: z.enum(["running", "completed", "failed", "canceled", "interrupted"]),
@@ -245,6 +262,7 @@ export const AttemptTranscript = z.object({
       workerElapsedMs: z.number().int().nonnegative().nullable(),
       createdAt: z.string(),
       segments: z.array(SavedSegment),
+      measures: TranscriptMeasures,
     })
     .nullable(),
   job: TranscriptJob.nullable(),

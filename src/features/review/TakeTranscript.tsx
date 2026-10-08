@@ -6,7 +6,7 @@ import { EvidenceLabel } from "@/components/evidence";
 import { Button } from "@/components/ui/button";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
-import type { AttemptTranscript, TranscriptionEvent } from "@/lib/ipc/schemas";
+import type { AttemptTranscript, TranscriptMeasures, TranscriptionEvent } from "@/lib/ipc/schemas";
 
 const PHASES: Record<string, string> = {
   preparing: "Preparing audio",
@@ -14,6 +14,51 @@ const PHASES: Record<string, string> = {
   transcribing: "Transcribing",
   completed: "Saving the transcript",
 };
+
+/** Display-only match of the words the native measures already flagged in this segment. */
+function SegmentText({ text, fillers }: { text: string; fillers: Set<string> }) {
+  if (fillers.size === 0) return <span>{text}</span>;
+  const parts = text.split(/(\s+)/);
+  return (
+    <span>
+      {parts.map((part, i) => {
+        const word = part.replace(/^[^\p{L}\p{N}']+|[^\p{L}\p{N}']+$/gu, "").toLowerCase();
+        return fillers.has(word) ? (
+          <mark key={i} className="rounded-sm bg-highlight px-0.5 text-highlight-foreground" title="Filler candidate">{part}</mark>
+        ) : (
+          part
+        );
+      })}
+    </span>
+  );
+}
+
+function Measures({ m }: { m: TranscriptMeasures }) {
+  const fillerWords = [...new Set(m.fillers.map((f) => f.word))].join(", ");
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-meta">
+      <dt className="text-muted-foreground">Pace</dt>
+      <dd>{m.paceWpm != null ? `${Math.round(m.paceWpm)} words per minute` : `Unavailable: ${m.paceUnavailableReason}`}</dd>
+      <dt className="text-muted-foreground">Filler candidates</dt>
+      <dd>{m.fillers.length ? `${m.fillers.length} (${fillerWords})` : "None found"}</dd>
+      <dt className="text-muted-foreground">Pauses of {m.pauseThresholdMs / 1000} s or more</dt>
+      <dd>
+        {m.pausesUnavailableReason
+          ? `Unavailable: ${m.pausesUnavailableReason}`
+          : m.pauses.length
+            ? m.pauses.map((p) => `${(p.durationMs / 1000).toFixed(1)} s at ${formatClock(p.startMs)}`).join(", ")
+            : "None"}
+      </dd>
+      <dt className="text-muted-foreground">Repeated words</dt>
+      <dd>{m.repeatedWords.length ? m.repeatedWords.join(", ") : "None"}</dd>
+      {m.untimedSegments > 0 && (
+        <dd className="col-span-2 text-muted-foreground">
+          {m.untimedSegments} {m.untimedSegments === 1 ? "segment has" : "segments have"} no usable timing and {m.untimedSegments === 1 ? "is" : "are"} left out of pace and pauses.
+        </dd>
+      )}
+    </dl>
+  );
+}
 
 function JobMessage({ data }: { data: AttemptTranscript }) {
   const job = data.job;
@@ -130,14 +175,18 @@ export function TakeTranscript({ attemptId }: { attemptId: string }) {
                   <span className="w-12 shrink-0 pt-0.5 text-right text-meta text-muted-foreground tabular-nums">
                     {segment.startMs != null ? formatClock(segment.startMs) : "–"}
                   </span>
-                  <span>{segment.text.trim()}</span>
+                  <SegmentText
+                    text={segment.text.trim()}
+                    fillers={new Set(revision.measures.fillers.filter((f) => f.segment === i).map((f) => f.word))}
+                  />
                 </li>
               ) : null,
             )}
           </ol>
+          <Measures m={revision.measures} />
           <p className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground">
-            <EvidenceLabel source="estimated" /> Segment times are estimated by the model. Fillers such as “uh” and “um” are kept on
-            purpose; they are things to review, not errors.
+            <EvidenceLabel source="estimated" /> Times and measures are estimated from the model's segments. Fillers such as “uh” and
+            “um” are kept on purpose; highlighted words are candidates to review, not errors.
           </p>
         </>
       )}

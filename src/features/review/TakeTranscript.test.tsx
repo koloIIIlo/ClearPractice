@@ -58,10 +58,19 @@ it("shows progress, then the saved transcript with estimated timings and kept fi
       id: "take-1--1", source: "local", provider: "whisper.cpp", modelId: "large-v3-turbo-q5_0", backend: "cuda", prompt: "uh",
       language: "en", text: "Well, uh, indexes speed up reads.", workerElapsedMs: 11_500, createdAt: "2026-10-08T01:00:14.000Z",
       segments: [{ text: " Well, uh, indexes speed up reads.", startMs: 12_000, endMs: 15_000, timingSource: "Estimated", timingUnavailableReason: null }],
+      measures: {
+        definitionVersion: 1, source: "Estimated", wordCount: 5, speechSpanMs: 3_000, paceWpm: null,
+        paceUnavailableReason: "Needs at least 15 seconds of speech.", pauseThresholdMs: 700, pauses: [], pausesUnavailableReason: null,
+        fillers: [{ segment: 0, word: "uh", segmentStartMs: 12_000 }], repeatedWords: [], untimedSegments: 0,
+      },
     },
   };
   act(() => listener({ jobId: "job-1", attemptId: "take-1", phase: "finished", percent: null }));
-  expect(await screen.findByText("Well, uh, indexes speed up reads.")).toBeInTheDocument();
+  const filler = await screen.findByTitle("Filler candidate");
+  expect(filler).toHaveTextContent("uh,");
+  expect(filler.closest("li")).toHaveTextContent("Well, uh, indexes speed up reads.");
+  expect(screen.getByText("Unavailable: Needs at least 15 seconds of speech.")).toBeInTheDocument();
+  expect(screen.getByText("1 (uh)")).toBeInTheDocument();
   expect(screen.getByText("0:12")).toBeInTheDocument();
   expect(screen.getByText(/As transcribed · local large-v3-turbo-q5_0 \(CUDA\) · 12 s/)).toBeInTheDocument();
   expect(screen.getByText(/kept on\s+purpose/)).toBeInTheDocument();

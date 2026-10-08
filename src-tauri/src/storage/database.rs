@@ -764,7 +764,17 @@ impl DatabaseOwner {
             Some(mut revision) => {
                 let mut stmt = conn.prepare("SELECT text,start_ms,end_ms,timing_source,timing_unavailable_reason FROM transcript_segments WHERE revision_id=?1 ORDER BY position").map_err(db_error)?;
                 let rows = stmt.query_map([revision["id"].as_str().unwrap_or("")],|r|Ok(json!({"text":r.get::<_,String>(0)?,"startMs":r.get::<_,Option<i64>>(1)?,"endMs":r.get::<_,Option<i64>>(2)?,"timingSource":r.get::<_,String>(3)?,"timingUnavailableReason":r.get::<_,Option<String>>(4)?}))).map_err(db_error)?;
-                revision["segments"] = Value::Array(rows.collect::<rusqlite::Result<_>>().map_err(db_error)?);
+                let segments: Vec<Value> = rows.collect::<rusqlite::Result<_>>().map_err(db_error)?;
+                let inputs: Vec<crate::analysis::SegmentInput> = segments
+                    .iter()
+                    .map(|s| crate::analysis::SegmentInput {
+                        text: s["text"].as_str().unwrap_or(""),
+                        start_ms: s["startMs"].as_u64(),
+                        end_ms: s["endMs"].as_u64(),
+                    })
+                    .collect();
+                revision["measures"] = serde_json::to_value(crate::analysis::measure(&inputs)).map_err(|e| e.to_string())?;
+                revision["segments"] = Value::Array(segments);
                 revision
             }
             None => Value::Null,

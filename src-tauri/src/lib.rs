@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod api;
 mod app_paths;
 pub mod audio;

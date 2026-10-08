@@ -187,6 +187,10 @@ mod tests {
         assert_eq!(saved["job"]["state"], "completed");
         let text = saved["revision"]["text"].as_str().unwrap().to_lowercase();
         println!("TRANSCRIPT: {text}");
+        let measures = &saved["revision"]["measures"];
+        println!("MEASURES: {measures}");
+        assert!(measures["fillers"].as_array().unwrap().len() >= 5, "{measures}");
+        assert_eq!(measures["source"], "Estimated");
         assert!(text.split_whitespace().count() > 50, "{text}");
         assert!(text.contains("uh") || text.contains("um"), "filler prompt should keep fillers: {text}");
         assert!(saved["revision"]["segments"].as_array().unwrap().iter().all(|s| s["timingSource"] == "Estimated"));
