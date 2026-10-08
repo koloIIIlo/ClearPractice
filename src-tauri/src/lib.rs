@@ -12,6 +12,7 @@ pub mod clipsplit;
 pub mod linkaudio;
 pub mod preferences;
 pub mod prosody;
+pub mod sources;
 pub mod storage;
 pub mod transcribe;
 
@@ -636,10 +637,16 @@ async fn save_clip(
     title: String,
     source: String,
     transcript: Option<String>,
+    folder_id: Option<String>,
 ) -> Result<clips::Clip, String> {
     with_storage(&storage, move |owner| {
         let details = clips::ClipDetails { title: &title, source: &source, transcript: transcript.as_deref(), description: None, feature: None };
-        let clip = clips::commit(owner.root(), &staging_id, start_ms, end_ms, &details, "user", false)?;
+        let from = clips::read_meta(owner.root(), &staging_id).ok().and_then(|m| m.source_id);
+        let mut clip = clips::commit(owner.root(), &staging_id, start_ms, end_ms, &details, "user", false)?;
+        clip.folder_id = folder_id;
+        if from.is_some() {
+            (clip.source_id, clip.source_start_ms, clip.source_end_ms) = (from, Some(start_ms), Some(end_ms));
+        }
         if let Err(error) = owner.insert_clip(&clip) {
             let _ = clips::remove_files(owner.root(), &clip.id);
             return Err(error);
@@ -678,19 +685,25 @@ async fn split_clip_source(
     let (config, root) = with_storage(&storage, |owner| Ok((transcribe::load_config(owner)?, owner.root().to_path_buf())))
         .await
         .map_err(|_| "Session storage failed.".to_string())??;
+    let (work_root, work_id) = (root.clone(), staging_id.clone());
     let result = tauri::async_runtime::spawn_blocking(move || {
-        let segments = clipsplit::transcribe_local(&config, &root, &staging_id, &cancel, |percent| {
+        let segments = clipsplit::transcribe_local(&config, &work_root, &work_id, &cancel, |percent| {
             let _ = app.emit("clip_split_progress", percent);
         })?;
-        clipsplit::save_segments(&root, &staging_id, &segments)?;
+        clipsplit::save_segments(&work_root, &work_id, &segments)?;
+        Ok::<_, String>(segments)
+    })
+    .await
+    .map_err(|_| "Splitting failed.".to_string())?
+    .and_then(|segments| {
+        // Kept in the import history (4.4i); failing to keep it never loses the split.
+        let _ = storage.with(|db| sources::remember(db, &root, &staging_id, &segments, "local"));
         let candidates = clipsplit::propose(&segments);
         if candidates.is_empty() {
             return Err("No clips of 8–20 seconds with whole sentences were found. You can still keep a section by hand.".into());
         }
         Ok(candidates)
-    })
-    .await
-    .map_err(|_| "Splitting failed.".to_string())?;
+    });
     if let Ok(mut slot) = work.split.lock() {
         *slot = None;
     }
@@ -747,14 +760,15 @@ async fn measure_clip_source(
     }
     let flag = cancel.clone();
     let result = tauri::async_runtime::spawn_blocking(move || {
-        clipsplit::measure_staged(&root, &staging_id, &flag, |stage| {
+        let sentences = clipsplit::measure_staged(&root, &staging_id, &flag, |stage| {
             let (name, percent) = match stage {
                 clipsplit::MeasureStage::PreparingAudio => ("preparing", None),
                 clipsplit::MeasureStage::Measuring(p) => ("measuring", Some(p)),
             };
             let _ = app.emit("clip_measure_progress", serde_json::json!({ "stage": name, "percent": percent }));
-        })
-        .map(|sentences| sentences.len())
+        })?;
+        sources::keep_measures(&root, &staging_id);
+        Ok::<_, String>(sentences.len())
     })
     .await
     .map_err(|_| "Measuring failed.".to_string())?;
@@ -804,12 +818,21 @@ async fn request_clip_picks(
     let owner = owner.inner().clone();
     let accounting = accounting.inner().clone();
     let budget = accounting.0.as_ref().map_err(Clone::clone)?;
-    let picks = owner.send_clip_picks(budget, &accounting.1, &request_id, &payload_sha256, segments.len()).await?;
-    let clips = clipsplit::picks_to_clips(&segments, &picks);
-    if clips.is_empty() {
+    let (model, tone_hint, picks) = owner.send_clip_picks(budget, &accounting.1, &request_id, &payload_sha256, segments.len()).await?;
+    let chosen = clipsplit::picks_to_clips(&segments, &picks);
+    if chosen.is_empty() {
         return Err("The AI's passages did not fit the clip rules (5–30 s, whole sentences, no overlaps). The automatic proposals are unchanged.".into());
     }
-    Ok(clips)
+    // Kept with the source so later choices can be compared (4.4i).
+    let kept = chosen.clone();
+    let _ = with_storage(&storage, move |db| {
+        if let Some(source) = clips::read_meta(db.root(), &staging_id)?.source_id {
+            db.insert_pick_run(&source, &model, tone_hint, &kept)?;
+        }
+        Ok(())
+    })
+    .await;
+    Ok(chosen)
 }
 
 /// Cloud transcription for a split (4.4c): the same preview → explicit Send
@@ -837,6 +860,7 @@ async fn preview_split_transcription(
 /// The paid result is not stored as a transcript: the recording is not a take.
 #[tauri::command]
 async fn request_split_transcription(
+    storage: State<'_, Arc<SessionStorage>>,
     service: State<'_, Arc<CaptureService>>,
     owner: State<'_, Arc<api::audio::AudioPreviewOwner>>,
     accounting: State<'_, Arc<ApiAccounting>>,
@@ -875,6 +899,11 @@ async fn request_split_transcription(
     let staging_id = run.result.asset_id.clone();
     let root = accounting.1.clone();
     let _ = clipsplit::save_segments(&root, &staging_id, &segments);
+    let provider = match run.result.provider {
+        audio::transcription::TranscriptionProvider::Assemblyai => "assemblyai",
+        _ => "deepgram",
+    };
+    let _ = storage.with(|db| sources::remember(db, &root, &staging_id, &segments, provider));
     let candidates = clipsplit::propose(&segments);
     if candidates.is_empty() {
         return Err("No clips of 8–20 seconds with whole sentences were found.".into());
@@ -898,11 +927,12 @@ struct SectionToSave {
 
 /// Saves several sections of one staged file as clips, then drops the staging copy.
 #[tauri::command]
-async fn save_clip_sections(storage: State<'_, Arc<SessionStorage>>, staging_id: String, sections: Vec<SectionToSave>) -> Result<Vec<clips::Clip>, String> {
+async fn save_clip_sections(storage: State<'_, Arc<SessionStorage>>, staging_id: String, sections: Vec<SectionToSave>, folder_id: Option<String>) -> Result<Vec<clips::Clip>, String> {
     if sections.is_empty() || sections.len() > clipsplit::MAX_CANDIDATES {
         return Err("Choose between 1 and 40 clips to keep.".into());
     }
     with_storage(&storage, move |owner| {
+        let from = clips::read_meta(owner.root(), &staging_id).ok().and_then(|m| m.source_id);
         let mut saved = Vec::new();
         for section in &sections {
             let details = clips::ClipDetails {
@@ -912,7 +942,11 @@ async fn save_clip_sections(storage: State<'_, Arc<SessionStorage>>, staging_id:
                 description: section.description.as_deref(),
                 feature: section.feature.as_deref(),
             };
-            let clip = clips::commit(owner.root(), &staging_id, section.start_ms, section.end_ms, &details, "user", true)?;
+            let mut clip = clips::commit(owner.root(), &staging_id, section.start_ms, section.end_ms, &details, "user", true)?;
+            clip.folder_id = folder_id.clone();
+            if from.is_some() {
+                (clip.source_id, clip.source_start_ms, clip.source_end_ms) = (from.clone(), Some(section.start_ms), Some(section.end_ms));
+            }
             if let Err(error) = owner.insert_clip(&clip) {
                 let _ = clips::remove_files(owner.root(), &clip.id);
                 return Err(error);
@@ -998,17 +1032,74 @@ async fn fetch_link_audio(storage: State<'_, Arc<SessionStorage>>, work: State<'
     if let Ok(mut slot) = work.fetch.lock() {
         *slot = Some(cancel.clone());
     }
-    let result = with_storage(&storage, move |owner| {
-        let tool = linkaudio::find_ytdlp(owner.setting(linkaudio::SETTING_KEY)?.as_deref())
-            .ok_or("yt-dlp was not found. Install it (winget install yt-dlp.yt-dlp) or choose yt-dlp.exe.")?;
-        linkaudio::fetch(owner.root(), &tool, &url, &cancel)
-    })
-    .await
-    .map_err(|_| "Session storage failed.".to_string())?;
+    // Only finding the tool needs storage; the download runs without holding it.
+    let found = storage.with(|owner| Ok((linkaudio::find_ytdlp(owner.setting(linkaudio::SETTING_KEY)?.as_deref()), owner.root().to_path_buf())));
+    let result = match found {
+        Ok((Some(tool), root)) => tauri::async_runtime::spawn_blocking(move || linkaudio::fetch(&root, &tool, &url, &cancel))
+            .await
+            .map_err(|_| "The download failed.".to_string())?,
+        Ok((None, _)) => Err("yt-dlp was not found. Install it (winget install yt-dlp.yt-dlp) or choose yt-dlp.exe.".to_string()),
+        Err(error) => Err(error),
+    };
     if let Ok(mut slot) = work.fetch.lock() {
         *slot = None;
     }
     result
+}
+
+// ── Clip library folders (4.4h) and import history (4.4i) ───────────────────
+
+#[tauri::command]
+async fn list_clip_folders(storage: State<'_, Arc<SessionStorage>>) -> Result<Vec<storage::database::library::Folder>, String> {
+    with_storage(&storage, |db| db.list_clip_folders()).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn create_clip_folder(storage: State<'_, Arc<SessionStorage>>, name: String) -> Result<storage::database::library::Folder, String> {
+    with_storage(&storage, move |db| db.create_clip_folder(&name)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn rename_clip_folder(storage: State<'_, Arc<SessionStorage>>, folder_id: String, name: String) -> Result<(), String> {
+    with_storage(&storage, move |db| db.rename_clip_folder(&folder_id, &name)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn delete_clip_folder(storage: State<'_, Arc<SessionStorage>>, folder_id: String) -> Result<(), String> {
+    with_storage(&storage, move |db| db.delete_clip_folder(&folder_id)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn move_clips(storage: State<'_, Arc<SessionStorage>>, clip_ids: Vec<String>, folder_id: Option<String>) -> Result<(), String> {
+    with_storage(&storage, move |db| db.move_clips(&clip_ids, folder_id.as_deref())).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn update_clip(storage: State<'_, Arc<SessionStorage>>, clip_id: String, title: String, description: Option<String>, feature: Option<String>) -> Result<(), String> {
+    with_storage(&storage, move |db| db.update_clip(&clip_id, &title, description.as_deref(), feature.as_deref()))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn list_clip_sources(storage: State<'_, Arc<SessionStorage>>) -> Result<Vec<storage::database::library::Source>, String> {
+    with_storage(&storage, |db| db.list_sources()).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+/// Reopens a recording from the import history with its transcript (4.4i).
+#[tauri::command]
+async fn open_clip_source(storage: State<'_, Arc<SessionStorage>>, source_id: String) -> Result<sources::Opened, String> {
+    with_storage(&storage, move |db| sources::open(db, db.root(), &source_id)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn update_clip_source(storage: State<'_, Arc<SessionStorage>>, source_id: String, title: String, credit: String) -> Result<(), String> {
+    with_storage(&storage, move |db| db.update_source_details(&source_id, &title, &credit)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn delete_clip_source(storage: State<'_, Arc<SessionStorage>>, source_id: String) -> Result<(), String> {
+    with_storage(&storage, move |db| sources::delete(db, db.root(), &source_id)).await.map_err(|_| "Session storage failed.".to_string())?
 }
 
 #[tauri::command]
@@ -1733,6 +1824,16 @@ pub fn run() {
             fetch_link_audio,
             download_link_tool,
             list_clips,
+            list_clip_folders,
+            create_clip_folder,
+            rename_clip_folder,
+            delete_clip_folder,
+            move_clips,
+            update_clip,
+            list_clip_sources,
+            open_clip_source,
+            update_clip_source,
+            delete_clip_source,
             get_clip_playback_path,
             delete_clip,
             set_session_reflection,

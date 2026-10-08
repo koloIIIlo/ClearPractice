@@ -25,10 +25,12 @@ it("imports a section of a local file with a title and credit, then plays it wit
     saveClip: vi.fn(async () => { clips = [imported]; return imported; }),
     getClipPlaybackUrl: vi.fn(async () => "http://asset.localhost/clip.wav"),
     deleteClip: vi.fn(async () => { clips = []; }),
+    listClipFolders: async () => [],
+    createClipFolder: vi.fn(async (name: string) => ({ id: "folder-1", name, clipCount: 0, createdAtMs: 0 })),
   };
   render(<QueryClientProvider client={new QueryClient()}><IpcContext.Provider value={client}><ReferenceClips locked={false} native /></IpcContext.Provider></QueryClientProvider>);
   expect(await screen.findByText(/No clips yet/)).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Import a clip…" }));
+  await user.click(screen.getByRole("button", { name: "Import clips…" }));
   expect(screen.getByRole("group", { name: "Import a clip" })).toHaveTextContent("never uploaded");
   await user.click(screen.getByRole("button", { name: "Choose an audio file…" }));
   expect(await screen.findByText("keynote.mp3 · 10:00")).toBeInTheDocument();
@@ -45,11 +47,16 @@ it("imports a section of a local file with a title and credit, then plays it wit
   await user.type(screen.getByLabelText("to"), "1:12.5");
   await user.type(screen.getByLabelText("Source and credit"), "Speaker, Talk title, 2024");
   await user.click(screen.getByRole("button", { name: "Save clip" }));
-  expect(client.saveClip).toHaveBeenCalledWith({ stagingId: "stage-1", startMs: 60_000, endMs: 72_500, title: "keynote", source: "Speaker, Talk title, 2024", transcript: null });
+  expect(client.saveClip).toHaveBeenCalledWith({ stagingId: "stage-1", startMs: 60_000, endMs: 72_500, title: "keynote", source: "Speaker, Talk title, 2024", transcript: null, folderId: "folder-1" });
   expect(await screen.findByLabelText("Play clip: Opening of the talk")).toHaveAttribute("src", "http://asset.localhost/clip.wav");
   expect(screen.getByText("Source: Speaker, Talk title, 2024")).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Delete clip Opening of the talk" }));
+  // Deleting happens in the library, after a confirmation.
+  await user.click(screen.getByRole("button", { name: "Browse the library (1)" }));
+  await user.click(await screen.findByRole("button", { name: "Edit Opening of the talk" }));
+  await user.click(screen.getByRole("button", { name: "Delete clip" }));
+  await user.click(screen.getByRole("button", { name: "Delete" }));
   await waitFor(() => expect(client.deleteClip).toHaveBeenCalledWith("clip-1"));
+  await user.keyboard("{Escape}");
   expect(await screen.findByText(/No clips yet/)).toBeInTheDocument();
 });
 
@@ -62,7 +69,7 @@ it("discards the staged copy when the import is cancelled", async () => {
     discardClipStaging: vi.fn(async () => {}),
   };
   render(<QueryClientProvider client={new QueryClient()}><IpcContext.Provider value={client}><ReferenceClips locked={false} native /></IpcContext.Provider></QueryClientProvider>);
-  await user.click(await screen.findByRole("button", { name: "Import a clip…" }));
+  await user.click(await screen.findByRole("button", { name: "Import clips…" }));
   await user.click(screen.getByRole("button", { name: "Choose an audio file…" }));
   await screen.findByText("a.wav · 0:20");
   await user.click(screen.getByRole("button", { name: "Cancel" }));

@@ -357,7 +357,7 @@ pub fn annotate_staged(root: &Path, staging_id: &str) -> Result<(Vec<SentenceInf
 }
 
 /// A passage chosen by the AI, turned into a clip proposal with its suggestions.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PickedClip {
     pub start_ms: u64,

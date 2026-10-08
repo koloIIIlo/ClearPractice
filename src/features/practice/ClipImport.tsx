@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Circle, FileAudio, Link2, Loader2, Play, Scissors } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CheckCircle2, Circle, FileAudio, History, Link2, Loader2, Play, Scissors, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,16 +8,95 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
-import type { ClipCandidate, ClipName, ClipStaged, CoachingModel, CoachingPreview, PickedClip, ReferenceClip } from "@/lib/ipc/schemas";
+import type { ClipCandidate, ClipName, ClipSource, ClipStaged, CoachingModel, CoachingPreview, OpenedSource, PickedClip, PickRun, ReferenceClip, SavedRange } from "@/lib/ipc/schemas";
+import { FEATURE_LABELS, type Feature } from "./ClipLibrary";
 import { COACHING_MODELS } from "@/features/settings/CoachingSpike";
 import { money } from "@/features/review/ApiTranscribe";
 import { formatClockTenths, parseClock } from "@/features/review/waveform";
 import { API_LABELS, ApiRequestFlow } from "@/features/review/ApiTranscribe";
 import type { AudioProvider } from "@/lib/ipc/schemas";
 
-type Feature = "emphasis" | "rhythm" | "endings";
-type Proposal = ClipCandidate & { keep: boolean; description: string; feature: Feature | null; suggested: boolean; reason?: string };
-const FEATURE_LABELS: Record<Feature, string> = { emphasis: "Emphasis", rhythm: "Phrase rhythm", endings: "Clear endings" };
+type Proposal = ClipCandidate & { keep: boolean; description: string; feature: Feature | null; suggested: boolean; reason?: string; savedAs?: string };
+
+/**
+ * Marks proposals that overlap a clip already cut from this recording (4.4i) by
+ * at least a second; they start unticked, so only new parts are saved by default.
+ */
+export function markSaved(list: Proposal[], saved: SavedRange[]): Proposal[] {
+  return list.map((p) => {
+    const hit = saved.find((r) => Math.min(p.endMs, r.endMs) - Math.max(p.startMs, r.startMs) >= 1_000);
+    return hit ? { ...p, savedAs: hit.title, keep: false } : { ...p, savedAs: undefined };
+  });
+}
+const fromPicks = (picks: PickedClip[]): Proposal[] =>
+  picks.map((p) => ({ startMs: p.startMs, endMs: p.endMs, text: p.text, title: p.title, keep: true, description: p.description, feature: p.feature, suggested: true, reason: p.reason }));
+const TRANSCRIBED_WITH: Record<ClipSource["transcribedWith"], string> = { local: "this computer", deepgram: "Deepgram", assemblyai: "AssemblyAI" };
+
+/** Earlier imports (4.4i): reopen one to cut more clips without transcribing again. */
+function ImportHistory({ disabled, onOpen }: { disabled: boolean; onOpen: (opened: OpenedSource) => void }) {
+  const ipc = useIpc();
+  const qc = useQueryClient();
+  const sources = useQuery({ queryKey: ["clip-sources"], queryFn: () => ipc.listClipSources(), retry: false });
+  const [confirm, setConfirm] = useState<string | null>(null);
+  const open = useMutation({ mutationFn: (id: string) => ipc.openClipSource(id), onSuccess: onOpen });
+  const remove = useMutation({
+    mutationFn: (id: string) => ipc.deleteClipSource(id),
+    onSuccess: async () => { setConfirm(null); await qc.invalidateQueries({ queryKey: ["clip-sources"] }); },
+  });
+  const list = sources.data ?? [];
+  if (list.length === 0) return null;
+  return (
+    <details className="rounded-lg border p-2" open>
+      <summary className="cursor-pointer font-medium"><History aria-hidden className="mr-1 inline size-4" /> Import history ({list.length})</summary>
+      <p className="mt-1 text-meta text-muted-foreground">Recordings you transcribed before. Open one to cut more clips; its transcript and measures are reused, so nothing is transcribed or sent again.</p>
+      <ul className="mt-2 space-y-2" aria-label="Import history">
+        {list.map((s) => (
+          <li key={s.id} className="flex flex-wrap items-center gap-2 rounded-md border p-2">
+            <div className="min-w-48 flex-1">
+              <p className="font-medium">{s.title}</p>
+              <p className="text-meta text-muted-foreground">
+                {formatClock(s.durationMs)} · transcribed on {TRANSCRIBED_WITH[s.transcribedWith]} · {s.clipCount} {s.clipCount === 1 ? "clip" : "clips"} saved
+                {s.pickCount > 0 && ` · ${s.pickCount} AI ${s.pickCount === 1 ? "choice" : "choices"}`}
+                {" · "}{new Date(s.updatedAtMs).toLocaleDateString("en-GB")}
+              </p>
+              {s.link && <a className="text-meta underline" href={s.link} target="_blank" rel="noreferrer">{s.link}</a>}
+              {!s.audioAvailable && <p className="text-meta text-destructive">The audio is not on this computer (backups leave it out). Import the file or link again.</p>}
+            </div>
+            <Button size="sm" variant="outline" disabled={disabled || open.isPending || !s.audioAvailable} onClick={() => open.mutate(s.id)} aria-label={`Open ${s.title}`}>
+              {open.isPending && open.variables === s.id ? "Opening…" : "Open"}
+            </Button>
+            {confirm === s.id ? (
+              <span className="flex items-center gap-2 text-meta">
+                Remove from the history? Its clips stay.
+                <Button size="sm" variant="destructive" disabled={remove.isPending} onClick={() => remove.mutate(s.id)}>Remove</Button>
+                <Button size="sm" variant="ghost" onClick={() => setConfirm(null)}>Keep</Button>
+              </span>
+            ) : (
+              <Button size="sm" variant="ghost" aria-label={`Remove ${s.title} from the history`} onClick={() => setConfirm(s.id)}><Trash2 aria-hidden /></Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {(open.error ?? remove.error ?? sources.error) && <p role="alert" className="text-meta text-destructive">{(open.error ?? remove.error ?? sources.error)!.message}</p>}
+    </details>
+  );
+}
+
+/** Folder for the clips being saved (4.4h): an existing one, none, or a new one. */
+function FolderChoice({ value, onChange, suggested }: { value: string; onChange: (v: string) => void; suggested: string }) {
+  const ipc = useIpc();
+  const folders = useQuery({ queryKey: ["clip-folders"], queryFn: () => ipc.listClipFolders(), retry: false });
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-meta">
+      <Label htmlFor="save-folder" className="text-meta">Save to folder</Label>
+      <select id="save-folder" className="h-9 rounded-md border bg-background px-2 text-meta" value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">No folder</option>
+        {suggested.trim() && !folders.data?.some((f) => f.name.toLowerCase() === suggested.trim().toLowerCase()) && <option value={`new:${suggested.trim()}`}>New folder: {suggested.trim()}</option>}
+        {folders.data?.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+      </select>
+    </div>
+  );
+}
 
 /** Settings for the AI choice, kept by the dialog so toggling the option never loses them. */
 export type AiPickSettings = { model: CoachingModel; toneHint: boolean; wanted: number };
@@ -306,6 +385,11 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
   const [aiSettings, setAiSettings] = useState<AiPickSettings>(DEFAULT_AI_PICK);
   // The automatic proposals, kept so the AI's choice can be compared or undone.
   const [automatic, setAutomatic] = useState<Proposal[] | null>(null);
+  // From the import history (4.4i): clips already cut from this recording and earlier AI choices.
+  const [savedRanges, setSavedRanges] = useState<SavedRange[]>([]);
+  const [pickRuns, setPickRuns] = useState<PickRun[]>([]);
+  const [fromHistory, setFromHistory] = useState<ClipSource | null>(null);
+  const [folder, setFolder] = useState<string | null>(null);
   const splitEngine = engine ?? preference.data?.mode ?? "local";
   const stored = keys.data?.filter((k) => k.present).map((k) => k.provider) ?? [];
   const cloudProvider: AudioProvider | undefined = stored.includes(preference.data?.provider ?? "deepgram") ? (preference.data?.provider ?? "deepgram") : stored[0];
@@ -322,6 +406,11 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
     stagedRef.current = next;
     setStaged(next);
     setProposals(null);
+    setAutomatic(null);
+    setSavedRanges([]);
+    setPickRuns([]);
+    setFromHistory(null);
+    setFolder(null);
     setTitle(name ?? next.fileName.replace(/\.[^.]+$/, ""));
     if (credit) setSource(credit);
     setEnd(formatClockTenths(Math.min(next.durationMs, 15_000)));
@@ -332,6 +421,29 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
     try { await work(); } catch (e) { setError(e instanceof Error ? e.message : "That did not work."); } finally { setBusy(null); }
   };
   const chooseFile = () => run("file", async () => { const next = await ipc.chooseClipFile(); if (next) await adopt(next); });
+  const openFromHistory = async (opened: OpenedSource) => {
+    await adopt(opened.staged, opened.source.credit, opened.source.title);
+    const found = markSaved(opened.candidates.map(toProposal), opened.saved);
+    setFromHistory(opened.source);
+    setSavedRanges(opened.saved);
+    setPickRuns(opened.picks);
+    setProposals(found);
+    setAutomatic(found);
+  };
+  // The default for its clips is the folder named after the recording (made if needed).
+  const folders = useQuery({ queryKey: ["clip-folders"], queryFn: () => ipc.listClipFolders(), retry: false });
+  const folderValue = folder ?? (() => {
+    const name = title.trim();
+    if (!name) return "";
+    return folders.data?.find((f) => f.name.toLowerCase() === name.toLowerCase())?.id ?? `new:${name}`;
+  })();
+  const resolveFolder = async (): Promise<string | null> => {
+    if (!folderValue) return null;
+    if (!folderValue.startsWith("new:")) return folderValue;
+    const name = folderValue.slice(4);
+    const existing = (await ipc.listClipFolders()).find((f) => f.name.toLowerCase() === name.toLowerCase());
+    return existing ? existing.id : (await ipc.createClipFolder(name)).id;
+  };
   const fetchLink = () => run("link", async () => { const got = await ipc.fetchLinkAudio(link); await adopt(got.staged, got.source, got.title); });
   const [toolProgress, setToolProgress] = useState<{ received: number; total: number | null } | null>(null);
   useEffect(() => {
@@ -351,8 +463,9 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
     setBusy("split"); setError(null); setProgress(0);
     try {
       const found = await ipc.splitClipSource(staged.stagingId);
-      setProposals(found.map(toProposal));
-      setAutomatic(found.map(toProposal));
+      setProposals(markSaved(found.map(toProposal), savedRanges));
+      setAutomatic(markSaved(found.map(toProposal), savedRanges));
+      void qc.invalidateQueries({ queryKey: ["clip-sources"] });
     } catch (e) {
       setError(e instanceof Error ? e.message : "The recording could not be split.");
     } finally {
@@ -377,7 +490,8 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
     if (!title.trim()) return setError("Give the clip a title.");
     setBusy("save"); setError(null);
     try {
-      const clip = await ipc.saveClip({ stagingId: staged.stagingId, startMs, endMs, title: title.trim(), source: source.trim(), transcript: transcript.trim() || null });
+      const folderId = await resolveFolder();
+      const clip = await ipc.saveClip({ stagingId: staged.stagingId, startMs, endMs, title: title.trim(), source: source.trim(), transcript: transcript.trim() || null, folderId });
       stagedRef.current = null;
       onSaved([clip]);
     } catch (e) {
@@ -392,7 +506,8 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
     if (kept.some((p) => !p.title.trim())) return setError("Give every kept clip a title.");
     setBusy("save"); setError(null);
     try {
-      const saved = await ipc.saveClipSections(staged.stagingId, kept.map((p) => ({ startMs: p.startMs, endMs: p.endMs, title: p.title.trim(), source: source.trim(), transcript: p.text, description: p.description.trim() || null, feature: p.feature })));
+      const folderId = await resolveFolder();
+      const saved = await ipc.saveClipSections(staged.stagingId, kept.map((p) => ({ startMs: p.startMs, endMs: p.endMs, title: p.title.trim(), source: source.trim(), transcript: p.text, description: p.description.trim() || null, feature: p.feature })), folderId);
       stagedRef.current = null;
       onSaved(saved);
     } catch (e) {
@@ -408,6 +523,8 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
       <p className="text-meta text-muted-foreground">
         Use a recording you have the right to keep for your own practice. It stays on this computer, is never uploaded and is not shared with anyone.
       </p>
+
+      {!staged && <ImportHistory disabled={!!busy} onOpen={(opened) => void openFromHistory(opened)} />}
 
       {/* 1. Where the audio comes from */}
       <div className="flex flex-wrap items-end gap-3">
@@ -462,6 +579,12 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
       {staged && (
         <>
           <p className="text-meta">{staged.fileName} · {formatClock(staged.durationMs)}</p>
+          {fromHistory && (
+            <p className="text-meta text-muted-foreground" role="status">
+              From your import history: transcribed on {TRANSCRIBED_WITH[fromHistory.transcribedWith]}, so nothing needs transcribing again.
+              {savedRanges.length > 0 && ` ${savedRanges.length} ${savedRanges.length === 1 ? "part is" : "parts are"} already saved and marked below.`}
+            </p>
+          )}
           {url && (
             <audio
               ref={preview}
@@ -504,8 +627,9 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
                 previewFn={(provider) => ipc.previewSplitTranscription(staged.stagingId, provider)}
                 sendFn={async (requestId, sha) => {
                   const found = await ipc.requestSplitTranscription(requestId, sha);
-                  setProposals(found.map(toProposal));
-                  setAutomatic(found.map(toProposal));
+                  setProposals(markSaved(found.map(toProposal), savedRanges));
+                  setAutomatic(markSaved(found.map(toProposal), savedRanges));
+                  void qc.invalidateQueries({ queryKey: ["clip-sources"] });
                 }}
               />
             ) : (
@@ -527,11 +651,27 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
                     active={aiChoose}
                     settings={aiSettings}
                     onSettings={setAiSettings}
-                    onPicked={(picks) => setProposals(picks.map((p) => ({ startMs: p.startMs, endMs: p.endMs, text: p.text, title: p.title, keep: true, description: p.description, feature: p.feature, suggested: true, reason: p.reason })))}
+                    onPicked={(picks) => {
+                      setProposals(markSaved(fromPicks(picks), savedRanges));
+                      void qc.invalidateQueries({ queryKey: ["clip-sources"] });
+                    }}
                   />
                 </div>
                 {automatic && proposals.some((p) => p.reason) && (
                   <Button variant="ghost" size="sm" onClick={() => setProposals(automatic)}>Show the automatic proposals again</Button>
+                )}
+                {pickRuns.length > 0 && (
+                  <details className="text-meta">
+                    <summary className="cursor-pointer">Earlier AI choices for this recording ({pickRuns.length})</summary>
+                    <ul className="mt-1 space-y-1">
+                      {pickRuns.map((r) => (
+                        <li key={r.id} className="flex flex-wrap items-center gap-2">
+                          {new Date(r.createdAtMs).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })} · {r.model}{r.toneHint ? " · tone hint" : ""} · {r.picks.length} {r.picks.length === 1 ? "part" : "parts"}
+                          <Button variant="ghost" size="sm" onClick={() => setProposals(markSaved(fromPicks(r.picks), savedRanges))}>Show</Button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
                 )}
                 <div hidden={aiChoose}><AiNaming
                   proposals={proposals}
@@ -584,9 +724,11 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
                         {p.suggested && <span className="text-meta text-muted-foreground">AI suggestion · edit freely</span>}
                       </div>
                       {p.reason && <p className="text-meta text-muted-foreground">Why: {p.reason}</p>}
+                      {p.savedAs && <p className="text-meta font-medium">Already saved as “{p.savedAs}”. Tick it to save another copy.</p>}
                     </li>
                   ))}
                 </ol>
+                <FolderChoice value={folderValue} onChange={setFolder} suggested={title} />
                 <Button disabled={!!busy || kept === 0} onClick={() => void saveProposals()}>
                   Save {kept} {kept === 1 ? "clip" : "clips"}
                 </Button>
@@ -618,6 +760,7 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
               <Label htmlFor="clip-transcript">Transcript (optional)</Label>
               <Textarea id="clip-transcript" rows={2} maxLength={4000} value={transcript} onChange={(e) => setTranscript(e.target.value)} />
             </div>
+            {!proposals && <div className="mt-2"><FolderChoice value={folderValue} onChange={setFolder} suggested={title} /></div>}
             <Button className="mt-2" disabled={!!busy} onClick={() => void saveOne()}>Save clip</Button>
           </details>
         </>

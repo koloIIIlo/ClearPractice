@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { expect, it, vi } from "vitest";
@@ -16,6 +16,8 @@ function setup(overrides: Partial<IpcClient>) {
     recordingMode: "native",
     getClipStagingUrl: async () => "http://asset.localhost/full.wav",
     discardClipStaging: vi.fn(async () => {}),
+    listClipFolders: async () => [],
+    createClipFolder: vi.fn(async (name: string) => ({ id: "folder-1", name, clipCount: 0, createdAtMs: 0 })),
     ...overrides,
   };
   render(<QueryClientProvider client={new QueryClient()}><IpcContext.Provider value={client}><ClipImport onSaved={onSaved} onCancel={vi.fn()} /></IpcContext.Provider></QueryClientProvider>);
@@ -44,7 +46,9 @@ it("splits a long recording into proposed clips, lets the user untick and rename
   await user.click(screen.getByRole("button", { name: "Save 1 clip" }));
   expect(client.saveClipSections).toHaveBeenCalledWith("stage-1", [
     { startMs: 6_000, endMs: 17_800, title: "Grassy field", source: "A Speaker, A Talk, 2024", transcript: "Imagine you are sitting in a grassy field. That does not sound very interesting.", description: null, feature: null },
-  ]);
+  ], "folder-1");
+  // By default the clips go to a new folder named after the recording.
+  expect(client.createClipFolder).toHaveBeenCalledWith("talk");
   await waitFor(() => expect(onSaved).toHaveBeenCalledWith([saved("Grassy field")]));
 });
 
@@ -133,7 +137,7 @@ it("suggests titles, descriptions and features with AI only after a preview of t
   await user.click(screen.getByRole("button", { name: "Save 2 clips" }));
   expect(client.saveClipSections).toHaveBeenCalledWith("stage-4", expect.arrayContaining([
     expect.objectContaining({ title: "A second idea", description: "Clear falling end.", feature: "endings" }),
-  ]));
+  ]), "folder-1");
 });
 
 it("lets AI choose the best parts from the annotated transcript, with the tone hint only when ticked (4.4e, 4.4g)", async () => {
@@ -196,7 +200,7 @@ it("lets AI choose the best parts from the annotated transcript, with the tone h
   await waitFor(() => expect(screen.getByLabelText("Title of clip 1")).toHaveValue("The best part"));
   expect(screen.getByText("Why: ending falling -4.0 st")).toBeInTheDocument();
   expect(screen.getByLabelText("Description of clip 1")).toHaveValue("Calm, clear falling endings.");
-});
+}, 20_000);
 
 it("downloads yt-dlp on request with progress, then enables links (4.4f)", async () => {
   const user = userEvent.setup();
@@ -215,4 +219,50 @@ it("downloads yt-dlp on request with progress, then enables links (4.4f)", async
   expect(screen.getByRole("status", { name: "yt-dlp download progress" })).toHaveTextContent("8.0 MB of 16.0 MB");
   await act(async () => finish());
   await waitFor(() => expect(screen.getByLabelText("YouTube link")).toBeEnabled());
+});
+
+it("reopens a recording from the import history without transcribing, marks parts already saved and shows earlier AI choices (4.4i)", async () => {
+  const user = userEvent.setup();
+  const source = {
+    id: "source-1", title: "Keynote", origin: "link" as const, link: "https://www.youtube.com/watch?v=abc", credit: "Speaker, Keynote, YouTube", fileName: "keynote.m4a",
+    audioFile: "original.m4a", durationMs: 600_000, transcribedWith: "deepgram" as const, createdAtMs: 1, updatedAtMs: 2, clipCount: 1, pickCount: 1, audioAvailable: true,
+  };
+  const pick = { startMs: 40_000, endMs: 52_000, text: "A fresh part.", title: "Fresh part", description: "Clear stress.", feature: "emphasis" as const, reason: "range 7 st" };
+  const { client } = setup({
+    listClipSources: async () => [source, { ...source, id: "source-2", title: "Lost audio", audioAvailable: false }],
+    openClipSource: vi.fn(async () => ({
+      source,
+      staged: { stagingId: "stage-9", fileName: "keynote.m4a", durationMs: 600_000 },
+      candidates: [
+        { startMs: 0, endMs: 12_000, text: "Already kept.", title: "Already kept." },
+        { startMs: 20_000, endMs: 32_000, text: "Not yet kept.", title: "Not yet kept." },
+      ],
+      saved: [{ clipId: "clip-1", title: "Opening", startMs: 500, endMs: 11_000 }],
+      picks: [{ id: "picks-1", model: "gpt-6-luna", toneHint: false, picks: [pick], createdAtMs: 1_760_000_000_000 }],
+    })),
+    splitClipSource: vi.fn(async () => []),
+    listClipFolders: async () => [{ id: "folder-k", name: "Keynote", clipCount: 1, createdAtMs: 1 }],
+    saveClipSections: vi.fn(async () => [saved("Not yet kept.")]),
+  });
+  const history = await screen.findByRole("list", { name: "Import history" });
+  expect(within(history).getAllByText(/transcribed on Deepgram · 1 clip saved · 1 AI choice/)).toHaveLength(2);
+  expect(within(history).getByRole("button", { name: "Open Lost audio" })).toBeDisabled();
+  await user.click(within(history).getByRole("button", { name: "Open Keynote" }));
+  expect(client.openClipSource).toHaveBeenCalledWith("source-1");
+  expect(await screen.findByText(/nothing needs transcribing again\. 1 part is already saved/)).toBeInTheDocument();
+  expect(client.splitClipSource).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Source and credit")).toHaveValue("Speaker, Keynote, YouTube");
+  expect(screen.getByRole("checkbox", { name: "Keep clip 1" })).not.toBeChecked();
+  expect(screen.getByText("Already saved as “Opening”. Tick it to save another copy.")).toBeInTheDocument();
+  expect(screen.getByRole("checkbox", { name: "Keep clip 2" })).toBeChecked();
+  // An earlier AI choice can be shown again, at no cost.
+  await user.click(screen.getByText(/Earlier AI choices for this recording \(1\)/));
+  await user.click(screen.getByRole("button", { name: "Show" }));
+  expect(screen.getByLabelText("Title of clip 1")).toHaveValue("Fresh part");
+  await user.click(screen.getByRole("button", { name: "Show the automatic proposals again" }));
+  // The recording's folder already exists, so it is used rather than created again.
+  expect(screen.getByLabelText("Save to folder")).toHaveValue("folder-k");
+  await user.click(screen.getByRole("button", { name: "Save 1 clip" }));
+  expect(client.saveClipSections).toHaveBeenCalledWith("stage-9", [expect.objectContaining({ title: "Not yet kept." })], "folder-k");
+  expect(client.createClipFolder).not.toHaveBeenCalled();
 });

@@ -341,9 +341,11 @@ impl PreviewOwner {
     }
 
     /// Sends an approved pick preview; returns picks with valid sentence ranges.
-    pub async fn send_clip_picks(&self, owner: &BudgetOwner, root: &Path, id: &str, hash: &str, sentences: usize) -> Result<Vec<ClipPick>> {
+    /// Returns the model ID and whether the tone hint was on, for the history.
+    pub async fn send_clip_picks(&self, owner: &BudgetOwner, root: &Path, id: &str, hash: &str, sentences: usize) -> Result<(String, bool, Vec<ClipPick>)> {
         let (pending, raw, _, _, _, _) = self.dispatch(owner, root, id, hash, Kind::ClipPicks).await?;
-        parse_picks(&raw, pending.model, sentences)
+        let tone_hint = pending.preview.instructions.contains(TONE_HINT);
+        Ok((pending.model.id().to_string(), tone_hint, parse_picks(&raw, pending.model, sentences)?))
     }
 
     /// Sends an approved naming preview and returns validated suggestions.

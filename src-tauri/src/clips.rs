@@ -51,6 +51,12 @@ pub struct Clip {
     pub duration_ms: u64,
     pub sha256: String,
     pub created_at_ms: u64,
+    /// Library folder (4.4h); `None` = unfiled.
+    pub folder_id: Option<String>,
+    /// The imported recording and range it was cut from (4.4i).
+    pub source_id: Option<String>,
+    pub source_start_ms: Option<u64>,
+    pub source_end_ms: Option<u64>,
 }
 
 /// Decodes any supported file (WAV, MP3, M4A/AAC, FLAC, OGG Vorbis) to mono f32.
@@ -149,19 +155,79 @@ pub fn clip_path(root: &Path, id: &str) -> Result<PathBuf> {
     Ok(root.join("clips").join(id).join("audio.wav"))
 }
 
-/// Decodes the chosen file into a whole mono copy for preview and trimming.
+/// What a staged recording is and where it came from (4.4i). Written next to
+/// the staged audio; once the recording is transcribed it becomes a source in
+/// the import history, and `source_id` links the staging copy to it.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StageMeta {
+    /// "file" or "link"
+    pub origin: String,
+    pub file_name: String,
+    pub title: String,
+    pub link: Option<String>,
+    pub credit: String,
+    pub duration_ms: u64,
+    /// The untouched original (compressed formats stay small) kept for the history.
+    pub original: Option<String>,
+    pub source_id: Option<String>,
+}
+
+const AUDIO_EXTENSIONS: [&str; 8] = ["wav", "mp3", "m4a", "aac", "mp4", "flac", "ogg", "oga"];
+
+pub fn read_meta(root: &Path, staging_id: &str) -> Result<StageMeta> {
+    let dir = staging_dir(root, staging_id)?;
+    contained(root, &dir)?;
+    serde_json::from_slice(&fs::read(dir.join("meta.json")).map_err(|_| "This recording is no longer staged. Choose it again.")?)
+        .map_err(|_| "This recording's details are damaged. Choose it again.".into())
+}
+
+pub fn write_meta(root: &Path, staging_id: &str, meta: &StageMeta) -> Result<()> {
+    let dir = staging_dir(root, staging_id)?;
+    contained(root, &dir)?;
+    fs::write(dir.join("meta.json"), serde_json::to_vec(meta).map_err(|e| e.to_string())?).map_err(|_| "Cannot keep the recording's details.".into())
+}
+
+/// Decodes the chosen file into a whole mono copy for preview and trimming, and
+/// keeps the original next to it for the import history.
 pub fn stage(root: &Path, file: &Path) -> Result<Staged> {
+    let file_name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let title = file.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let meta = StageMeta { origin: "file".into(), file_name, title, ..Default::default() };
+    stage_with(root, file, meta, true)
+}
+
+/// Stages `file` with the given details. `keep_original` copies the file in
+/// (fresh imports); a source reopened from the history already keeps its own.
+pub fn stage_with(root: &Path, file: &Path, mut meta: StageMeta, keep_original: bool) -> Result<Staged> {
     let (samples, rate) = decode_mono(file)?;
-    let staging_id = format!("stage-{}", recording::now_ms());
-    let dir = staging_dir(root, &staging_id)?;
+    let now = recording::now_ms();
+    let mut n = 0u32;
+    let (staging_id, dir) = loop {
+        let id = if n == 0 { format!("stage-{now}") } else { format!("stage-{now}-{n}") };
+        let dir = staging_dir(root, &id)?;
+        if !dir.exists() {
+            break (id, dir);
+        }
+        n += 1;
+    };
     fs::create_dir_all(&dir).map_err(|_| "Cannot prepare the clip.")?;
     contained(root, &dir)?;
     write_wav(&dir.join("full.wav"), &samples, rate)?;
-    Ok(Staged {
-        staging_id,
-        file_name: file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-        duration_ms: samples.len() as u64 * 1000 / u64::from(rate),
-    })
+    meta.duration_ms = samples.len() as u64 * 1000 / u64::from(rate);
+    if keep_original {
+        let ext = file.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).filter(|e| AUDIO_EXTENSIONS.contains(&e.as_str()));
+        if let Some(ext) = ext {
+            let name = format!("original.{ext}");
+            // Without the original the recording can still be cut now; it just
+            // cannot be reopened from the history later.
+            if fs::copy(file, dir.join(&name)).is_ok() {
+                meta.original = Some(name);
+            }
+        }
+    }
+    write_meta(root, &staging_id, &meta)?;
+    Ok(Staged { staging_id, file_name: meta.file_name.clone(), duration_ms: meta.duration_ms })
 }
 
 pub fn discard_staging(root: &Path, staging_id: &str) {
@@ -236,6 +302,10 @@ pub fn commit(root: &Path, staging_id: &str, start_ms: u64, end_ms: u64, details
         duration_ms: ((to - from) as u64) * 1000 / u64::from(rate),
         sha256: hash_file(&path)?,
         created_at_ms: now,
+        folder_id: None,
+        source_id: None,
+        source_start_ms: None,
+        source_end_ms: None,
     })
 }
 
@@ -302,6 +372,10 @@ pub fn install_bundled(
                 duration_ms: samples.len() as u64 * 1000 / u64::from(rate),
                 sha256: hash_file(&path)?,
                 created_at_ms: recording::now_ms(),
+                folder_id: None,
+                source_id: None,
+                source_start_ms: None,
+                source_end_ms: None,
             };
             insert(&clip).inspect_err(|_| {
                 let _ = remove_files(root, &entry.id);

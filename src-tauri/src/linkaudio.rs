@@ -127,8 +127,10 @@ pub fn fetch(root: &Path, ytdlp: &Path, url: &str, cancel: &AtomicBool) -> Resul
         if !file.starts_with(crate::audio::prepare::contained(root, &dir)?) {
             return Err("The download is not where it was expected.".into());
         }
-        let staged = clips::stage(root, &file)?;
         let source = format!("{}, \u{201c}{}\u{201d}, YouTube \u{2014} {}", if uploader.is_empty() { "Unknown channel" } else { &uploader }, title, page);
+        let file_name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let meta = clips::StageMeta { origin: "link".into(), file_name, title: title.clone(), link: Some(page.clone()), credit: source.clone(), ..Default::default() };
+        let staged = clips::stage_with(root, &file, meta, true)?;
         Ok(LinkAudio { staged, title, uploader, url: page, source })
     })();
     let _ = fs::remove_dir_all(&dir);

@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileAudio, Trash2 } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { FileAudio, Library } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
 import type { ReferenceClip } from "@/lib/ipc/schemas";
 import { ClipImport } from "./ClipImport";
+import { ClipLibrary } from "./ClipLibrary";
 
 const SPEEDS = [0.75, 1, 1.25] as const;
 
@@ -53,66 +53,74 @@ function ClipPlayer({ clip }: { clip: ReferenceClip }) {
   );
 }
 
-/** Clip picker for Listen and imitate: bundled and imported clips, play, import, delete. */
+/** Remembers the last clip chosen, per computer (a convenience; may be unavailable). */
+const LAST_CLIP = "clearpractice.lastClip";
+function readLastClip(): string | null {
+  try { return window.localStorage.getItem(LAST_CLIP); } catch { return null; }
+}
+function writeLastClip(id: string) {
+  try { window.localStorage.setItem(LAST_CLIP, id); } catch { /* not stored */ }
+}
+
+/**
+ * Clip choice for Listen and imitate: the chosen clip with its player, the clip
+ * library (folders, search, filters; 4.4h) and import.
+ */
 export function ReferenceClips({ locked, native, onSelect }: { locked: boolean; native: boolean; onSelect?: (clip: ReferenceClip | null) => void }) {
   const ipc = useIpc();
   const qc = useQueryClient();
   const clips = useQuery({ queryKey: ["clips"], queryFn: () => ipc.listClips(), enabled: native, retry: false });
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(readLastClip);
   const [importing, setImporting] = useState(false);
-  const remove = useMutation({
-    mutationFn: (id: string) => ipc.deleteClip(id),
-    onSuccess: async () => {
-      setSelected(null);
-      await qc.invalidateQueries({ queryKey: ["clips"] });
-    },
-  });
+  const [browsing, setBrowsing] = useState(false);
   const list = clips.data ?? [];
   const current = list.find((c) => c.id === selected) ?? list[0] ?? null;
   useEffect(() => onSelect?.(current), [current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const choose = (id: string) => {
+    setSelected(id);
+    writeLastClip(id);
+  };
 
   if (!native) return <p className="text-meta text-muted-foreground">Clips play and import in the desktop app.</p>;
   return (
     <div className="space-y-3">
+      {clips.error && <p role="alert" className="text-meta text-destructive">{clips.error.message}</p>}
       {list.length === 0 && !importing && (
         <p className="text-meta text-muted-foreground">No clips yet. Import a short clip from a file you have the right to use.</p>
       )}
-      {list.length > 0 && current && (
+      {current && (
         <>
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="space-y-1">
-              <Label htmlFor="clip-choice">Clip</Label>
-              <Select value={current.id} onValueChange={setSelected} disabled={locked}>
-                <SelectTrigger id="clip-choice" className="h-10 w-80"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {list.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.title} · {formatClock(c.durationMs)}{c.origin === "user" ? " · yours" : ""}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-48 flex-1">
+              <p className="text-meta text-muted-foreground">Clip</p>
+              <p className="font-medium">{current.title} <span className="text-meta font-normal text-muted-foreground">· {formatClock(current.durationMs)}{current.origin === "user" ? " · yours" : ""}</span></p>
             </div>
-            {current.origin === "user" && (
-              <Button variant="ghost" size="sm" disabled={locked || remove.isPending} onClick={() => remove.mutate(current.id)} aria-label={`Delete clip ${current.title}`}>
-                <Trash2 aria-hidden /> Delete clip
-              </Button>
-            )}
+            <Button variant="outline" disabled={locked} onClick={() => setBrowsing(true)}>
+              <Library aria-hidden /> Browse the library ({list.length})
+            </Button>
           </div>
-          <ClipPlayer clip={current} />
+          <ClipPlayer key={current.id} clip={current} />
         </>
       )}
-      {remove.error && <p role="alert" className="text-meta text-destructive">{remove.error.message}</p>}
+      <ClipLibrary
+        open={browsing}
+        onOpenChange={setBrowsing}
+        chosenId={current?.id ?? null}
+        onChoose={(clip) => { choose(clip.id); setBrowsing(false); }}
+        onImport={() => { setBrowsing(false); setImporting(true); }}
+      />
       {importing ? (
         <ClipImport
           onCancel={() => setImporting(false)}
           onSaved={async (saved) => {
             setImporting(false);
-            await qc.invalidateQueries({ queryKey: ["clips"] });
-            setSelected(saved[0]?.id ?? null);
+            await Promise.all([qc.invalidateQueries({ queryKey: ["clips"] }), qc.invalidateQueries({ queryKey: ["clip-folders"] }), qc.invalidateQueries({ queryKey: ["clip-sources"] })]);
+            if (saved[0]) choose(saved[0].id);
           }}
         />
       ) : (
         <Button variant="outline" disabled={locked} onClick={() => setImporting(true)}>
-          <FileAudio aria-hidden /> Import a clip…
+          <FileAudio aria-hidden /> Import clips…
         </Button>
       )}
     </div>

@@ -32,6 +32,9 @@ import type {
   ExportSummary,
   TranscriptionPreference,
   Preferences,
+  ClipFolder,
+  ClipSource,
+  OpenedSource,
   ReferenceClip,
   ClipStaged,
   ClipCandidate,
@@ -102,7 +105,20 @@ export interface IpcClient {
   chooseClipFile(): Promise<ClipStaged | null>;
   getClipStagingUrl(stagingId: string): Promise<string>;
   discardClipStaging(stagingId: string): Promise<void>;
-  saveClip(details: { stagingId: string; startMs: number; endMs: number; title: string; source: string; transcript: string | null }): Promise<ReferenceClip>;
+  saveClip(details: { stagingId: string; startMs: number; endMs: number; title: string; source: string; transcript: string | null; folderId?: string | null }): Promise<ReferenceClip>;
+  /** Clip library folders (4.4h). */
+  listClipFolders(): Promise<ClipFolder[]>;
+  createClipFolder(name: string): Promise<ClipFolder>;
+  renameClipFolder(folderId: string, name: string): Promise<void>;
+  /** The folder's clips stay, unfiled. */
+  deleteClipFolder(folderId: string): Promise<void>;
+  moveClips(clipIds: string[], folderId: string | null): Promise<void>;
+  updateClip(clipId: string, details: { title: string; description: string | null; feature: "emphasis" | "rhythm" | "endings" | null }): Promise<void>;
+  /** Import history (4.4i). */
+  listClipSources(): Promise<ClipSource[]>;
+  openClipSource(sourceId: string): Promise<OpenedSource>;
+  updateClipSource(sourceId: string, details: { title: string; credit: string }): Promise<void>;
+  deleteClipSource(sourceId: string): Promise<void>;
   listClips(): Promise<ReferenceClip[]>;
   getClipPlaybackUrl(clipId: string): Promise<string>;
   deleteClip(clipId: string): Promise<void>;
@@ -115,7 +131,7 @@ export interface IpcClient {
   onClipSplitProgress(listener: (percent: number) => void): Promise<() => void>;
   /** Stops a running split or link download. */
   cancelClipWork(): Promise<void>;
-  saveClipSections(stagingId: string, sections: { startMs: number; endMs: number; title: string; source: string; transcript: string | null; description?: string | null; feature?: "emphasis" | "rhythm" | "endings" | null }[]): Promise<ReferenceClip[]>;
+  saveClipSections(stagingId: string, sections: { startMs: number; endMs: number; title: string; source: string; transcript: string | null; description?: string | null; feature?: "emphasis" | "rhythm" | "endings" | null }[], folderId?: string | null): Promise<ReferenceClip[]>;
   /** Optional AI titles for proposed clips: previews a text-only request (transcripts only). */
   previewClipNames(texts: string[], model?: CoachingModel): Promise<CoachingPreview>;
   requestClipNames(requestId: string, payloadSha256: string): Promise<ClipName[]>;

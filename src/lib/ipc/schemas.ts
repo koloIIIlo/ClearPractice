@@ -153,8 +153,25 @@ export const ReferenceClip = z.object({
   durationMs: z.number().int().positive(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
   createdAtMs: z.number().int().nonnegative(),
+  /** Library folder (4.4h); null = unfiled. */
+  folderId: Id.nullable().optional(),
+  /** The imported recording and range it was cut from (4.4i). */
+  sourceId: Id.nullable().optional(),
+  sourceStartMs: z.number().int().nonnegative().nullable().optional(),
+  sourceEndMs: z.number().int().nonnegative().nullable().optional(),
 });
 export type ReferenceClip = z.infer<typeof ReferenceClip>;
+export const ClipFolder = z.object({ id: Id, name: z.string().min(1), clipCount: z.number().int().nonnegative(), createdAtMs: z.number().int().nonnegative() });
+export type ClipFolder = z.infer<typeof ClipFolder>;
+/** A recording in the import history (4.4i). */
+export const ClipSource = z.object({
+  id: Id, title: z.string(), origin: z.enum(["file", "link"]), link: z.string().nullable(), credit: z.string(), fileName: z.string(), audioFile: z.string(),
+  durationMs: z.number().int().positive(), transcribedWith: z.enum(["local", "deepgram", "assemblyai"]), createdAtMs: z.number().int().nonnegative(),
+  updatedAtMs: z.number().int().nonnegative(), clipCount: z.number().int().nonnegative(), pickCount: z.number().int().nonnegative(), audioAvailable: z.boolean(),
+});
+export type ClipSource = z.infer<typeof ClipSource>;
+export const SavedRange = z.object({ clipId: Id, title: z.string(), startMs: z.number().int().nonnegative(), endMs: z.number().int().nonnegative() });
+export type SavedRange = z.infer<typeof SavedRange>;
 /** A chosen file, decoded whole for preview before a section is kept. */
 export const ClipStaged = z.object({ stagingId: Id, fileName: z.string(), durationMs: z.number().int().positive() });
 export type ClipStaged = z.infer<typeof ClipStaged>;
@@ -170,6 +187,12 @@ export const PickedClip = z.object({
   description: z.string(), feature: z.enum(["emphasis", "rhythm", "endings"]), reason: z.string(),
 });
 export type PickedClip = z.infer<typeof PickedClip>;
+/** An earlier AI choice for a source (4.4i). */
+export const PickRun = z.object({ id: Id, model: z.string(), toneHint: z.boolean(), picks: PickedClip.array(), createdAtMs: z.number().int().nonnegative() });
+export type PickRun = z.infer<typeof PickRun>;
+/** A source reopened from the history: staged again with its transcript. */
+export const OpenedSource = z.object({ source: ClipSource, staged: ClipStaged, candidates: ClipCandidate.array(), saved: SavedRange.array(), picks: PickRun.array() });
+export type OpenedSource = z.infer<typeof OpenedSource>;
 export const LinkToolStatus = z.object({ available: z.boolean(), path: z.string().nullable() });
 export type LinkToolStatus = z.infer<typeof LinkToolStatus>;
 /** Audio fetched from a YouTube link with the user's yt-dlp (4.4d), staged like an imported file. */
