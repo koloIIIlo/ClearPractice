@@ -135,3 +135,34 @@ it("suggests titles, descriptions and features with AI only after a preview of t
     expect.objectContaining({ title: "A second idea", description: "Clear falling end.", feature: "endings" }),
   ]));
 });
+
+it("lets AI choose the best parts from the annotated transcript, with the tone hint only when ticked (4.4e)", async () => {
+  const user = userEvent.setup();
+  const { client } = setup({
+    chooseClipFile: async () => ({ stagingId: "stage-5", fileName: "talk.wav", durationMs: 300_000 }),
+    getApiKeyStatus: async () => ({ provider: "OpenAI" as const, present: true }),
+    splitClipSource: async () => [{ startMs: 0, endMs: 12_000, text: "Mechanical proposal.", title: "Mechanical proposal." }],
+    previewClipPicks: vi.fn(async () => ({
+      version: 1 as const, requestId: "picks-1", payloadSha256: "d".repeat(64), recipient: "https://api.openai.com/v1/responses" as const, model: "gpt-6-luna",
+      selectedText: "Choose up to 8 passages from these 40 sentences. [1] 0:00.0-0:04.0 Hello. | ending falling -3.0 st", prompt: "p", focus: "f", instructions: "i",
+      maximumOutputTokens: 3072, estimatedMaximumCostMicroUsd: 9_000, priceDate: "2026-10-08", priceSource: "https://developers.openai.com/api/docs/models/gpt-6-luna",
+      inputUsdPerMillionTokens: "0.10", outputUsdPerMillionTokens: "0.50", costExplanation: "c", expiresAtMs: Date.now() + 300_000,
+    })),
+    requestClipPicks: vi.fn(async () => [{ startMs: 30_000, endMs: 44_000, text: "The best part.", title: "The best part", description: "Calm, clear falling endings.", feature: "endings" as const, reason: "ending falling -4.0 st" }]),
+  });
+  await user.click(screen.getByRole("button", { name: "Choose an audio file…" }));
+  await user.click(await screen.findByRole("checkbox", { name: /Let AI choose the best parts/ }));
+  await user.click(screen.getByRole("button", { name: "Transcribe and split" }));
+  await screen.findByText(/1 clip found/);
+  expect(screen.queryByRole("button", { name: "Suggest titles with AI…" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("checkbox", { name: /Experimental: let AI guess the speaker's tone/ }));
+  await user.click(screen.getByRole("button", { name: "Ask AI to choose…" }));
+  expect(client.previewClipPicks).toHaveBeenCalledWith("stage-5", { model: "gpt-6-luna", toneHint: true, wanted: 8 });
+  expect(await screen.findByRole("group", { name: "AI clip choice request preview" })).toHaveTextContent("never audio");
+  expect(client.requestClipPicks).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Send transcript · may be billed" }));
+  expect(client.requestClipPicks).toHaveBeenCalledWith("stage-5", "picks-1", "d".repeat(64));
+  await waitFor(() => expect(screen.getByLabelText("Title of clip 1")).toHaveValue("The best part"));
+  expect(screen.getByText("Why: ending falling -4.0 st")).toBeInTheDocument();
+  expect(screen.getByLabelText("Description of clip 1")).toHaveValue("Calm, clear falling endings.");
+});

@@ -164,6 +164,12 @@ export type ClipCandidate = z.infer<typeof ClipCandidate>;
 /** AI suggestion for one proposed clip (4.4c), labelled as such and editable. */
 export const ClipName = z.object({ index: z.number().int().positive(), title: z.string(), description: z.string(), feature: z.enum(["emphasis", "rhythm", "endings"]) });
 export type ClipName = z.infer<typeof ClipName>;
+/** A passage the AI chose (4.4e), already validated into whole sentences of 5–30 s. */
+export const PickedClip = z.object({
+  startMs: z.number().int().nonnegative(), endMs: z.number().int().positive(), text: z.string(), title: z.string(),
+  description: z.string(), feature: z.enum(["emphasis", "rhythm", "endings"]), reason: z.string(),
+});
+export type PickedClip = z.infer<typeof PickedClip>;
 export const LinkToolStatus = z.object({ available: z.boolean(), path: z.string().nullable() });
 export type LinkToolStatus = z.infer<typeof LinkToolStatus>;
 /** Audio fetched from a YouTube link with the user's yt-dlp (4.4d), staged like an imported file. */

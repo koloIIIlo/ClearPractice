@@ -35,6 +35,7 @@ import type {
   ClipStaged,
   ClipCandidate,
   ClipName,
+  PickedClip,
   LinkToolStatus,
   LinkAudio,
   TranscriptionSetup,
@@ -117,6 +118,9 @@ export interface IpcClient {
   /** Optional AI titles for proposed clips: previews a text-only request (transcripts only). */
   previewClipNames(texts: string[], model?: CoachingModel): Promise<CoachingPreview>;
   requestClipNames(requestId: string, payloadSha256: string): Promise<ClipName[]>;
+  /** AI chooses the best passages (4.4e): previews the transcript annotated with measured delivery (text only). */
+  previewClipPicks(stagingId: string, options: { model?: CoachingModel; toneHint: boolean; wanted: number }): Promise<CoachingPreview>;
+  requestClipPicks(stagingId: string, requestId: string, payloadSha256: string): Promise<PickedClip[]>;
   getLinkToolStatus(): Promise<LinkToolStatus>;
   chooseLinkTool(): Promise<LinkToolStatus>;
   fetchLinkAudio(url: string): Promise<LinkAudio>;

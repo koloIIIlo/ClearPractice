@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
-import type { ClipCandidate, ClipName, ClipStaged, CoachingModel, CoachingPreview, ReferenceClip } from "@/lib/ipc/schemas";
+import type { ClipCandidate, ClipName, ClipStaged, CoachingModel, CoachingPreview, PickedClip, ReferenceClip } from "@/lib/ipc/schemas";
 import { COACHING_MODELS } from "@/features/settings/CoachingSpike";
 import { money } from "@/features/review/ApiTranscribe";
 import { formatClockTenths, parseClock } from "@/features/review/waveform";
@@ -15,8 +15,67 @@ import { API_LABELS, ApiRequestFlow } from "@/features/review/ApiTranscribe";
 import type { AudioProvider } from "@/lib/ipc/schemas";
 
 type Feature = "emphasis" | "rhythm" | "endings";
-type Proposal = ClipCandidate & { keep: boolean; description: string; feature: Feature | null; suggested: boolean };
+type Proposal = ClipCandidate & { keep: boolean; description: string; feature: Feature | null; suggested: boolean; reason?: string };
 const FEATURE_LABELS: Record<Feature, string> = { emphasis: "Emphasis", rhythm: "Phrase rhythm", endings: "Clear endings" };
+
+/**
+ * AI chooses the best parts (4.4e): the transcript is annotated on this computer
+ * with measured delivery per sentence and only that text is sent, after the usual
+ * preview and an explicit Send. Picks replace the automatic proposals.
+ */
+function AiPick({ stagingId, onPicked }: { stagingId: string; onPicked: (picks: PickedClip[]) => void }) {
+  const ipc = useIpc();
+  const key = useQuery({ queryKey: ["api-key-status"], queryFn: () => ipc.getApiKeyStatus(), retry: false });
+  const [model, setModel] = useState<CoachingModel>("gpt-6-luna");
+  const [toneHint, setToneHint] = useState(false);
+  const [wanted, setWanted] = useState(8);
+  const [preview, setPreview] = useState<CoachingPreview | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!key.data?.present) {
+    return <p className="text-meta text-muted-foreground">Letting AI choose needs an OpenAI key (Settings → Coaching). The automatic proposals below still work.</p>;
+  }
+  const prepare = async () => {
+    setBusy(true); setError(null);
+    try { setPreview(await ipc.previewClipPicks(stagingId, { model, toneHint, wanted })); } catch (e) { setError(e instanceof Error ? e.message : "Could not prepare the request."); } finally { setBusy(false); }
+  };
+  const send = async () => {
+    if (!preview) return;
+    const approved = preview;
+    setPreview(null); setBusy(true); setError(null);
+    try { onPicked(await ipc.requestClipPicks(stagingId, approved.requestId, approved.payloadSha256)); } catch (e) { setError(e instanceof Error ? e.message : "The request did not finish; the charge may be uncertain."); } finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-2 rounded-md border p-2">
+      <div className="flex flex-wrap items-center gap-2 text-meta">
+        <Label htmlFor="pick-model" className="text-meta">AI model</Label>
+        <select id="pick-model" className="h-9 rounded-md border bg-background px-2 text-meta" value={model} disabled={busy} onChange={(e) => { setModel(e.target.value as CoachingModel); setPreview(null); }}>
+          {COACHING_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} · {m.note}</option>)}
+        </select>
+        <Label htmlFor="pick-wanted" className="text-meta">Up to</Label>
+        <Input id="pick-wanted" type="number" min={1} max={20} className="h-9 w-16" value={wanted} onChange={(e) => { setWanted(Math.max(1, Math.min(20, Number(e.target.value) || 1))); setPreview(null); }} />
+        <span>clips</span>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={toneHint} onChange={(e) => { setToneHint(e.target.checked); setPreview(null); }} /> Experimental: let AI guess the speaker's tone as a hint
+        </label>
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => void prepare()}>Ask AI to choose…</Button>
+      </div>
+      {preview && (
+        <div className="space-y-2 text-meta" role="group" aria-label="AI clip choice request preview">
+          <p className="font-medium">Recipient: OpenAI · {preview.model}</p>
+          <p>Estimated upper reservation: {money(preview.estimatedMaximumCostMicroUsd)} within the shared monthly limit. Only the transcript and its measured numbers are sent, never audio.</p>
+          <details><summary className="cursor-pointer">Text that will be sent</summary><pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap">{preview.selectedText}</pre></details>
+          <div className="flex gap-2">
+            <Button size="sm" disabled={busy} onClick={() => void send()}>Send transcript · may be billed</Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setPreview(null)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+      {busy && <p role="status" className="text-meta">Working…</p>}
+      {error && <p role="alert" className="text-meta text-destructive">{error}</p>}
+    </div>
+  );
+}
 
 /**
  * Optional AI titles, descriptions and features for proposed clips (4.4c). Only
@@ -98,6 +157,7 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
   const preference = useQuery({ queryKey: ["transcription-preference"], queryFn: () => ipc.getTranscriptionPreference(), retry: false });
   const keys = useQuery({ queryKey: ["transcription-api-keys"], queryFn: () => ipc.getTranscriptionApiKeys(), retry: false });
   const [engine, setEngine] = useState<"local" | "api" | null>(null);
+  const [aiChoose, setAiChoose] = useState(false);
   const splitEngine = engine ?? preference.data?.mode ?? "local";
   const stored = keys.data?.filter((k) => k.present).map((k) => k.provider) ?? [];
   const cloudProvider: AudioProvider | undefined = stored.includes(preference.data?.provider ?? "deepgram") ? (preference.data?.provider ?? "deepgram") : stored[0];
@@ -245,6 +305,9 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
           <div className="space-y-2 rounded-lg border border-dashed p-3">
             <p className="flex items-center gap-2 font-medium"><Scissors aria-hidden className="size-4" /> Split into clips automatically</p>
             <p className="text-meta text-muted-foreground">Transcribes the recording, then proposes 8–20 s clips that start and end on whole sentences.</p>
+            <label className="flex items-center gap-2 text-meta">
+              <input type="checkbox" checked={aiChoose} onChange={(e) => setAiChoose(e.target.checked)} /> Let AI choose the best parts (after transcription; sends only text)
+            </label>
             <fieldset className="flex flex-wrap gap-4 text-meta" disabled={!!busy}>
               <legend className="sr-only">Transcribe with</legend>
               {([["local", "This computer"], ["api", "Cloud API"]] as const).map(([value, label]) => (
@@ -280,13 +343,19 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
             {proposals && (
               <div className="space-y-2">
                 <p className="text-meta">{proposals.length} {proposals.length === 1 ? "clip" : "clips"} found. Untick any you don't want, and rename them if you like.</p>
-                <AiNaming
+                {aiChoose && (
+                  <AiPick
+                    stagingId={staged.stagingId}
+                    onPicked={(picks) => setProposals(picks.map((p) => ({ startMs: p.startMs, endMs: p.endMs, text: p.text, title: p.title, keep: true, description: p.description, feature: p.feature, suggested: true, reason: p.reason })))}
+                  />
+                )}
+                {!aiChoose && <AiNaming
                   proposals={proposals}
                   onNames={(names) => setProposals((all) => all!.map((p, i) => {
                     const n = names.find((x) => x.index === i + 1);
                     return n ? { ...p, title: n.title, description: n.description, feature: n.feature, suggested: true } : p;
                   }))}
-                />
+                />}
                 <ol className="space-y-2">
                   {proposals.map((p, i) => (
                     <li key={`${p.startMs}`} className="space-y-1 rounded-md border p-2">
@@ -330,6 +399,7 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
                         </select>
                         {p.suggested && <span className="text-meta text-muted-foreground">AI suggestion · edit freely</span>}
                       </div>
+                      {p.reason && <p className="text-meta text-muted-foreground">Why: {p.reason}</p>}
                     </li>
                   ))}
                 </ol>
