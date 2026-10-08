@@ -29,6 +29,7 @@ import { LiveWaveform } from "@/components/live-waveform";
 import { RecordingLibrary, SavedAudio } from "./RecordingLibrary";
 import { MoveTakeToTrashButton } from "@/features/sessions/TrashPage";
 import { PASSAGES, type Passage } from "@/content/passages";
+import { CURRICULUM_VERSION } from "@/content/prompts";
 import { passagePrompt, ThoughtGroupPassage } from "./ThoughtGroupPassage";
 
 export function StudioPage() {
@@ -74,6 +75,7 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
   const [useCountdown, setUseCountdown] = useState(false);
   const [outline, setOutline] = useState({ point: "", reason: "", example: "" });
   const rec = useRecorder(prompt.text, { sessionId, exerciseId: exercise.id, exerciseVersion: exercise.version,
+    curriculumVersion: CURRICULUM_VERSION, contentId: prompt.id,
     exerciseType: exercise.type, prompt: prompt.text, outline, conditions: prompt.conditions });
   const [announcement, setAnnouncement] = useState("");
   const [trashed, setTrashed] = useState<Set<string>>(() => new Set());

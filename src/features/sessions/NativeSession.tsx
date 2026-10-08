@@ -31,7 +31,7 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
   const exporting = useMutation({ mutationFn: () => ipc.exportSession(session.id) });
   const attempts = selectedOrdinal === undefined ? session.attempts : session.attempts.filter((a) => a.ordinal === selectedOrdinal);
   return <div className="space-y-4">
-    <PageHeader title={session.title} description={`${formatLongDay(session.localDate)} · ${session.attemptCount} saved takes · ${formatClock(session.durationMs)}`} />
+    <PageHeader title={session.title} description={`${formatLongDay(session.localDate)} · ${session.attemptCount} saved takes · ${formatClock(session.durationMs)}${session.curriculumVersion ? ` · curriculum v${session.curriculumVersion}` : ""}`} />
     {session.prompt && <Panel><p>{session.prompt}</p></Panel>}
     {session.focus && <p className="text-meta"><span className="text-muted-foreground">Your focus for the retakes:</span> {session.focus}</p>}
     {session.conditionsUnavailableReason && <p className="text-meta text-muted-foreground">Task conditions unavailable: {session.conditionsUnavailableReason}</p>}

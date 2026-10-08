@@ -63,6 +63,9 @@ export interface PracticeContext {
   prompt: string;
   outline: SessionDetail["outline"];
   conditions: PracticePrompt["conditions"];
+  /** Bundled curriculum version and the prompt, passage or phrase used (4.5). */
+  curriculumVersion?: number;
+  contentId?: string;
 }
 
 export interface IpcClient {

@@ -423,6 +423,9 @@ export const SessionDetail = SessionSummary.extend({
   conditions: TaskConditions.nullable(),
   attempts: z.array(Attempt),
   conditionsUnavailableReason: z.string().nullable().optional(),
+  /** Curriculum version and item the session used (4.5); null for older sessions. */
+  curriculumVersion: z.number().int().positive().nullable().optional(),
+  contentId: z.string().nullable().optional(),
 });
 export type SessionDetail = z.infer<typeof SessionDetail>;
 

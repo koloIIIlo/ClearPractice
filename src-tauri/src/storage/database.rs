@@ -14,7 +14,7 @@ use std::{
 };
 
 type Result<T> = std::result::Result<T, String>;
-const VERSION: i64 = 8;
+const VERSION: i64 = 9;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
@@ -37,6 +37,11 @@ pub struct PracticeContext {
     pub prompt: String,
     pub outline: Outline,
     pub conditions: Conditions,
+    /// Bundled curriculum version and item used (4.5); absent for older callers.
+    #[serde(default)]
+    pub curriculum_version: Option<u32>,
+    #[serde(default)]
+    pub content_id: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -155,7 +160,10 @@ impl DatabaseOwner {
             if version < 7 {
                 migrate(&mut connection, include_str!("schema-v7.sql"))?;
             }
-            migrate(&mut connection, include_str!("schema-v8.sql"))?;
+            if version < 8 {
+                migrate(&mut connection, include_str!("schema-v8.sql"))?;
+            }
+            migrate(&mut connection, include_str!("schema-v9.sql"))?;
         }
         backfill_measures(&connection)?;
         connection
@@ -469,16 +477,18 @@ impl DatabaseOwner {
             .connection
             .lock()
             .map_err(|_| "Session storage owner is unavailable.")?;
-        let (prompt, outline, focus, notes): (
+        let (prompt, outline, focus, notes, curriculum_version, content_id): (
             Option<String>,
             Option<String>,
             Option<String>,
             String,
+            Option<i64>,
+            Option<String>,
         ) = conn
             .query_row(
-                "SELECT prompt_snapshot,outline_snapshot,focus,notes FROM sessions WHERE id=?1",
+                "SELECT prompt_snapshot,outline_snapshot,focus,notes,curriculum_version,content_id FROM sessions WHERE id=?1",
                 [id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
             )
             .map_err(db_error)?;
         let mut stmt=conn.prepare("SELECT a.id,a.ordinal,a.created_at_ms,aa.duration_ms,aa.unavailable_reason,t.familiarity,t.preparation_seconds,t.target_seconds,t.audience,t.follow_up FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN audio_assets aa ON aa.id=a.asset_id LEFT JOIN task_conditions t ON t.attempt_id=a.id WHERE st.session_id=?1 AND a.deleted_at_ms IS NULL ORDER BY a.ordinal").map_err(db_error)?;
@@ -500,6 +510,8 @@ impl DatabaseOwner {
             .unwrap_or(json!({"point":"","reason":"","example":""}));
         summary["focus"] = json!(focus);
         summary["notes"] = json!(notes);
+        summary["curriculumVersion"] = json!(curriculum_version);
+        summary["contentId"] = json!(content_id);
         summary["conditions"] = conditions.clone();
         summary["conditionsUnavailableReason"] = if conditions.is_null() {
             json!("This older recording did not store task conditions.")
@@ -1443,6 +1455,14 @@ fn insert_reservation(
         .ok_or("Invalid recording date.")?
         .with_timezone(&Local);
     tx.execute("INSERT OR IGNORE INTO sessions(id,profile_id,title,local_date,timezone_offset_seconds,started_at_ms,status,prompt_snapshot,outline_snapshot) VALUES (?1,'local',?2,?3,?4,?5,'in_progress',?6,?7)",params![session,title,local.format("%Y-%m-%d").to_string(),local.offset().local_minus_utc(),ms,context.map(|c|&c.prompt),context.map(|c|serde_json::to_string(&c.outline).unwrap())]).map_err(db_error)?;
+    if let Some(c) = context {
+        if c.content_id.as_ref().is_some_and(|id| id.len() > 96 || recording::validate_id(id).is_err()) {
+            return Err("Invalid curriculum item.".into());
+        }
+        // The first take fixes what the session used; later takes never rewrite it.
+        tx.execute("UPDATE sessions SET curriculum_version=?1,content_id=?2 WHERE id=?3 AND curriculum_version IS NULL AND content_id IS NULL",
+            params![c.curriculum_version, c.content_id, session]).map_err(db_error)?;
+    }
     let trashed: bool = tx
         .query_row(
             "SELECT deleted_at_ms IS NOT NULL FROM sessions WHERE id=?1",
@@ -1702,12 +1722,16 @@ mod tests {
             prompt: "Explain a trade-off".into(),
             outline: Outline { point: String::new(), reason: String::new(), example: String::new() },
             conditions: Conditions { familiarity: "familiar".into(), preparation_seconds: 15, target_seconds: 60, audience: None, follow_up: false },
+            curriculum_version: Some(1), content_id: Some("p-habit".into()),
         };
         for n in 1..=2 {
             owner.reserve(&format!("take-{n}"), &format!("op-{n}"), "Test take", Some(&context)).unwrap();
             owner.commit_recording(&saved(&root.0, &format!("take-{n}"))).unwrap();
         }
         owner.update_session("session", "Trade-offs", "Keep this note", &[], false).unwrap();
+        // The session records the curriculum version and item it used (4.5).
+        let detail = owner.get_session("session").unwrap();
+        assert_eq!((detail["curriculumVersion"].as_i64(), detail["contentId"].as_str()), (Some(1), Some("p-habit")));
         let takes = |o: &DatabaseOwner| -> Vec<u64> {
             o.get_session("session").unwrap()["attempts"].as_array().unwrap().iter().map(|a| a["ordinal"].as_u64().unwrap()).collect()
         };
@@ -1791,6 +1815,8 @@ mod tests {
                 audience: Some("A colleague".into()),
                 follow_up: false,
             },
+            curriculum_version: None,
+            content_id: None,
         };
         let handles: Vec<_> = (0..4)
             .map(|n| {
@@ -1888,6 +1914,8 @@ mod tests {
                 audience: None,
                 follow_up: false,
             },
+            curriculum_version: None,
+            content_id: None,
         }
     }
     #[test]
@@ -1940,7 +1968,7 @@ mod tests {
             .unwrap();
         {
             let conn = owner.connection.lock().unwrap();
-            conn.execute_batch("DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+            conn.execute_batch("ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
         }
         drop(owner);
         let upgraded = DatabaseOwner::open(&root.0).unwrap();
@@ -1950,7 +1978,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v8-")));
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v9-")));
         assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
     }
     fn api_result(take: &SavedRecording, run: &str, words: Option<Vec<(&str, u64, u64)>>) -> crate::audio::transcription::TranscriptionResult {
