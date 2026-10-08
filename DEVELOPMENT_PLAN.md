@@ -19,31 +19,25 @@ This file tracks *how far we are*. Section references like **§9** point into th
 
 | | |
 | --- | --- |
-| Active milestone | E is done; M0 is done except the user-dependent API transcription checks (0.22 live request, 0.23 benchmark). M2 build items are done but need desktop checks and the exit gate; M3 is in progress |
+| Active milestone | M3 Review and transcription (in progress). E is done. M0 is done except the two checks that need the user's provider keys (0.22 live request, 0.23 benchmark). M1 is done except a responsive check and empty/error states. M2's code is done; its remaining items are desktop/hardware checks and the exit gate |
 | Last updated | 2026-10-08 |
-| Repository | Everything is committed on `main`; the working tree is clean at the end of each session |
-| Built, not yet checked in the desktop app | Studio timer / Ctrl+Enter / live waveform fixes, waveform player (2.14), Trash (2.17), backup folder / create / check / replace / weekly (2.18–2.21), session Export (2.22) |
-| Blockers | None for coding. Desktop checks need the user at the laptop (or an agent driving the desktop app) |
+| Repository | Everything is committed on `main` and pushed to `origin` (github.com/koloIIIlo/ClearPractice); authored by Alex only |
+| Built, not yet checked in the desktop app | Studio timer / Ctrl+Enter / live waveform, waveform player (2.14), Trash (2.17), backup / check / replace / weekly / export (2.18–2.22), microphone test (2.12), discard interrupted take (2.5), close guard (2.10), local transcription with measures, filler review, corrections and search (M3), API transcription test panel (0.22) |
+| Blockers | None for coding. Desktop and hardware checks need the user at the laptop (or an agent that can drive the desktop app); 0.22/0.23 need the user's Deepgram/AssemblyAI keys and approval |
 
 **Next actions, in order**
-0. User: store a Deepgram and/or AssemblyAI key in Settings → Transcription → API transcription test, preview a take and approve one Send (closes 0.22).
-1. One desktop pass after rebuilding (`npm run tauri dev`) over the "Built, not yet checked" list above, then the manual M2 exit gate.
-2. M3: transcript seeking, filler candidates and measures (3.6–3.8), transcript corrections (3.9), search (3.13). The Transcribe flow itself is built; check it in the desktop app (Settings → Transcription → choose `bench/runtime.local/config-selected.json`, then Transcribe on a take).
-3. Remaining M2: recovery presentation (2.5), recording failure and close-guard checks (2.8–2.10). Decide whether backups should carry the API usage ledger (restoring an older ledger would undercount spending, so it is deliberately left out for now).
-4. M1: remaining responsive check (stacked feedback below 1100 px, 800×600) and 1.9 empty/error states.
+1. User: one desktop pass after rebuilding (`npm run tauri dev`) over the "Built, not yet checked" list, then the manual M2 exit gate. For transcription: Settings → Transcription → choose `bench/runtime.local/config-selected.json`, record a take, open its session, Transcribe.
+2. User (optional): store a Deepgram and/or AssemblyAI key in Settings → Transcription → API transcription test, preview a take and approve one Send (closes 0.22); then plan 0.23.
+3. M3 remaining code: model pack registry and verified import (3.3), worker protocol versioning (3.2), stored analysis runs/metric values (3.4), API transcription in the product behind its gate (3.14–3.19).
+4. Physical checks: unplug a USB microphone mid-take (2.9); M1 responsive check below 1100 px and 800×600 (1.8); empty/error states pass (1.9).
+5. Then milestone P (pitch tracker choice, P.1) and M4 content (start the licensed reference-clip search early).
 
 **Standing notes (not blockers)**
 - Do not request another personal speech sample or repeat the completed paid coaching test; the public benchmark (D-24) stands in for personal audio.
-- Optional API audio transcription stays disabled until its own enablement gate passes (see "Data that leaves this computer").
+- Optional API audio transcription stays out of the product until its enablement gate passes (see "Data that leaves this computer"); the Settings test panel only sends after an explicit, previewed approval.
+- Backups deliberately exclude the API usage ledger: restoring an older ledger would undercount spending. Decide in M5 whether to export it read-only.
+- The desktop profile `%LOCALAPPDATA%\com.clearpractice.app` was created on 8 Oct and was empty; Codex-era takes and the USD 0.000227 ledger entry are not on this machine's profile.
 - Rebuild/reopen the desktop app after adding native commands; never interrupt an active recording or concurrent user input.
-
---- | --- |
-| Active milestone | M2 Durable practice; core M0 exit gate passed. M1 manual keyboard/compact checks remain separate |
-| Last updated | 2026-10-08 |
-| Repository | M0 and M2 work committed on `main`: waveform player (44838b3), Trash (dcd058f), backup + restore check (93e2680), restore commit (2026-10-08) |
-| Next action | One desktop pass after rebuilding: Studio timer/Ctrl+Enter/live waveform fixes, waveform player (2.14), Trash (2.17), backup folder / create / check / replace / weekly (2.18–2.21), Export… (2.22), then the manual M2 exit gate. Then include the API usage ledger in backups, M2 reconciliation/recovery presentation and recording failure/manual close checks. Native SQLite v1, legacy receipt import, staged reference commits and real session history are implemented; verify and record the latest checks below. Product transcription/job integration follows in M3 |
-| Scope update | User-approved live text coaching succeeded and its saved receipt/shared ledger were verified: 291 input + 163 output tokens, USD 0.000227 estimated. Public benchmark replaces personal speech (D-24). CUDA turbo with filler prompt is selected. Optional audio API remains disabled behind its separate approval/enablement gate |
-| Blockers | No core M0 blocker. Do not request the completed text test or a personal sample again. API audio still needs separate approved requests. Native tests require normal Windows filesystem access; no validation was weakened. Desktop executable must be rebuilt/reopened for newly added commands; avoid interrupting active recording or concurrent user input |
 
 ---
 
@@ -244,7 +238,7 @@ The API tasks below add an estimated 3–5 days. Implement the shared budget fou
 - [x] 3.9 Transcript revisions: edits create a child revision; dependent metrics are invalidated; Reanalyze. Corrections are `source='user'` children of the machine revision; measures are computed per revision when read and never stored against a different text, so nothing stale can survive an edit (no separate Reanalyze step is needed); the original text, segments, measures and filler decisions stay with their revision
 - [x] 3.10 Evidence labels: Measured / Estimated / Your note / AI suggestion. Native views: take durations "Measured", transcripts, segment times, measures and pauses "Estimated", corrections and notes "Your note", coaching results "AI suggestion"; missing values show their reason
 - [~] 3.11 Failure paths: Retry transcription, Change model, Add notes; audio is never lost. Failed, cancelled and interrupted jobs show their reason with a Transcribe button; the recording and notes are untouched. Change model = Settings setup file for now
-- [~] 3.12 Settings → Transcription: (local setup panel built: native picker for the verified setup file; runtime and model hashes verified before it is stored). Remaining: independent Local / API / Off selector; local packs/backend/Benchmark; API provider/model/key status and clearly billable test. Local is default; Off preserves playback, notes, and existing transcripts
+- [~] 3.12 Settings → Transcription: (local setup panel built: native picker for the verified setup file; runtime and model hashes verified before it is stored; optional API transcription test panel with per-provider keys, preview and explicit Send built for 0.22). Remaining: independent Local / API / Off selector; local packs/backend/Benchmark; API provider/model/key status and clearly billable test. Local is default; Off preserves playback, notes, and existing transcripts
 - [~] 3.13 FTS5 index for transcripts, notes, prompts, phrases; wire it to the command palette. Native `search_content`: TEMP FTS5 index (unicode61, diacritics removed) over titles, notes, tags, prompt snapshots, transcripts and corrections of visible sessions only (never Trash), rebuilt only when `total_changes()` moved; all-terms prefix matching with query syntax neutralised; one best hit per session with a labelled excerpt. Ctrl+K in the desktop app now shows real sessions (it previously searched sample sessions). Phrases/prompts/guides join when M4 makes them real
 
 **Optional API transcription**
@@ -374,6 +368,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Final checks before push: Rust 54 passed (8 hardware tests ignored by default; all 8 passed earlier tonight and the transcription one again after the voice-activity change), Vitest 47/47 in 17 files, production build. Double-checked this plan and the handout: removed six stale rows of the old status table that an earlier cleanup had left below the new one, and refreshed status and next actions.
 - 2026-10-08: Voice-activity pauses (3.5): Rust analysis 4/4, CUDA hardware run shows a 1.4 s pause from the audio; Vitest review + ipc 17/17.
 - 2026-10-08: Junction attack test (2.6) passes on Windows with `mklink /J`.
 - 2026-10-08: Discard for interrupted takes (2.5): Rust recording 6/6, Vitest practice + ipc 15/15, crate builds.
