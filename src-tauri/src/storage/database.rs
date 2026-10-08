@@ -14,7 +14,7 @@ use std::{
 };
 
 type Result<T> = std::result::Result<T, String>;
-const VERSION: i64 = 9;
+const VERSION: i64 = 10;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
@@ -163,7 +163,10 @@ impl DatabaseOwner {
             if version < 8 {
                 migrate(&mut connection, include_str!("schema-v8.sql"))?;
             }
-            migrate(&mut connection, include_str!("schema-v9.sql"))?;
+            if version < 9 {
+                migrate(&mut connection, include_str!("schema-v9.sql"))?;
+            }
+            migrate(&mut connection, include_str!("schema-v10.sql"))?;
         }
         backfill_measures(&connection)?;
         connection
@@ -477,18 +480,21 @@ impl DatabaseOwner {
             .connection
             .lock()
             .map_err(|_| "Session storage owner is unavailable.")?;
-        let (prompt, outline, focus, notes, curriculum_version, content_id): (
+        #[allow(clippy::type_complexity)]
+        let (prompt, outline, focus, notes, curriculum_version, content_id, ease, takeaway): (
             Option<String>,
             Option<String>,
             Option<String>,
             String,
             Option<i64>,
             Option<String>,
+            Option<i64>,
+            Option<String>,
         ) = conn
             .query_row(
-                "SELECT prompt_snapshot,outline_snapshot,focus,notes,curriculum_version,content_id FROM sessions WHERE id=?1",
+                "SELECT prompt_snapshot,outline_snapshot,focus,notes,curriculum_version,content_id,ease,takeaway FROM sessions WHERE id=?1",
                 [id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
             )
             .map_err(db_error)?;
         let mut stmt=conn.prepare("SELECT a.id,a.ordinal,a.created_at_ms,aa.duration_ms,aa.unavailable_reason,t.familiarity,t.preparation_seconds,t.target_seconds,t.audience,t.follow_up FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN audio_assets aa ON aa.id=a.asset_id LEFT JOIN task_conditions t ON t.attempt_id=a.id WHERE st.session_id=?1 AND a.deleted_at_ms IS NULL ORDER BY a.ordinal").map_err(db_error)?;
@@ -512,6 +518,8 @@ impl DatabaseOwner {
         summary["notes"] = json!(notes);
         summary["curriculumVersion"] = json!(curriculum_version);
         summary["contentId"] = json!(content_id);
+        summary["ease"] = json!(ease);
+        summary["takeaway"] = json!(takeaway);
         summary["conditions"] = conditions.clone();
         summary["conditionsUnavailableReason"] = if conditions.is_null() {
             json!("This older recording did not store task conditions.")
@@ -568,6 +576,30 @@ impl DatabaseOwner {
         let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
         let count = conn
             .execute("UPDATE sessions SET focus=?1 WHERE id=?2 AND deleted_at_ms IS NULL", params![focus, id])
+            .map_err(db_error)?;
+        if count != 1 {
+            return Err("This session is unavailable.".into());
+        }
+        Ok(())
+    }
+
+    /// End-of-practice reflection (4.11): an ease rating 1–5 (Your note, not a
+    /// score) and one takeaway. `None` leaves a value unchanged.
+    pub fn set_session_reflection(&self, id: &str, ease: Option<u8>, takeaway: Option<&str>) -> Result<()> {
+        recording::validate_id(id)?;
+        if ease.is_some_and(|e| !(1..=5).contains(&e)) {
+            return Err("Choose an ease rating from 1 to 5.".into());
+        }
+        let takeaway = takeaway.map(str::trim);
+        if takeaway.is_some_and(|t| t.len() > 500 || t.contains('\0')) {
+            return Err("Keep the takeaway under 500 characters.".into());
+        }
+        let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+        let count = conn
+            .execute(
+                "UPDATE sessions SET ease=COALESCE(?1,ease),takeaway=COALESCE(?2,takeaway) WHERE id=?3 AND deleted_at_ms IS NULL",
+                params![ease, takeaway.map(|t| if t.is_empty() { None } else { Some(t) }).flatten(), id],
+            )
             .map_err(db_error)?;
         if count != 1 {
             return Err("This session is unavailable.".into());
@@ -1772,6 +1804,14 @@ mod tests {
         owner.set_session_focus("session", None).unwrap();
         assert!(owner.get_session("session").unwrap()["focus"].is_null());
 
+        // The completion reflection is the user's own note (4.11).
+        owner.set_session_reflection("session", Some(4), Some(" Pause before the example ")).unwrap();
+        owner.set_session_reflection("session", None, None).unwrap(); // leaves both unchanged
+        let detail = owner.get_session("session").unwrap();
+        assert_eq!((detail["ease"].as_i64(), detail["takeaway"].as_str()), (Some(4), Some("Pause before the example")));
+        assert!(owner.set_session_reflection("session", Some(6), None).is_err());
+        assert!(owner.set_session_reflection("session", Some(0), None).is_err());
+
         // Removing the last take keeps the session and its note.
         owner.move_take_to_trash("take-2", 30).unwrap();
         assert!(owner.empty_trash().is_ok());
@@ -1968,7 +2008,7 @@ mod tests {
             .unwrap();
         {
             let conn = owner.connection.lock().unwrap();
-            conn.execute_batch("ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+            conn.execute_batch("ALTER TABLE sessions DROP COLUMN ease; ALTER TABLE sessions DROP COLUMN takeaway; ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
         }
         drop(owner);
         let upgraded = DatabaseOwner::open(&root.0).unwrap();
@@ -1978,7 +2018,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v9-")));
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v10-")));
         assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
     }
     fn api_result(take: &SavedRecording, run: &str, words: Option<Vec<(&str, u64, u64)>>) -> crate::audio::transcription::TranscriptionResult {

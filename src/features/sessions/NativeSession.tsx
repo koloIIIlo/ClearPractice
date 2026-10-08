@@ -34,6 +34,14 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
     <PageHeader title={session.title} description={`${formatLongDay(session.localDate)} · ${session.attemptCount} saved takes · ${formatClock(session.durationMs)}${session.curriculumVersion ? ` · curriculum v${session.curriculumVersion}` : ""}`} />
     {session.prompt && <Panel><p>{session.prompt}</p></Panel>}
     {session.focus && <p className="text-meta"><span className="text-muted-foreground">Your focus for the retakes:</span> {session.focus}</p>}
+    {(session.ease || session.takeaway) && (
+      <p className="text-meta">
+        <span className="text-muted-foreground">Your reflection:</span>
+        {session.ease ? ` felt ${session.ease} of 5 (1 very hard, 5 very easy)` : ""}
+        {session.ease && session.takeaway ? " · " : " "}
+        {session.takeaway ? `keep for next time: ${session.takeaway}` : ""}
+      </p>
+    )}
     {session.conditionsUnavailableReason && <p className="text-meta text-muted-foreground">Task conditions unavailable: {session.conditionsUnavailableReason}</p>}
     <p className="text-meta text-muted-foreground">Listen, transcribe a take on this computer, review fillers and pauses, and keep your own notes. Coaching feedback is still being developed.</p>
     {attempts.length === 0 && <p role="status">This take is unavailable.</p>}

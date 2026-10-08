@@ -5,6 +5,7 @@ import { cleanup } from "@testing-library/react";
 afterEach(() => {
   cleanup();
   window.location.hash = "";
+  try { window.localStorage.clear(); } catch { /* no storage in this environment */ }
 });
 
 // jsdom lacks these browser APIs used by Radix, the sidebar, and Recharts.

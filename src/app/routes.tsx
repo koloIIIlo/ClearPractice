@@ -4,6 +4,7 @@ import { TodayPage } from "@/features/today/TodayPage";
 import { ExercisesPage } from "@/features/exercises/ExercisesPage";
 import { ExerciseDetailPage } from "@/features/exercises/ExerciseDetailPage";
 import { StudioPage } from "@/features/practice/StudioPage";
+import { CompletionPage } from "@/features/practice/CompletionPage";
 import { SessionsPage } from "@/features/sessions/SessionsPage";
 import { TrashPage } from "@/features/sessions/TrashPage";
 import { ReviewPage } from "@/features/review/ReviewPage";
@@ -51,6 +52,7 @@ export const routes: RouteObject[] = [
               },
             ],
           },
+          { path: "practice/done", element: <CompletionPage />, handle: crumb("Practice complete") },
           { path: "practice/:exerciseId", element: <StudioPage />, handle: crumb("Practice studio") },
           {
             path: "sessions",

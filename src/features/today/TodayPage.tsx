@@ -11,6 +11,7 @@ import { formatLongDay, formatRelativeDay } from "@/lib/format";
 import { useTodayPlan } from "@/lib/ipc/queries";
 import type { SessionLength, TodayPlan } from "@/lib/ipc/schemas";
 import { RecordingLibrary } from "@/features/practice/RecordingLibrary";
+import { loadSequence, startSequence, stepUrl } from "@/features/practice/sequence";
 
 const LENGTHS: { value: SessionLength; label: string; hint: string }[] = [
   { value: "standard", label: "About 13 minutes", hint: "Four short exercises" },
@@ -46,8 +47,13 @@ function TodayContent({
   const navigate = useNavigate();
   const totalMinutes = plan.steps.reduce((n, s) => n + s.minutes, 0);
   const firstRun = !plan.lastCompleted && !plan.resumable;
-  const start = () =>
-    navigate(`/practice/ex-repeat?prompt=p-habit&plan=${length}`, { state: { section: "today" } });
+  // Today's sequence (4.10): start walks the plan step by step; a sequence in progress can be resumed.
+  const active = loadSequence(plan.localDate);
+  const start = () => {
+    const state = startSequence(plan.localDate, length, plan.steps);
+    navigate(stepUrl(state.steps[0], state.localDate), { state: { section: "today" } });
+  };
+  const resume = () => active && navigate(stepUrl(active.steps[active.index], active.localDate), { state: { section: "today" } });
 
   return (
     <>
@@ -108,7 +114,16 @@ function TodayContent({
               </fieldset>
 
               <div className="mt-6 flex flex-wrap items-center gap-3">
-                {plan.resumable ? (
+                {active ? (
+                  <>
+                    <Button size="lg" onClick={resume}>
+                      <RotateCcw aria-hidden /> Resume (step {active.index + 1} of {active.steps.length})
+                    </Button>
+                    <Button size="lg" variant="outline" onClick={start}>
+                      Start fresh
+                    </Button>
+                  </>
+                ) : plan.resumable ? (
                   <>
                     <Button size="lg" asChild>
                       <Link to={`/sessions/${plan.resumable.id}`}>

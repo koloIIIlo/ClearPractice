@@ -31,7 +31,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 3. M3: no code items left; the rest waits on desktop checks, a live provider response (0.22) and the API enablement gate.
 4. Physical check: unplug a USB microphone mid-take (2.9).
 5. Milestone P: the Praat spot-check (gate P, settles D-17), then P.5/P.6 with M4 reference clips. Then M4 content (start the licensed reference-clip search early).
-6. M4 next: reference clips (4.4) for Listen and imitate, the daily sequences (4.10) and the completion view (4.11).
+6. M4 next: reference clips (4.4, needs the user's OK to download), real Today data (4.12), real Phrases (4.15), Progress views (4.16), attempt comparison (4.14).
 
 **Standing notes (not blockers)**
 - Do not request another personal speech sample or repeat the completed paid coaching test; the public benchmark (D-24) stands in for personal audio.
@@ -293,8 +293,8 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 - [~] 4.7 Thought groups (listen, read, hide, explain). Built: the Thought groups exercise in the Studio shows a chosen passage split into its groups (picker locked once a take exists), a Hide the text and explain step, and records takes under "Read <passage> in thought groups, then explain it"; tests cover hide/show, the take task and the route. Remaining: "listen" (needs a recorded or synthesised reading of each passage) and a desktop check
 - [~] 4.8 Listen and imitate (verify pitch-preserving speed before enabling 0.75/1.25×; uses the P.5 contour overlay). Built so far: choose one feature (emphasis, phrase rhythm, clear endings), stored as the session focus after the first take, with a plain note that reference clips are not bundled yet. Blocked: the clips themselves (4.4) and the contour overlay (P.5); pitch-preserving 0.75/1.25× is already verified in the player
 - [~] 4.9 Use a better expression (typed or recorded sentences). Built: the exercise starts from a saved phrase (picker, explanation, examples), three sentence fields for typed drafts, takes recorded under "Use <expression> in three sentences of your own", and Save sentences to session notes once a take exists. Remaining: typed-only practice without a recording (needs a session without audio) and a desktop check
-- [ ] 4.10 Daily 13-minute and 5-minute sequences; custom session; resume / start fresh
-- [ ] 4.11 Completion view: attempts, chosen improvement, save a phrase, ease self-report 1–5
+- [~] 4.10 Daily 13-minute and 5-minute sequences; custom session; resume / start fresh. Built: Start practice on Today walks the 13-minute (repeat 6, thought groups 2, imitate 3, expression 2) or 5-minute plan through the Studio with a step banner (step N of M, Next step / Finish, Leave sequence); each step opens with the day's prompt or passage (stable per day); Today offers Resume (step N of M) / Start fresh for a sequence in progress (per-device local storage; a new day starts fresh); a custom session is any exercise started from Exercises. Remaining: the plan's steps still come from the sample Today plan (4.12), and a desktop check
+- [~] 4.11 Completion view: attempts, chosen improvement, save a phrase, ease self-report 1–5. Built: after the last step, Practice complete lists the sessions and takes and the focuses worked on, asks how easy it felt (1–5, the user's own rating, labelled Your note, never a score) and one takeaway, stored on every session of the sequence (schema v10 `ease`, `takeaway`; shown in the session view). Remaining: saving a phrase from here needs real Phrases (4.15)
 
 **Screens**
 - [ ] 4.12 Today: focus sentence, Start/Resume, exercise rows, due phrase, weekly rows
@@ -372,6 +372,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Daily sequences and completion view (4.10, 4.11, schema v10): Rust 72 passed / 12 ignored (reflection stored, validated, unchanged on null); Vitest 86/86 in 28 files (sequence state, Today → steps → Practice complete, reflection saved to every session); typecheck clean.
 - 2026-10-08: Curriculum versioning (4.5, schema v9): Rust 72 passed / 12 ignored; Vitest 83/83; typecheck clean.
 - 2026-10-08: Exercises 4.6, 4.8 (partial), 4.9: Rust 72 passed / 12 ignored (session focus stored, validated, cleared); Vitest 83/83 in 27 files; typecheck clean; expression screen checked in the browser preview.
 - 2026-10-08: Remove a single take (2.23, schema v8): Rust 72 passed / 12 ignored; Vitest 80/80 in 26 files; typecheck clean.

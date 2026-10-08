@@ -22,6 +22,7 @@ import { useExercises, usePhrases, usePrompts, useInputDevices } from "@/lib/ipc
 import { useIpc } from "@/lib/ipc";
 import type { ExerciseDefinition, PhraseCard, PracticePrompt } from "@/lib/ipc/schemas";
 import { ExpressionPanel, expressionPrompt, ImitationPanel, RepeatFocus } from "./ExercisePanels";
+import { SequenceBar } from "./SequenceBar";
 import { cn } from "@/lib/utils";
 import { describeDemands } from "@/features/exercises/describe";
 import { useRecorder, type Recorder } from "./recorder";
@@ -79,6 +80,8 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
     exerciseType: exercise.type, prompt: prompt.text, outline, conditions: prompt.conditions });
   const [announcement, setAnnouncement] = useState("");
   const [trashed, setTrashed] = useState<Set<string>>(() => new Set());
+  const [params] = useSearchParams();
+  const inSequence = params.get("seq") === "1";
   const studioRef = useRef<HTMLDivElement>(null);
 
   const takeNumber = rec.takes.length + (rec.phase === "saved" || rec.phase === "interrupted" ? 0 : 1);
@@ -130,6 +133,8 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
       <div aria-live="polite" className="sr-only">
         {announcement}
       </div>
+
+      {inSequence && <SequenceBar sessionId={sessionId} takeCount={rec.takes.length} locked={locked} />}
 
       <header className="space-y-2">
         <p className="text-meta text-muted-foreground">

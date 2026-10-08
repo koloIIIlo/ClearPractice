@@ -426,6 +426,9 @@ export const SessionDetail = SessionSummary.extend({
   /** Curriculum version and item the session used (4.5); null for older sessions. */
   curriculumVersion: z.number().int().positive().nullable().optional(),
   contentId: z.string().nullable().optional(),
+  /** Completion reflection (4.11): the user's own ease rating and takeaway. */
+  ease: z.number().int().min(1).max(5).nullable().optional(),
+  takeaway: z.string().nullable().optional(),
 });
 export type SessionDetail = z.infer<typeof SessionDetail>;
 

@@ -82,6 +82,8 @@ export interface IpcClient {
   getSession(sessionId: string): Promise<SessionDetail>;
   /** The one thing to improve in the next take (4.6), or the imitated feature (4.8); null clears it. */
   setSessionFocus(sessionId: string, focus: string | null): Promise<void>;
+  /** End-of-practice reflection (4.11): ease 1–5 and a takeaway; null leaves a value unchanged. */
+  setSessionReflection(sessionId: string, ease: number | null, takeaway: string | null): Promise<void>;
   updateSession(sessionId: string, details: { title: string; notes: string; tags: string[]; favorite: boolean }): Promise<void>;
   listTrash(): Promise<TrashList>;
   moveSessionToTrash(sessionId: string): Promise<void>;

@@ -101,6 +101,7 @@ export function createNativeClient(): IpcClient {
       }
       return () => removers.forEach((remove) => remove());
     },
+    setSessionReflection: async (sessionId, ease, takeaway) => { await command("set_session_reflection", z.null(), { sessionId, ease, takeaway }); },
     setSessionFocus: async (sessionId, focus) => { await command("set_session_focus", z.null(), { sessionId, focus }); },
     updateSession: async (sessionId, details) => { await command("update_session", S.Id.nullable(), { sessionId, ...details }); },
     getSavedRecording: (assetId) => command("get_saved_recording", S.SavedRecording, { assetId }),
