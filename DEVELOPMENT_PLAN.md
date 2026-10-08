@@ -19,12 +19,43 @@ This file tracks *how far we are*. Section references like **§9** point into th
 
 | | |
 | --- | --- |
+| Active milestone | M3 local transcription and review, started early because M2's build items are done. M2 still needs its manual desktop checks and exit gate |
+| Last updated | 2026-10-08 |
+| Repository | Everything is committed on `main`; the working tree is clean at the end of each session |
+| Built, not yet checked in the desktop app | Studio timer / Ctrl+Enter / live waveform fixes, waveform player (2.14), Trash (2.17), backup folder / create / check / replace / weekly (2.18–2.21), session Export (2.22) |
+| Blockers | None for coding. Desktop checks need the user at the laptop (or an agent driving the desktop app) |
+
+**Next actions, in order**
+1. One desktop pass after rebuilding (`npm run tauri dev`) over the "Built, not yet checked" list above, then the manual M2 exit gate.
+2. M3 local transcription in the app: job queue, transcript storage, Transcribe on a saved take, transcript view (3.1–3.4, 3.8, 3.11).
+3. Remaining M2: recovery presentation (2.5), recording failure and close-guard checks (2.8–2.10), microphone test (2.12), API usage ledger in backups.
+4. M1 manual keyboard pass and compact-navigation check.
+
+**Standing notes (not blockers)**
+- Do not request another personal speech sample or repeat the completed paid coaching test; the public benchmark (D-24) stands in for personal audio.
+- Optional API audio transcription stays disabled until its own enablement gate passes (see "Data that leaves this computer").
+- Rebuild/reopen the desktop app after adding native commands; never interrupt an active recording or concurrent user input.
+
+--- | --- |
 | Active milestone | M2 Durable practice; core M0 exit gate passed. M1 manual keyboard/compact checks remain separate |
 | Last updated | 2026-10-08 |
 | Repository | M0 and M2 work committed on `main`: waveform player (44838b3), Trash (dcd058f), backup + restore check (93e2680), restore commit (2026-10-08) |
 | Next action | One desktop pass after rebuilding: Studio timer/Ctrl+Enter/live waveform fixes, waveform player (2.14), Trash (2.17), backup folder / create / check / replace / weekly (2.18–2.21), Export… (2.22), then the manual M2 exit gate. Then include the API usage ledger in backups, M2 reconciliation/recovery presentation and recording failure/manual close checks. Native SQLite v1, legacy receipt import, staged reference commits and real session history are implemented; verify and record the latest checks below. Product transcription/job integration follows in M3 |
 | Scope update | User-approved live text coaching succeeded and its saved receipt/shared ledger were verified: 291 input + 163 output tokens, USD 0.000227 estimated. Public benchmark replaces personal speech (D-24). CUDA turbo with filler prompt is selected. Optional audio API remains disabled behind its separate approval/enablement gate |
 | Blockers | No core M0 blocker. Do not request the completed text test or a personal sample again. API audio still needs separate approved requests. Native tests require normal Windows filesystem access; no validation was weakened. Desktop executable must be rebuilt/reopened for newly added commands; avoid interrupting active recording or concurrent user input |
+
+---
+
+## Data that leaves this computer: shared rules
+
+These rules apply to every API purpose: transcription (M0 0.20–0.23, M3 3.14–3.19), coaching (M0 0.16–0.19, M5) and any later provider. Tasks and acceptance checks refer to them instead of restating them.
+
+1. **Local by default.** Recording, local transcription, prosody, storage and backups never send anything. API modes are opt-in, separate per purpose (Transcription Local / API / Off; Coaching API / Local LLM / Off), with no silent fallback between providers and no automatic downloads.
+2. **Preview, then one explicit send.** Every request shows exactly what will be sent (audio and hints, or text), the recipient, model, price basis and estimated cost. Approval is single-use and bound to a hash of the payload plus provider, configuration, model and price version; any change needs a fresh preview.
+3. **Nothing sends by itself.** Choosing a mode, storing a key, finishing a recording, switching screens, restarting, recovering, restoring or reconnecting never dispatches a request. Paid jobs never resume or retry automatically.
+4. **One shared budget.** All purposes reserve against one ledger: USD 5/month stop, USD 4 warning (D-7, D-22). Unknown price or usage stays Unknown, never 0; a cancelled or timed-out request keeps its possible charge. Free provider credits do not change the recorded price.
+5. **Keys stay in Windows Credential Manager** (0.17), bound to one provider configuration. They never appear in SQLite, logs, exports, backups or frontend storage, and an endpoint change never forwards an old key.
+6. **Failures never cost data.** Audio, notes and earlier results stay intact through auth errors, rate limits, malformed output, refusals, timeouts and cancellation.
 
 ---
 
@@ -66,19 +97,19 @@ Resolves the hardware open questions in §10 and §18.
 | D-10 | Keep backups locally in a user-selected folder; retain original recordings until explicit deletion (§18) | Confirmed; exact backup folder selected in the app | 2026-09-29 |
 | D-11 | Reuse existing local Whisper packs first; decide on any additional one-time download after benchmarking | Existing pack found; download decision deferred | 2026-09-29 |
 | D-12 | Rubato 0.16.2 FFT resampling with delay trimming and tail flushing; preserve immutable original audio | Chosen; duration/impulse/alias/cache tests pass | 2026-10-04 |
+| D-13 | Verified whisper.cpp 1.9.1 `whisper-cli.exe` sidecar, one worker owner, bounded JSON/progress, explicit cancellation and source preservation | Chosen and exercised by offline harness; packaged integration pending | 2026-10-04 |
 | D-14 | shadcn preset `radix-nova`; primitives customised in place (buttons ≥ 40 px, sidebar 216 px, `nav` breakpoint 800 px, CommandDialog a11y fix) | Chosen | 2026-09-29 |
 | D-15 | Until native commands exist, the UI runs on `createMockClient()`, which parses through the same Zod schemas as the future Tauri client | Chosen | 2026-09-29 |
 | D-16 | Turbo CUDA with initial prompt `Umm, so, uh, I think, like, you know.`; all filler events remain review candidates | Chosen: 13/14 UH/UM retained, zero inserted in four public trials; no verified word alignment | 2026-10-07 |
 | D-17 | Pitch tracker for prosody (YIN / pYIN / McLeod vs. CREPE-tiny) → decided by P.1 | **Open** | |
 | D-18 | Mood/emotion detection from voice: **not built**. Acted-emotion training data makes it unreliable for second-language speech; self-reported ease + energy/pitch-range measures cover the need. Revisit only as a local experiment | Deferred | 2026-09-29 |
-| D-13 | Verified whisper.cpp 1.9.1 `whisper-cli.exe` sidecar, one worker owner, bounded JSON/progress, explicit cancellation and source preservation | Chosen and exercised by offline harness; packaged integration pending | 2026-10-04 |
 | D-19 | Content focus: explaining complex topics, debating, and teaching; subject pool includes sport, economics, religion, crypto, programming, anime, and books | Confirmed | 2026-09-29 |
 | D-20 | Add optional API audio transcription. Transcription modes are Local / API / Off, independent of Coaching API / Local LLM / Off. Local remains the default; a saved take is uploaded only after its audio preview is approved | API option requested; default and interaction are working design choices | 2026-10-04 |
-| D-21 | First transcription API adapter: OpenAI `/v1/audio/transcriptions`. Evaluate `gpt-transcribe` first, `gpt-4o-mini-transcribe` for cost, and `whisper-1` when word/segment timings are needed. Select the initial API model by text errors, filler recall, latency, timing support, and cost | Proposed adapter and candidates; documentation verified, app benchmark pending | 2026-10-04 |
+| D-21 | First transcription API adapters: **Deepgram Nova-3** (`filler_words=true`, English) and **AssemblyAI Universal-3.5 Pro** (`disfluencies=true`), because both keep um/uh and return word timings, which the filler review and pause measures need. OpenAI `gpt-transcribe` has no filler option and timings only on `whisper-1`, so it moves to a later comparison. Prices for pre-recorded audio, checked on the providers' own pages 2026-10-08: Deepgram USD 0.0043/min (USD 200 sign-up credit, pay-as-you-go "No expiration"); AssemblyAI USD 0.21/h ≈ USD 0.0035/min (USD 50 credit, which their support says does not expire). Recorded usage always uses the list price, even while credit covers it. Data-use/training terms and Deepgram word timings for pre-recorded audio still to verify at implementation | Revised after the 2026-10-08 plan review (was: OpenAI gpt-transcribe first) | 2026-10-08 |
 | D-22 | Extend the existing USD 5/month app stop limit and USD 4 warning to **combined transcription + coaching** usage. Show subtotals by purpose; reserve costs atomically across both. Do not create a second USD 5 allowance or increase the limit | Working assumption extending D-7; shared limit not previously confirmed | 2026-10-04 |
 | D-23 | First API transcription workflow submits one complete, verified saved take as derived 16 kHz mono WAV through Rust. No live microphone stream, automatic upload, batch dispatch, or automatic provider fallback. Intonation and pause analysis remain local | Working design choice | 2026-10-04 |
-| D-25 | Backups are single ZIP files: `zip` 8.6.0 (Stored/Deflate only, `flate2` 1.1.10 pure-Rust backend) and `tauri-plugin-dialog` 2.8.1. Pickers open from Rust, so the UI never sends paths and needs no JS dialog permission | User chose ZIP + folder picker | 2026-10-08 |
 | D-24 | Use a downloaded public reference sample for the current benchmark instead of asking for personal speech again. Eight complete Nyra Disfluency Speech English test clips total 61.934 s, concatenated without trimming; independent dataset annotations identify fillers/restarts | User requested internet audio; provisional public-sample results do not measure personal accuracy | 2026-10-04 |
+| D-25 | Backups are single ZIP files: `zip` 8.6.0 (Stored/Deflate only, `flate2` 1.1.10 pure-Rust backend) and `tauri-plugin-dialog` 2.8.1. Pickers open from Rust, so the UI never sends paths and needs no JS dialog permission | User chose ZIP + folder picker | 2026-10-08 |
 
 ---
 
@@ -98,7 +129,7 @@ Goal: prove recording durability, Whisper on this laptop, and one bounded API ca
 
 **Scaffold**
 - [x] 0.1 Scaffold the Tauri 2 + React + TS + Vite app in the repo root (`src/`, `src-tauri/`)
-- [~] 0.2 Pin exact dependency versions, commit lockfiles (§8). All direct npm and Rust dependencies are now pinned exactly; updated Cargo.lock passes locked builds/tests. Commit of these changes remains pending
+- [x] 0.2 Pin exact dependency versions, commit lockfiles (§8). All direct npm and Rust dependencies are pinned exactly and both lockfiles are committed; new crates since (zip, flate2, tauri-plugin-dialog) are pinned too
 - [x] 0.3 Resolve the app-local data root through the Tauri path API at startup; create `database/`, `recordings/`, `imports/`, `models/`, `cache/`, `recovery/` (§12). Rust test verifies creation and repeat startup
 
 **Audio spike (§9)**
@@ -131,8 +162,8 @@ Goal: prove recording durability, Whisper on this laptop, and one bounded API ca
 **Optional API transcription spike (§10, D-20–23)**
 - [x] 0.20 Shared native USD 5 stop / USD 4 warning ledger passes concurrent-purpose, duplicate, corrupt-ledger and restart-uncertainty checks. Real approved request settled with 291/163 tokens and 227 micro-USD conservatively estimated. Locked JSON foundation remains until the later SQLite usage migration; preserve all existing charges
 - [x] 0.21 Provider-neutral TranscriptionResult local adapter and real normalized artifacts verified; native + Zod tests cover identity, unknown reasons, capabilities and invalid timing. Word alignment/diarization remain unavailable
-- [ ] 0.22 Verify candidate request/response formats, limits, current prices, and endpoint-specific retention, then build the native spike: prepare/hash a complete saved take, show recipient/model, duration/size, all language/context hints, and estimated charge; reserve budget and submit one approved multipart request to verify model access. Validate/save raw output and reject stale approval, invalid output, oversize audio, and duplicates. Requires 0.10, 0.17–18, and 0.20–21; credentials stay in the app
-- [ ] 0.23 After 0.22, benchmark the D-21 candidates against the same hand-checked audio as 0.14a **only after an in-app preview and explicit approval for each request**; measure upload + processing time, errors, filler omissions/insertions, alignment where available, and cost. Record the selected API model separately from D-4's local default
+- [ ] 0.22 Verify candidate request/response formats, limits, current prices, data-use/training terms and retention for Deepgram and AssemblyAI, then build the native spike: prepare/hash a complete saved take, show recipient/model, duration/size, all language/context hints, and estimated charge; reserve budget and submit one approved multipart request to verify model access. Validate/save raw output and reject stale approval, invalid output, oversize audio, and duplicates. Requires 0.10, 0.17–18, and 0.20–21; credentials stay in the app
+- [ ] 0.23 After 0.22, benchmark the D-21 candidates (Deepgram Nova-3, AssemblyAI Universal-3.5 Pro; free credits cover the test) against the same hand-checked audio as 0.14a **only after an in-app preview and explicit approval for each request**; measure upload + processing time, errors, filler omissions/insertions, alignment where available, and cost. Record the selected API model separately from D-4's local default
 
 These API transcription items add an estimated 1–2 days to feasibility if credentials are available. They have their own enablement gate in M3; unavailable credentials must not stall durable local practice. API transcription is not enabled by merely choosing API coaching.
 
@@ -160,7 +191,7 @@ These API transcription items add an estimated 1–2 days to feasibility if cred
 **Exit gate M1**
 - [~] Every key screen is navigable with sample data using only the keyboard. Automated: Today → Sessions → Review, Ctrl+K search, and 404. Still needed: a manual keyboard pass over Studio, Phrases, Progress, and Settings, plus a check of compact nav below 800 px
 
-**M1 notes**: all 8 screens exist. The desktop Studio now uses real recording, live devices/levels, a countdown, and saved-audio controls. Today and Studio include a separate persistent recording/recovery library. The browser still simulates capture; the rest of the history, curriculum, review, and feedback screens use labelled sample data. Full session persistence and analysis follow after M0.
+**M1 notes**: all 8 screens exist. Studio, Sessions, session review playback, Trash and Settings → Data and backups use real native data in the desktop app. Curriculum, transcripts, observations, phrases and progress still use labelled sample data until M3–M4.
 
 ## Milestone 2 — Durable practice (§9, §12, §13) · budget 6–10 days
 
@@ -173,7 +204,7 @@ These API transcription items add an estimated 1–2 days to feasibility if cred
 - [~] 2.6 Trusted native IDs and generated relative asset paths; recording, chunk, database and snapshot access checks links/junctions/containment. Traversal tests pass. Remaining adversarial link/archive and restore checks pending
 
 **Recording in the app**
-- [ ] 2.7 `start_recording` / `stop_recording` with idempotency keys; a second Stop creates no duplicate
+- [ ] 2.7 `start_recording` / `stop_recording` with idempotency keys; a second Stop creates no duplicate. The native behaviour is already proven by 0.7 and 2.4; what remains here is the whole-app check from the Studio (double-click Stop, Ctrl+Enter twice)
 - [ ] 2.8 Capture state machine: Preparing → Recording → Finalizing → Saved / Interrupted
 - [ ] 2.9 Device disconnect → safe stop and preserved audio; full-disk simulation → no false "Saved"
 - [ ] 2.10 Close-app guard during recording (Stop and save / Continue recording)
@@ -216,7 +247,7 @@ The API tasks below add an estimated 3–5 days. Implement the shared budget fou
 - [ ] 3.13 FTS5 index for transcripts, notes, prompts, phrases; wire it to the command palette
 
 **Optional API transcription**
-- [ ] 3.14 Integrate the D-21 OpenAI adapter behind `TranscriptionProvider` and the typed IPC client; capability-check model parameters, enforce the verified upload limit, and stream the prepared file from Rust. No frontend paths, audio byte arrays, or browser-side API requests
+- [ ] 3.14 Integrate the D-21 adapter (Deepgram or AssemblyAI, whichever wins 0.23) behind `TranscriptionProvider` and the typed IPC client; capability-check model parameters, enforce the verified upload limit, and stream the prepared file from Rust. No frontend paths, audio byte arrays, or browser-side API requests
 - [ ] 3.15 Preview → Transcribe via API: whole selected take, playable prepared audio, recipient/model, duration/size, all included hints, price/date, estimated cost, and remaining shared budget. Approval is single-use and bound to audio hash + hints + provider/config/model + price version; any change requires a fresh preview. Settings alone never uploads audio
 - [ ] 3.16 Save API runs, raw results, transcript revisions, request IDs, capability/timing provenance, and usage. Retranscription creates a separate run; never overwrites local or corrected text. Cache by exact uploaded audio + hints + provider/model/settings/adapter version; Retranscribe is an explicit paid action
 - [ ] 3.17 Shared usage ledger and atomic reservations (0.20): transcription audio-duration/token categories and coaching token categories, separate subtotals, combined warning/stop limits. Missing price/usage remains unknown; cancellation/timeout after submission retains possible charge. Display billed/estimated/uncertain separately
@@ -352,7 +383,6 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 - 2026-10-07: Core M0 closed. Six profiles × four public trials are published in bench/results-2026-10.json/.md; selected CUDA turbo + exact filler prompt has warm worker median 11.532 s, total median 14.022 s, peak working set 380.2 MiB, 3/194 verbatim edits, 13/14 UH/UM retained and zero insertions in all trials. Initial cache state and per-process VRAM are unknown; older JFK GPU slowness was not reproduced and has no proven cause. CrisperWhisper adapter/weights experiment deferred, not benchmarked. Portable setup selects CUDA or explicit CPU base without automatic fallback.
 - 2026-10-07: User supplied one successful, explicitly approved in-app GPT-6 Luna feedback result. Agent verified saved feedback metadata and the shared ledger without reading credentials: 291 input / 163 output tokens, estimated USD 0.000227, settled. Suggestions preserve meaning and label natural comparative phrasing as optional style. No audio upload or extra paid request. Broader coaching quality and optional audio API gates remain separate.
 - 2026-10-07: Started M2 with rusqlite 0.40.2 bundled SQLite, single connection owner, WAL/FK/FULL sync, transactional v1 schema, online pre-migration snapshots, native history/edit commands and staged capture references. Legacy receipts import idempotently; missing audio stays flagged, task details unknown, and user edits survive restart. Native Review/Compare play real recordings and bypass simulated observations. Recorder events announce Saved only after SQLite commit; failed references leave files/receipts recoverable. Full ZIP backup/restore, Trash, waveform controls and comprehensive recovery/manual acceptance remain unfinished. API usage remains in its locked JSON owner; migrate later without dropping the live charge.
-
 - 2026-10-04: At the user's request, updated blueprint rev. 3 and this tracker for optional API audio transcription (D-20–23, 0.20–23, 3.14–19, A-23–25). Updated `handout.md` for another chat/machine. This is documentation and planned scope, not an implemented API feature; no audio was submitted or paid request made. Existing recording progress and remaining local feasibility tasks are preserved. Added API allowances total approximately 4–7 working days, beyond the previous filler/prosody extension; estimates need validation.
 - 2026-10-04: Verified official OpenAI [file transcription guide](https://developers.openai.com/api/docs/guides/speech-to-text), [pricing](https://developers.openai.com/api/docs/pricing), [Whisper model](https://developers.openai.com/api/docs/models/whisper-1), and [data controls](https://developers.openai.com/api/docs/guides/your-data). The guide recommends `gpt-transcribe`; word/segment timestamp parameters are specific to `whisper-1`. Current rates: `gpt-transcribe` USD 0.0045/min, `gpt-4o-mini-transcribe` about USD 0.003/min, `whisper-1` USD 0.006/min. Store dated prices/capabilities and recheck at implementation; these facts do not demonstrate filler fidelity or performance on this user's audio. Provider retention is endpoint-specific; do not apply a generic 30-day assumption or promise deletion from local deletion.
 - 2026-10-04: Documentation verification passed: all 13 new API task/acceptance IDs occur once and remain unchecked, blueprint source IDs are unique, and every source reference resolves. Reviewed privacy/offline/dependency wording across the three documents; `git diff --check` passes. No application code changed in this planning session.
@@ -361,23 +391,16 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 - 2026-10-04: CPAL's `RealtimeDenied` and `DeviceChanged` notifications describe an active stream, so they do not terminate a take. Actual stream failures, queue overruns, and driver xruns stop capture and retain recovery chunks without a false Saved state. One concurrent-build run produced a driver xrun; all three crash tests passed after compilation finished. Keep recording ahead of background work, as required by §9.
 - 2026-10-04: Opened the native desktop app and verified Today/Studio render, native mode is selected, real microphone enumeration appears, and the saved-recording library is reachable. Further UI input was declined because user input was detected, so in-window recording, audible playback, reopen, and close-dialog checks remain manual tasks. Native capture and recovery were verified through the hardware harness. The development preview remains open.
 - 2026-10-04: Pinned direct Rust versions to the existing lockfile and added SHA-256 hashing plus Tauri's scoped asset protocol. Only `http-range` 0.1.5 needed downloading. No model weights or coaching requests were downloaded/submitted.
-
 - 2026-09-29: M0 0.4 pins CPAL 0.18.2 and adds a native `list_input_devices` command with stable device IDs and supported input format ranges. A live WASAPI smoke test returned three devices and six ranges per device without opening a stream. `cargo test --locked --offline` passed (one regular test; the hardware smoke test is ignored by default and passed when run explicitly). Frontend typecheck and 15/15 Vitest tests passed with a single reused worker. The desktop UI still shows mock devices until the native IPC client is connected.
-
 - 2026-09-29: M0 0.3 now resolves Tauri's `app_local_data_dir()` on startup and creates the six planned subdirectories. `cargo fmt --check` and `cargo test --locked --offline` passed (one new Rust test checks directory creation and repeat startup). The desktop startup itself has not been manually launched in this session.
-
 - 2026-09-29: Found an existing `ggml-large-v3-turbo-q5_0.bin` (574,041,195 bytes; SHA-256 `394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2`) in `../Jellzfin Server/data/WhisperSubs/whisper/models/`. That folder also has `ggml-base.bin`; `../whispercpp/` has a `whisper-cli.exe`. These are outside this repository. Check model/binary provenance and benchmark them before choosing the default; do not copy model weights into Git.
-
 - 2026-09-29: Initial commit verification: `npm.cmd run typecheck` and `npm.cmd run build` passed; `npm.cmd test -- --pool=threads --maxWorkers=1` passed 15/15 tests. Default Vitest worker startup timed out in this environment, so use one worker for repeatable checks here. `cargo fmt --check` and `cargo test --locked --offline` passed; the Rust scaffold currently defines no tests.
-
 - 2026-09-29: Plan extended at the user's request. Filler-aware transcription added to the M0 benchmark (0.14a–c, D-16), and a new prosody milestone P (intonation and stress display, D-17) placed between M3 and M4; it adds about 1 day to M0 and 4–6 days overall. Mood detection deliberately left out (D-18). Model names and licences in these tasks come from memory and must be verified before adoption.
-
 - 2026-09-29: `npm test` passes 15/15 (phrase schedule, mock↔schema contract, keyboard shell navigation). `vite build` and `tsc` are clean. First `cargo build` of src-tauri succeeds.
 - 2026-09-29: Vitest workers time out when started during a cargo build (all 8 threads busy). Rerun after cargo finishes.
 - 2026-09-29: In Git Bash, `link` resolves to GNU coreutils and breaks Rust linking. Run cargo from PowerShell.
 - 2026-09-29: shadcn now imports `cn` from the `cn` npm package (github.com/shadcn-ui/cn, maintained by shadcn). Verified legitimate.
 - 2026-09-29: `useBlocker` guards in-app navigation during recording (verified). The window-close guard is part of M2 (2.10).
 - 2026-09-29: The main JS chunk is 1.1 MB (Recharts, Radix). Acceptable for an app loaded from disk; lazy-load Progress if cold start misses the 2 s target (6.5).
-
 - 2026-09-29: Hardware confirmed as Ryzen 7 3750H + GTX 1650 4 GB. 4 GB VRAM is enough for base.en/small.en on CUDA per upstream figures (§10); this still needs measuring in 0.14.
 - 2026-09-29: (Resolved) VS 2019 Build Tools had no Windows SDK; fixed by installing Build Tools 2026 (E-3).
