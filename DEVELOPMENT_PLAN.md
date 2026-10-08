@@ -19,7 +19,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 
 | | |
 | --- | --- |
-| Active milestone | M3 Review and transcription: all code items are built; what remains are desktop checks, a live provider response (0.22) and the separate API enablement gate. Milestone P: P.2–P.4, P.7, P.8 done (stored YIN contour, intonation view with playhead and click-to-seek, phrase-ending readout); P.1 waits on the Praat spot-check, P.5/P.6 on M4 reference clips. E is done. M0 is done except the two checks that need the user's provider keys (0.22 live request, 0.23 benchmark). M1 is done (1.9 empty/error states verified by tests). M2's code is done; its remaining items are desktop/hardware checks and the exit gate |
+| Active milestone | M3 Review and transcription: all code items are built; exit gate: timing after resampling and edit-keeps-original passed, worker crash passed apart from recording a live take afterwards; what remains are desktop checks, a live provider response (0.22) and the separate API enablement gate. Milestone P: P.2–P.4, P.7, P.8 done (stored YIN contour, intonation view with playhead and click-to-seek, phrase-ending readout); P.1 waits on the Praat spot-check, P.5/P.6 on M4 reference clips; gate P's gaps/no-score item is passed, the Praat comparison remains. E is done. M0 is done except the two checks that need the user's provider keys (0.22 live request, 0.23 benchmark). M1 is done (1.9 empty/error states verified by tests). M2's code is done; its remaining items are desktop/hardware checks and the exit gate |
 | Last updated | 2026-10-08 |
 | Repository | Everything is committed on `main` and pushed to `origin` (github.com/koloIIIlo/ClearPractice); authored by Alex only |
 | Built, not yet checked in the desktop app | Studio timer / Ctrl+Enter / live waveform, waveform player (2.14), Trash (2.17), backup / check / replace / weekly / export (2.18–2.22), microphone test (2.12), discard interrupted take (2.5), close guard (2.10), local transcription with measures, filler review, corrections and search (M3), model pack import (3.3), intonation view with playhead, click-to-seek and phrase endings (P.4, P.7), API transcription test panel with playable preview audio and Stop waiting (0.22, 3.15, 3.18) |
@@ -274,7 +274,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 **Exit gate P**
 - [ ] Contours for ~10 recordings of the evaluation set spot-checked against Praat without systematic octave errors
-- [ ] Unvoiced/missing stretches render as gaps; no prosody value appears as a score or grade anywhere
+- [x] Unvoiced/missing stretches render as gaps; no prosody value appears as a score or grade anywhere. Evidence: `IntonationTrack.test.tsx` (pitch and loudness lines break at unvoiced/silent frames, never drawn as zero; the view, caption and phrase-endings readout contain no score/correct/grade wording), Rust prosody tests (unvoiced and silent frames are `None`, ranges withheld with a reason), and a source scan on 2026-10-08 that found no score or grade wording in any prosody UI
 
 ## Milestone 4 — Full routine (§2, §6, §7) · budget 7–10 days
 
