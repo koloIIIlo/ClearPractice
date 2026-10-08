@@ -19,7 +19,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 
 | | |
 | --- | --- |
-| Active milestone | M3 Review and transcription (in progress). E is done. M0 is done except the two checks that need the user's provider keys (0.22 live request, 0.23 benchmark). M1 is done except an empty/error-state pass (1.9). M2's code is done; its remaining items are desktop/hardware checks and the exit gate |
+| Active milestone | M3 Review and transcription (in progress); milestone P has started (YIN contour, P.1/P.2/P.8 partial). E is done. M0 is done except the two checks that need the user's provider keys (0.22 live request, 0.23 benchmark). M1 is done except an empty/error-state pass (1.9). M2's code is done; its remaining items are desktop/hardware checks and the exit gate |
 | Last updated | 2026-10-08 |
 | Repository | Everything is committed on `main` and pushed to `origin` (github.com/koloIIIlo/ClearPractice); authored by Alex only |
 | Built, not yet checked in the desktop app | Studio timer / Ctrl+Enter / live waveform, waveform player (2.14), Trash (2.17), backup / check / replace / weekly / export (2.18–2.22), microphone test (2.12), discard interrupted take (2.5), close guard (2.10), local transcription with measures, filler review, corrections and search (M3), model pack import (3.3), API transcription test panel (0.22) |
