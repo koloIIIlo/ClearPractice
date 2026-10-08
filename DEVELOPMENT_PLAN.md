@@ -31,7 +31,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 3. M3: no code items left; the rest waits on desktop checks, a live provider response (0.22) and the API enablement gate.
 4. Physical check: unplug a USB microphone mid-take (2.9).
 5. Milestone P: the Praat spot-check (gate P, settles D-17), then P.5/P.6 with M4 reference clips. Then M4 content (start the licensed reference-clip search early).
-6. M4 next: 4.3 eight offline guides, 4.5 sessions storing the curriculum version, then the exercises (4.6–4.9) using the prompt pack and passages.
+6. M4 next: 4.5 sessions storing the curriculum version, then the exercises (4.6–4.9) using the prompt pack and passages.
 
 **Standing notes (not blockers)**
 - Do not request another personal speech sample or repeat the completed paid coaching test; the public benchmark (D-24) stands in for personal audio.
@@ -283,7 +283,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 **Content pack (resources/content, versioned)**
 - [~] 4.1 40 reviewed prompts with situation tags and task demands. Written: `src/content/prompts.ts` (curriculum version 1): the 12 starters plus 28 on the D-19 subjects (programming, economics, crypto, sport, religion and belief, anime, books, teaching, unexpected), 23 unfamiliar / 17 familiar, 11 with a follow-up, audiences named where it changes the task; content test checks count, unique ids, schema and coverage. Remaining: the user's review of the wording
 - [~] 4.2 12 thought-group passages (40–80 words, pause marks). Written: `src/content/passages.ts` (original text on the D-19 subjects, " / " pause marks, helpers for word count and groups); content test checks 40–80 words, at least 5 groups and at most 12 words per group. Remaining: the user's review, and showing them in the Thought groups exercise (4.7)
-- [ ] 4.3 8 offline guides (pauses, main-point structure, self-review, limits of automatic feedback, …)
+- [~] 4.3 8 offline guides (pauses, main-point structure, self-review, limits of automatic feedback, …). Written: `src/content/guides.ts` (pauses, main point first, self-review, limits of automatic feedback, thought groups, imitation, keeping expressions, real conversations), 100–130 words each in two sections; Exercises → Guides opens each guide in place (a search link opens it directly; checked in the browser preview); content test checks full text, reading time and no score/level wording. Remaining: the user's review
 - [ ] 4.4 10 licensed or original reference clips with transcripts + attribution file. Sourcing started early (see `resources/content/SOURCES.md`): VOA Learning English is the first choice (its own page states its texts and MP3s are public domain, reusable commercially with credit; news-agency material excluded), LibriVox for read passages, original recordings with a speaker release; per-clip record format drafted. No clip downloaded yet
 - [ ] 4.5 Curriculum versioning; sessions snapshot the version they used
 
@@ -371,6 +371,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Guides (4.3): 8 guides with full text; Vitest 76/76 in 25 files; typecheck clean.
 - 2026-10-08: Thought-group passages (4.2): 12 passages in `src/content/passages.ts`; content tests 4/4.
 - 2026-10-08: Prompt pack (4.1, M4 started at the user's request): 40 prompts in `src/content/prompts.ts`; Vitest 73/73 in 23 files; typecheck clean.
 - 2026-10-08: Local / cloud transcription choice (D-26): Rust preference test (defaults to local, survives restart, unreadable means local) and 70 passed / 12 ignored; Vitest 71/71 in 22 files (take switch starts in the Settings default, cloud offers only a preview, local still transcribes; Settings stores mode and provider and sends nothing); typecheck clean; Settings section checked in the browser preview.

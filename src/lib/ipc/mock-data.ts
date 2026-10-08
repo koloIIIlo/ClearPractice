@@ -2,6 +2,7 @@
  * Illustrative sample content for developing the UI before the native core
  * exists (M1). Nothing here is a real recording or a real analysis result.
  */
+import { GUIDES } from "@/content/guides";
 import { PROMPTS } from "@/content/prompts";
 import { addLocalDays, toLocalDate } from "@/lib/phrase-schedule";
 import type {
@@ -99,16 +100,7 @@ const cond = (
 
 export const prompts: PracticePrompt[] = PROMPTS;
 
-export const guides: Guide[] = [
-  { id: "g-pauses", title: "Pauses are allowed", summary: "Why a short silence often helps a listener more than a filler.", minutes: 3 },
-  { id: "g-main-point", title: "Main point first", summary: "Open with the point, then give a reason and one example.", minutes: 3 },
-  { id: "g-self-review", title: "Reviewing your own recording", summary: "Listen for one thing at a time, and write down what you notice.", minutes: 4 },
-  { id: "g-limits", title: "What automatic feedback can't tell you", summary: "Transcripts miss fillers and can't judge pronunciation. Here's what that means.", minutes: 4 },
-  { id: "g-thought-groups", title: "Thought groups", summary: "Speaking in chunks that each carry one idea.", minutes: 3 },
-  { id: "g-imitation", title: "How to imitate usefully", summary: "Choosing a single feature and comparing by ear.", minutes: 3 },
-  { id: "g-expressions", title: "Keeping new expressions", summary: "Why recall and reuse beat rereading a list.", minutes: 3 },
-  { id: "g-real-talk", title: "Taking practice into real conversations", summary: "Small weekly tasks and asking a listener what they understood.", minutes: 4 },
-];
+export const guides: Guide[] = GUIDES;
 
 type SessionSeed = Omit<SessionDetail, "attempts"> & { attemptDurations: number[] };
 

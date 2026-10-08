@@ -230,15 +230,31 @@ function GuideList({ highlight }: { highlight: string | null }) {
           {list.map((g) => (
             <li
               key={g.id}
-              className={cn("flex gap-3 rounded-panel border bg-card p-4", g.id === highlight && "border-primary")}
+              className={cn("rounded-panel border bg-card p-4", g.id === highlight && "border-primary md:col-span-2")}
             >
-              <BookOpen aria-hidden className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-              <div>
-                <h2 className="font-medium">{g.title}</h2>
-                <p className="text-meta text-muted-foreground">
-                  {g.summary} · {g.minutes} min read
-                </p>
-              </div>
+              <details open={g.id === highlight} className="group">
+                <summary className="flex cursor-pointer list-none gap-3">
+                  <BookOpen aria-hidden className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+                  <div>
+                    <h2 className="font-medium">{g.title}</h2>
+                    <p className="text-meta text-muted-foreground">
+                      {g.summary} · {g.minutes} min read ·{" "}
+                      <span className="underline group-open:hidden">Read</span>
+                      <span className="hidden underline group-open:inline">Close</span>
+                    </p>
+                  </div>
+                </summary>
+                <article className="mt-4 max-w-prose space-y-4 pl-8">
+                  {g.sections.map((section) => (
+                    <section key={section.heading} className="space-y-2">
+                      <h3 className="font-medium">{section.heading}</h3>
+                      {section.paragraphs.map((p, i) => (
+                        <p key={i}>{p}</p>
+                      ))}
+                    </section>
+                  ))}
+                </article>
+              </details>
             </li>
           ))}
         </ul>

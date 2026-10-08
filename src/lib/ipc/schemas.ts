@@ -78,11 +78,14 @@ export const PracticePrompt = z.object({
 });
 export type PracticePrompt = z.infer<typeof PracticePrompt>;
 
+export const GuideSection = z.object({ heading: z.string(), paragraphs: z.array(z.string()).min(1) });
 export const Guide = z.object({
   id: Id,
   title: z.string(),
   summary: z.string(),
   minutes: z.number().positive(),
+  /** Full offline text (4.3). */
+  sections: z.array(GuideSection).min(1),
 });
 export type Guide = z.infer<typeof Guide>;
 
