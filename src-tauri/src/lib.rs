@@ -677,6 +677,7 @@ async fn split_clip_source(
         let segments = clipsplit::transcribe_local(&config, owner.root(), &staging_id, &cancel, |percent| {
             let _ = app.emit("clip_split_progress", percent);
         })?;
+        clipsplit::save_segments(owner.root(), &staging_id, &segments)?;
         let candidates = clipsplit::propose(&segments);
         if candidates.is_empty() {
             return Err("No clips of 8–20 seconds with whole sentences were found. You can still keep a section by hand.".into());
@@ -722,6 +723,50 @@ async fn request_clip_names(
     let accounting = accounting.inner().clone();
     let budget = accounting.0.as_ref().map_err(Clone::clone)?;
     owner.send_clip_names(budget, &accounting.1, &request_id, &payload_sha256).await
+}
+
+/// AI chooses the best passages (4.4e): measures each sentence locally and
+/// previews the annotated transcript (text only). Nothing is sent here.
+#[tauri::command]
+async fn preview_clip_picks(
+    storage: State<'_, Arc<SessionStorage>>,
+    owner: State<'_, Arc<api::coaching::PreviewOwner>>,
+    staging_id: String,
+    model: Option<api::coaching::CoachingModel>,
+    tone_hint: bool,
+    wanted: usize,
+) -> Result<api::coaching::Preview, String> {
+    let owner = owner.inner().clone();
+    with_storage(&storage, move |db| {
+        let (sentences, annotated) = clipsplit::annotate_staged(db.root(), &staging_id)?;
+        owner.preview_clip_picks(&annotated, sentences.len(), wanted, model.unwrap_or_default(), tone_hint)
+    })
+    .await
+    .map_err(|_| "Preview failed.".to_string())?
+}
+
+#[tauri::command]
+async fn request_clip_picks(
+    storage: State<'_, Arc<SessionStorage>>,
+    owner: State<'_, Arc<api::coaching::PreviewOwner>>,
+    accounting: State<'_, Arc<ApiAccounting>>,
+    staging_id: String,
+    request_id: String,
+    payload_sha256: String,
+) -> Result<Vec<clipsplit::PickedClip>, String> {
+    let segments = {
+        let staging_id = staging_id.clone();
+        with_storage(&storage, move |db| clipsplit::load_segments(db.root(), &staging_id)).await.map_err(|_| "Session storage failed.".to_string())??
+    };
+    let owner = owner.inner().clone();
+    let accounting = accounting.inner().clone();
+    let budget = accounting.0.as_ref().map_err(Clone::clone)?;
+    let picks = owner.send_clip_picks(budget, &accounting.1, &request_id, &payload_sha256, segments.len()).await?;
+    let clips = clipsplit::picks_to_clips(&segments, &picks);
+    if clips.is_empty() {
+        return Err("The AI's passages did not fit the clip rules (5–30 s, whole sentences, no overlaps). The automatic proposals are unchanged.".into());
+    }
+    Ok(clips)
 }
 
 /// Cloud transcription for a split (4.4c): the same preview → explicit Send
@@ -783,7 +828,11 @@ async fn request_split_transcription(
         Err(_) => return Err(api::audio::stopped(accounting.0.as_ref().map_err(Clone::clone)?, &request_id)),
     };
     let words = run.result.words.value.ok_or("The provider returned no word timings, so no clips can be cut. Try transcribing on this computer.")?;
-    let candidates = clipsplit::propose(&clipsplit::segments_from_words(&words));
+    let segments = clipsplit::segments_from_words(&words);
+    let staging_id = run.result.asset_id.clone();
+    let root = accounting.1.clone();
+    let _ = clipsplit::save_segments(&root, &staging_id, &segments);
+    let candidates = clipsplit::propose(&segments);
     if candidates.is_empty() {
         return Err("No clips of 8–20 seconds with whole sentences were found.".into());
     }
@@ -1589,6 +1638,8 @@ pub fn run() {
             save_clip,
             split_clip_source,
             preview_clip_names,
+            preview_clip_picks,
+            request_clip_picks,
             request_clip_names,
             preview_split_transcription,
             request_split_transcription,

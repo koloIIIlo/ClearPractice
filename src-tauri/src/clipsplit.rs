@@ -193,6 +193,157 @@ pub fn transcribe_local(
         .collect())
 }
 
+/// The transcript's timed sentences, kept next to the staged audio so the AI can
+/// choose passages from them later (4.4e).
+pub fn save_segments(root: &Path, staging_id: &str, segments: &[(String, u64, u64)]) -> Result<()> {
+    let dir = clips::staging_dir(root, staging_id)?;
+    prepare::contained(root, &dir)?;
+    fs::write(dir.join("segments.json"), serde_json::to_vec(segments).map_err(|e| e.to_string())?).map_err(|_| "Cannot keep the transcript.".into())
+}
+
+pub fn load_segments(root: &Path, staging_id: &str) -> Result<Vec<(String, u64, u64)>> {
+    let dir = clips::staging_dir(root, staging_id)?;
+    prepare::contained(root, &dir)?;
+    serde_json::from_slice(&fs::read(dir.join("segments.json")).map_err(|_| "Transcribe the recording first.")?).map_err(|_| "The transcript is damaged. Transcribe again.".into())
+}
+
+/// Locally measured delivery of one sentence (4.4e, P.9). Values are Estimated;
+/// `None` means not enough voiced audio to say.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SentenceInfo {
+    pub index: usize,
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+    /// Pitch change over the last 250 ms of voicing, in semitones.
+    pub ending_semitones: Option<f32>,
+    pub range_semitones: Option<f32>,
+    /// Mean loudness of voiced frames relative to the whole recording's median, dB.
+    pub loudness_db: Option<f32>,
+    pub words_per_minute: Option<u32>,
+    pub pause_before_ms: Option<u64>,
+}
+
+/// Measures every sentence from a 10 ms pitch/loudness contour of the recording.
+pub fn measure_sentences(segments: &[(String, u64, u64)], f0: &[Option<f32>], rms: &[Option<f32>], hop_ms: u64) -> Vec<SentenceInfo> {
+    let mut voiced_loudness: Vec<f32> = f0.iter().zip(rms).filter_map(|(f, r)| f.and(*r)).collect();
+    voiced_loudness.sort_by(|a, b| a.total_cmp(b));
+    let median = voiced_loudness.get(voiced_loudness.len() / 2).copied();
+    segments
+        .iter()
+        .enumerate()
+        .map(|(index, (text, start, end))| {
+            let (from, to) = ((*start / hop_ms) as usize, ((*end / hop_ms) as usize).min(f0.len()));
+            let frames: Vec<(usize, f32)> = (from.min(to)..to).filter_map(|i| f0[i].map(|f| (i, f))).collect();
+            let semis = |hz: f32| 12.0 * hz.log2();
+            let ending_semitones = (frames.len() >= 10).then(|| {
+                let last = frames.last().unwrap().0;
+                let tail: Vec<f32> = frames.iter().filter(|(i, _)| *i + 25 > last).map(|(_, f)| semis(*f)).collect();
+                let edge = (tail.len() / 4).max(1);
+                let mean = |v: &[f32]| v.iter().sum::<f32>() / v.len() as f32;
+                ((mean(&tail[tail.len() - edge..]) - mean(&tail[..edge])) * 10.0).round() / 10.0
+            });
+            let range_semitones = (frames.len() >= 20).then(|| {
+                let mut s: Vec<f32> = frames.iter().map(|(_, f)| semis(*f)).collect();
+                s.sort_by(|a, b| a.total_cmp(b));
+                let p = |q: f32| s[((s.len() - 1) as f32 * q).round() as usize];
+                ((p(0.95) - p(0.05)) * 10.0).round() / 10.0
+            });
+            let loud: Vec<f32> = frames.iter().filter_map(|(i, _)| rms.get(*i).copied().flatten()).collect();
+            let loudness_db = median.filter(|_| !loud.is_empty()).map(|m| ((loud.iter().sum::<f32>() / loud.len() as f32 - m) * 10.0).round() / 10.0);
+            let words = text.split_whitespace().count() as u64;
+            let words_per_minute = (*end > *start + 1_000 && words >= 3).then(|| (words * 60_000 / (*end - *start)) as u32);
+            let pause_before_ms = index.checked_sub(1).map(|p| start.saturating_sub(segments[p].2));
+            SentenceInfo { index: index + 1, start_ms: *start, end_ms: *end, text: text.clone(), ending_semitones, range_semitones, loudness_db, words_per_minute, pause_before_ms }
+        })
+        .collect()
+}
+
+fn clock(ms: u64) -> String {
+    format!("{}:{:04.1}", ms / 60_000, (ms % 60_000) as f64 / 1000.0)
+}
+
+/// The annotated transcript sent to the AI: one line per sentence with its
+/// measured delivery (text only; never audio).
+pub fn annotated_transcript(sentences: &[SentenceInfo]) -> String {
+    sentences
+        .iter()
+        .map(|s| {
+            let mut parts = vec![format!("[{}] {}–{} \"{}\"", s.index, clock(s.start_ms), clock(s.end_ms), s.text.trim())];
+            if let Some(e) = s.ending_semitones {
+                let dir = if e >= 1.5 { "rising" } else if e <= -1.5 { "falling" } else { "level" };
+                parts.push(format!("ending {dir} {e:+.1} st"));
+            }
+            if let Some(r) = s.range_semitones {
+                parts.push(format!("pitch range {r:.1} st"));
+            }
+            if let Some(l) = s.loudness_db {
+                parts.push(if l >= 10.0 { format!("raised voice {l:+.0} dB") } else { format!("loudness {l:+.0} dB") });
+            }
+            if let Some(w) = s.words_per_minute {
+                parts.push(format!("{w} wpm"));
+            }
+            if let Some(p) = s.pause_before_ms.filter(|p| *p >= 300) {
+                parts.push(format!("pause before {:.1} s", p as f64 / 1000.0));
+            }
+            parts.join(" | ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Measures the staged recording's sentences from its own audio.
+pub fn annotate_staged(root: &Path, staging_id: &str) -> Result<(Vec<SentenceInfo>, String)> {
+    let segments = load_segments(root, staging_id)?;
+    let (path, _) = resample_staged(root, staging_id, &AtomicBool::new(false))?;
+    let bytes = fs::read(&path).map_err(|_| "The prepared audio is unavailable.")?;
+    let _ = fs::remove_file(&path);
+    let samples: Vec<f32> = bytes.get(44..).unwrap_or(&[]).chunks_exact(2).map(|p| f32::from(i16::from_le_bytes([p[0], p[1]])) / 32768.0).collect();
+    let contour = crate::prosody::contour(&samples, prepare::RATE);
+    let sentences = measure_sentences(&segments, &contour.f0_hz, &contour.rms_db, contour.hop_ms);
+    let text = annotated_transcript(&sentences);
+    Ok((sentences, text))
+}
+
+/// A passage chosen by the AI, turned into a clip proposal with its suggestions.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PickedClip {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+    pub title: String,
+    pub description: String,
+    pub feature: String,
+    pub reason: String,
+}
+
+/// Converts AI picks (sentence ranges) to clips: 5–30 s, no overlaps, whole sentences.
+pub fn picks_to_clips(segments: &[(String, u64, u64)], picks: &[crate::api::coaching::ClipPick]) -> Vec<PickedClip> {
+    let mut out: Vec<PickedClip> = Vec::new();
+    let mut sorted: Vec<&crate::api::coaching::ClipPick> = picks.iter().collect();
+    sorted.sort_by_key(|p| p.first);
+    for p in sorted {
+        let (first, last) = (p.first as usize - 1, p.last as usize - 1);
+        let Some(range) = segments.get(first..=last) else { continue };
+        let (start, end) = (range[0].1, range[range.len() - 1].2);
+        if end <= start || !(5_000..=30_000).contains(&(end - start)) || out.last().is_some_and(|prev| start < prev.end_ms) {
+            continue;
+        }
+        out.push(PickedClip {
+            start_ms: start,
+            end_ms: end,
+            text: range.iter().map(|s| s.0.trim()).collect::<Vec<_>>().join(" "),
+            title: p.title.clone(),
+            description: p.description.trim().into(),
+            feature: p.feature.clone(),
+            reason: p.reason.trim().into(),
+        });
+    }
+    out
+}
+
 /// Turns provider word timings into sentence segments for `propose` (cloud split).
 pub fn segments_from_words(words: &[crate::audio::transcription::TimedText]) -> Vec<(String, u64, u64)> {
     let mut out = Vec::new();
@@ -250,6 +401,43 @@ mod tests {
             ("Then silence".to_string(), 3_000, 3_900), // a long pause ends a segment too
             ("again".to_string(), 6_000, 6_400),
         ]);
+    }
+
+    #[test]
+    fn measures_each_sentence_and_writes_an_annotated_line() {
+        // 10 ms frames: sentence 1 glides down an octave-ish fifth, sentence 2 rises and is louder.
+        let mut f0 = Vec::new();
+        let mut rms = Vec::new();
+        for i in 0..200 {
+            f0.push(Some(200.0 * (2f32).powf(-(i as f32) / 200.0 * 0.5))); // 200 → ~141 Hz
+            rms.push(Some(-20.0));
+        }
+        for _ in 0..50 { f0.push(None); rms.push(Some(-60.0)); } // 0.5 s pause
+        for i in 0..150 {
+            f0.push(Some(150.0 * (2f32).powf(i as f32 / 150.0 * 0.5)));
+            rms.push(Some(-8.0));
+        }
+        let segments = vec![seg("We start here and go down.", 0, 2_000), seg("Is that right?", 2_500, 4_000)];
+        let s = measure_sentences(&segments, &f0, &rms, 10);
+        assert!(s[0].ending_semitones.unwrap() < 0.0 && s[1].ending_semitones.unwrap() > 0.0, "{s:?}");
+        assert_eq!(s[1].pause_before_ms, Some(500));
+        assert!(s[1].loudness_db.unwrap() > 5.0, "louder than the median");
+        let text = annotated_transcript(&s);
+        assert!(text.starts_with("[1] 0:00.0–0:02.0 \"We start here and go down.\""), "{text}");
+        assert!(text.contains("pause before 0.5 s"));
+        assert!(text.lines().count() == 2);
+    }
+
+    #[test]
+    fn ai_picks_become_whole_sentence_clips_without_overlaps_or_bad_lengths() {
+        use crate::api::coaching::ClipPick;
+        let segments: Vec<_> = (0..6u64).map(|i| seg(&format!("Sentence {i}."), i * 6_000, i * 6_000 + 5_500)).collect();
+        let pick = |first, last, title: &str| ClipPick { first, last, title: title.into(), description: "d".into(), feature: "rhythm".into(), reason: "r".into() };
+        let clips = picks_to_clips(&segments, &[pick(3, 4, "Second"), pick(1, 2, "First"), pick(2, 3, "Overlaps"), pick(5, 5, "Five s ok"), pick(6, 6, "")]);
+        assert_eq!(clips.iter().map(|c| c.title.as_str()).collect::<Vec<_>>(), ["First", "Second", "Five s ok", ""]);
+        assert_eq!((clips[0].start_ms, clips[0].end_ms), (0, 11_500));
+        assert_eq!(clips[0].text, "Sentence 0. Sentence 1.");
+        assert!(picks_to_clips(&segments, &[pick(1, 6, "Too long")]).is_empty(), "35 s is too long");
     }
 
     #[test]
