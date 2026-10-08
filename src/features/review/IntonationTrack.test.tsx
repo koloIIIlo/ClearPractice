@@ -1,11 +1,12 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { expect, it, vi } from "vitest";
 import { IpcContext, type IpcClient } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
 import type { IntonationContour } from "@/lib/ipc/schemas";
-import { contourPaths, IntonationTrack, loudnessPaths } from "./IntonationTrack";
+import { contourPaths, IntonationTrack, loudnessPaths, timeToX, xToTime } from "./IntonationTrack";
+import { createPlayerLink } from "./player-link";
 
 const contour: IntonationContour = {
   algorithm: "yin-v1", source: "Estimated", hopMs: 10, sampleRate: 16_000,
@@ -35,4 +36,32 @@ it("loads on request and describes the pitch without any score", async () => {
   expect(screen.getByText(/gaps are unvoiced or silent/)).toBeInTheDocument();
   expect(screen.getByText(/loudness varies by 6 dB/)).toBeInTheDocument();
   expect(document.body.textContent).not.toMatch(/score|correct|grade/i);
+});
+
+it("maps time to the plot and back for the playhead and click-to-seek", () => {
+  // 7 frames at 10 ms: the last frame sits at 60 ms on the right edge.
+  expect(timeToX(contour, 30, 1000)).toBe(500);
+  expect(timeToX(contour, 999, 1000)).toBe(1000);
+  expect(xToTime(contour, 250, 1000)).toBe(15);
+  expect(xToTime(contour, -5, 1000)).toBe(0);
+});
+
+it("follows the linked player and seeks it when the plot is clicked", async () => {
+  const user = userEvent.setup();
+  const client: IpcClient = { ...createMockClient(), recordingMode: "native", getTakeProsody: vi.fn(async () => contour) };
+  const link = createPlayerLink();
+  render(<QueryClientProvider client={new QueryClient()}><IpcContext.Provider value={client}><IntonationTrack attemptId="take-1" link={link} /></IpcContext.Provider></QueryClientProvider>);
+  await user.click(screen.getByRole("button", { name: "Show intonation" }));
+  await screen.findByText(/median 120 Hz/);
+  expect(screen.queryByTestId("intonation-playhead")).toBeNull(); // no player open yet
+
+  const seek = vi.fn();
+  act(() => { link.attach(seek); link.publish(30); });
+  expect(screen.getByTestId("intonation-playhead").getAttribute("x1")).toBe("500");
+  expect(screen.getByText(/click the plot to jump there/)).toBeInTheDocument();
+
+  const plot = screen.getByTestId("intonation-plot");
+  plot.getBoundingClientRect = () => ({ left: 100, width: 200, top: 0, height: 80, right: 300, bottom: 80, x: 100, y: 0, toJSON: () => ({}) });
+  fireEvent.click(plot, { clientX: 150 });
+  expect(seek).toHaveBeenCalledWith(15);
 });

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPlayerLink, type PlayerLink } from "@/features/review/player-link";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader, Panel, QueryView } from "@/components/page";
@@ -37,7 +38,7 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
     {attempts.length === 0 && <p role="status">This take is unavailable.</p>}
     {attempts.map((a) => <Panel key={a.id} className="space-y-3">
       <h2 className="font-semibold">Take {a.ordinal} · {formatClock(a.durationMs)} <span className="text-meta font-normal text-muted-foreground">Measured duration</span></h2>
-      {a.audioUnavailableReason ? <p role="alert">Audio unavailable: {a.audioUnavailableReason}</p> : <><NativeTake assetId={a.id} /><IntonationTrack attemptId={a.id} /><TakeTranscript attemptId={a.id} /></>}
+      {a.audioUnavailableReason ? <p role="alert">Audio unavailable: {a.audioUnavailableReason}</p> : <LinkedTake attemptId={a.id} />}
     </Panel>)}
     <Panel>
       <form className="space-y-4" onChange={() => save.reset()} onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
@@ -70,8 +71,13 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
     </div>
   </div>;
 }
-function NativeTake({ assetId }: { assetId: string }) {
+/** Player and intonation share one position, so the pitch view follows playback (P.4). */
+function LinkedTake({ attemptId }: { attemptId: string }) {
+  const [link] = useState(createPlayerLink);
+  return <><NativeTake assetId={attemptId} link={link} /><IntonationTrack attemptId={attemptId} link={link} /><TakeTranscript attemptId={attemptId} /></>;
+}
+function NativeTake({ assetId, link }: { assetId: string; link: PlayerLink }) {
   const ipc = useIpc();
   const recording = useQuery({ queryKey: ["recording", assetId], queryFn: () => ipc.getSavedRecording(assetId), retry: false });
-  return <QueryView query={recording}>{(r) => <SavedAudio recording={r} />}</QueryView>;
+  return <QueryView query={recording}>{(r) => <SavedAudio recording={r} link={link} />}</QueryView>;
 }

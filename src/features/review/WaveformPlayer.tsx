@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatClock } from "@/lib/format";
 import type { WaveformPeaks } from "@/lib/ipc/schemas";
+import type { PlayerLink } from "./player-link";
 import {
   formatClockTenths,
   loopSeekTarget,
@@ -34,7 +35,7 @@ function tokenColors() {
  * loop range. Every pointer action has a keyboard equivalent (§14): position
  * slider, skip buttons, and start/end fields for the loop.
  */
-export function WaveformPlayer({ url, peaks, label }: { url: string; peaks: WaveformPeaks; label: string }) {
+export function WaveformPlayer({ url, peaks, label, link }: { url: string; peaks: WaveformPeaks; label: string; link?: PlayerLink }) {
   const id = useId();
   const containerRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -104,6 +105,7 @@ export function WaveformPlayer({ url, peaks, label }: { url: string; peaks: Wave
     ws.on("timeupdate", (seconds) => {
       const ms = seconds * 1000;
       setPositionMs(ms);
+      link?.publish(ms);
       const target = ws.isPlaying() ? loopSeekTarget(ms, loopRef.current) : null;
       if (target !== null) ws.setTime(target / 1000);
     });
@@ -119,14 +121,17 @@ export function WaveformPlayer({ url, peaks, label }: { url: string; peaks: Wave
     const theme = new MutationObserver(() => ws.setOptions(tokenColors()));
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme"] });
 
+    const detach = link?.attach((ms) => ws.setTime(Math.min(peaks.durationMs, Math.max(0, ms)) / 1000));
+
     return () => {
+      detach?.();
       theme.disconnect();
       if (activePlayer === ws) activePlayer = null;
       ws.destroy();
       wsRef.current = null;
       regionsRef.current = null;
     };
-  }, [peaks]);
+  }, [peaks, link]);
 
   const ws = () => wsRef.current;
   const seek = (ms: number) => ws()?.setTime(Math.min(durationMs, Math.max(0, ms)) / 1000);

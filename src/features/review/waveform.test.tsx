@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { createPlayerLink } from "./player-link";
 import { formatClockTenths, loopSeekTarget, normalizeLoop, parseClock, toChannelPeaks } from "./waveform";
 
 const fake = vi.hoisted(() => {
@@ -95,5 +96,18 @@ describe("WaveformPlayer", () => {
     await user.type(screen.getByLabelText("Loop start"), "later");
     await user.click(screen.getByRole("button", { name: /Loop range/ }));
     expect(screen.getByRole("alert")).toHaveTextContent("Enter times as m:ss");
+  });
+
+  it("shares its position with a linked view and accepts seeks from it", () => {
+    const link = createPlayerLink();
+    const { unmount } = render(<WaveformPlayer url="asset://take" peaks={peaks} label="Take 1" link={link} />);
+    expect(link.getPositionMs()).toBe(0);
+    act(() => fake.ws.emit("timeupdate", 4.2));
+    expect(link.getPositionMs()).toBeCloseTo(4200);
+    fake.ws.setTime.mockClear();
+    link.seek(99_000); // clamped to the take
+    expect(fake.ws.setTime).toHaveBeenCalledWith(20);
+    unmount();
+    expect(link.getPositionMs()).toBeNull();
   });
 });
