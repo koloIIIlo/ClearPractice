@@ -14,7 +14,7 @@ use std::{
 };
 
 type Result<T> = std::result::Result<T, String>;
-const VERSION: i64 = 5;
+const VERSION: i64 = 6;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
@@ -146,7 +146,10 @@ impl DatabaseOwner {
             if version < 4 {
                 migrate(&mut connection, include_str!("schema-v4.sql"))?;
             }
-            migrate(&mut connection, include_str!("schema-v5.sql"))?;
+            if version < 5 {
+                migrate(&mut connection, include_str!("schema-v5.sql"))?;
+            }
+            migrate(&mut connection, include_str!("schema-v6.sql"))?;
         }
         connection
             .pragma_update(None, "journal_mode", "WAL")
@@ -679,6 +682,7 @@ impl DatabaseOwner {
                 }
                 tx.execute(&format!("INSERT OR IGNORE INTO purged_assets(id,purged_at_ms) SELECT id,?2 FROM ({takes})"),params![id,now]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM task_conditions WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
+                tx.execute(&format!("DELETE FROM api_runs WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM annotations WHERE revision_id IN (SELECT id FROM transcript_revisions WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM transcript_segments WHERE revision_id IN (SELECT id FROM transcript_revisions WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM transcript_revisions WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
@@ -816,6 +820,78 @@ impl DatabaseOwner {
         }
         tx.execute("UPDATE jobs SET state='completed',finished_at_ms=?1,input_revision=?2 WHERE id=?3",params![now,transcript.run_id,job_id]).map_err(db_error)?;
         tx.commit().map_err(db_error)
+    }
+
+    /// Saves an approved, validated API transcription (3.16) as its own revision
+    /// (source `api`) plus its run record and raw response. Segments are built
+    /// from the provider's word timings, split at sentence ends; without usable
+    /// timings the text is one untimed segment with the reason. Saving the same
+    /// run twice is a no-op, so a retried save never duplicates text.
+    pub fn save_api_transcript(
+        &self,
+        result: &crate::audio::transcription::TranscriptionResult,
+        raw: &Value,
+        now_ms: u64,
+    ) -> Result<()> {
+        recording::validate_id(&result.run_id)?;
+        recording::validate_id(&result.asset_id)?;
+        let now = i64::try_from(now_ms).map_err(|_| "Invalid date.")?;
+        let provider = serde_json::to_value(result.provider).map_err(|e| e.to_string())?;
+        let provider = provider.as_str().ok_or("Invalid provider.")?;
+        let mut segments: Vec<(String, Option<u64>, Option<u64>, Option<String>)> = Vec::new();
+        match (&result.segments.value, &result.words.value) {
+            (Some(timed), _) => segments.extend(timed.iter().map(|s| (s.text.trim().to_string(), Some(s.start_ms), Some(s.end_ms), None))),
+            (None, Some(words)) => {
+                let mut current: Vec<&crate::audio::transcription::TimedText> = Vec::new();
+                for (i, word) in words.iter().enumerate() {
+                    current.push(word);
+                    let sentence_end = word.text.trim_end().ends_with(['.', '?', '!']);
+                    if sentence_end || current.len() >= 40 || i + 1 == words.len() {
+                        let text = current.iter().map(|w| w.text.trim()).collect::<Vec<_>>().join(" ");
+                        segments.push((text, Some(current[0].start_ms), Some(word.end_ms), None));
+                        current.clear();
+                    }
+                }
+            }
+            (None, None) => segments.push((
+                result.raw_text.trim().to_string(),
+                None,
+                None,
+                Some(result.words.unavailable_reason.clone().unwrap_or_else(|| "The provider returned no timings.".into())),
+            )),
+        }
+        let mut conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+        let tx = conn.transaction().map_err(db_error)?;
+        let saved: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM attempts a JOIN audio_assets aa ON aa.id=a.asset_id WHERE a.id=?1 AND a.capture_state='saved' AND aa.sha256=?2)", params![result.asset_id, result.source_sha256], |r| r.get(0)).map_err(db_error)?;
+        if !saved {
+            return Err("This take is no longer available, so the API transcript was not saved.".into());
+        }
+        let exists: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM api_runs WHERE id=?1)", [&result.run_id], |r| r.get(0)).map_err(db_error)?;
+        if exists {
+            return Ok(());
+        }
+        tx.execute("INSERT INTO transcript_revisions(id,attempt_id,source,run_id,provider,model_id,source_sha256,language,text,created_at_ms) VALUES (?1,?2,'api',?1,?3,?4,?5,?6,?7,?8)",
+            params![result.run_id, result.asset_id, provider, result.model_id, result.source_sha256, result.language.value, result.raw_text.trim(), now]).map_err(db_error)?;
+        for (position, (text, start, end, reason)) in segments.iter().enumerate() {
+            tx.execute("INSERT INTO transcript_segments(revision_id,position,text,start_ms,end_ms,timing_source,timing_unavailable_reason) VALUES (?1,?2,?3,?4,?5,'Estimated',?6)",
+                params![result.run_id, position as i64, text, start.and_then(|v| i64::try_from(v).ok()), end.and_then(|v| i64::try_from(v).ok()), reason]).map_err(db_error)?;
+        }
+        tx.execute("INSERT INTO api_runs(id,attempt_id,provider,model_id,provider_request_id,audio_sha256,source_sha256,settings,raw_response,result,word_timings,audio_duration_ms,estimated_cost_micro_usd,created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+            params![result.run_id, result.asset_id, provider, result.model_id, result.request_id.value, result.prepared_sha256, result.source_sha256,
+                result.settings.to_string(), raw.to_string(), serde_json::to_string(result).map_err(|e| e.to_string())?, result.words.value.is_some(),
+                result.usage.audio_duration_ms.value.and_then(|v| i64::try_from(v).ok()), result.usage.estimated_cost_micro_usd.value.and_then(|v| i64::try_from(v).ok()), now]).map_err(db_error)?;
+        tx.commit().map_err(db_error)
+    }
+
+    /// The newest earlier API run on exactly this audio, provider, model,
+    /// settings and adapter version, if any (3.16 cache key), as an ISO date.
+    pub fn previous_api_run(&self, attempt_id: &str, audio_sha256: &str, provider: &str, model: &str, settings: &Value, adapter: &str) -> Result<Option<String>> {
+        let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+        conn.query_row(
+            "SELECT created_at_ms FROM api_runs WHERE attempt_id=?1 AND audio_sha256=?2 AND provider=?3 AND model_id=?4 AND settings=?5 AND json_extract(result,'$.adapterVersion')=?6 ORDER BY created_at_ms DESC LIMIT 1",
+            params![attempt_id, audio_sha256, provider, model, settings.to_string(), adapter],
+            |r| r.get::<_, i64>(0),
+        ).optional().map_err(db_error).map(|at| at.map(iso))
     }
 
     /// Confirms or dismisses one filler candidate of a machine revision, or clears
@@ -1613,7 +1689,7 @@ mod tests {
             .unwrap();
         {
             let conn = owner.connection.lock().unwrap();
-            conn.execute_batch("DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+            conn.execute_batch("DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
         }
         drop(owner);
         let upgraded = DatabaseOwner::open(&root.0).unwrap();
@@ -1623,8 +1699,71 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v5-")));
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v6-")));
         assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
+    }
+    fn api_result(take: &SavedRecording, run: &str, words: Option<Vec<(&str, u64, u64)>>) -> crate::audio::transcription::TranscriptionResult {
+        use crate::audio::transcription::*;
+        let words = words.map_or_else(
+            || Available::missing("The provider returned no usable word timings within this recording"),
+            |w| Available::known(w.into_iter().map(|(t, s, e)| TimedText { text: t.into(), start_ms: s, end_ms: e, provenance: "Estimated".into() }).collect()),
+        );
+        TranscriptionResult {
+            version: 1, adapter_version: "test".into(), provider: TranscriptionProvider::Deepgram, run_id: run.into(),
+            request_id: Available::known("dg-req-1".into()), asset_id: take.asset_id.clone(), source_sha256: take.sha256.clone(),
+            prepared_sha256: "d".repeat(64), model_id: "nova-3".into(), model_sha256: Available::missing("Hosted models have no published checksum"),
+            language: Available::known("en".into()), raw_text: "So, uh, I think. It works?".into(),
+            capabilities: Capabilities { segment_timings: false, word_timings: words.value.is_some(), speaker_labels: false },
+            segments: Available::missing("not requested"), words, speakers: Available::missing("not requested"),
+            settings: json!({"filler_words": true}),
+            usage: TranscriptionUsage { input_tokens: Available::missing("audio"), output_tokens: Available::missing("audio"),
+                audio_duration_ms: Available::known(1000), estimated_cost_micro_usd: Available::known(4300) },
+            created_at_ms: 1,
+        }
+    }
+    #[test]
+    fn api_transcripts_are_their_own_revision_with_run_raw_response_and_purge() {
+        let root = TestRoot::new();
+        let take = saved(&root.0, "take");
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        let timed = api_result(&take, "api-deepgram-1", Some(vec![("So,", 0, 100), ("uh,", 120, 200), ("I", 220, 260), ("think.", 270, 400), ("It", 500, 550), ("works?", 560, 900)]));
+        owner.save_api_transcript(&timed, &json!({"metadata": {"request_id": "dg-req-1"}}), 5).unwrap();
+        owner.save_api_transcript(&timed, &json!({}), 6).unwrap(); // a retried save is a no-op
+        let view = owner.attempt_transcript("take").unwrap();
+        assert_eq!(view["revision"]["source"], "api");
+        assert_eq!(view["revision"]["provider"], "deepgram");
+        assert_eq!(view["revision"]["modelId"], "nova-3");
+        let segments = view["revision"]["segments"].as_array().unwrap();
+        assert_eq!(segments.len(), 2, "split at sentence ends");
+        assert_eq!(segments[0]["text"], "So, uh, I think.");
+        assert_eq!((segments[1]["startMs"].as_i64(), segments[1]["endMs"].as_i64()), (Some(500), Some(900)));
+        assert_eq!(view["revision"]["measures"]["fillers"].as_array().unwrap().len(), 1, "filler review works on API text");
+        let (raw, request, cost): (String, Option<String>, Option<i64>) = owner.connection.lock().unwrap()
+            .query_row("SELECT raw_response,provider_request_id,estimated_cost_micro_usd FROM api_runs WHERE id='api-deepgram-1'", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+        assert!(raw.contains("dg-req-1") && request.as_deref() == Some("dg-req-1") && cost == Some(4300));
+
+        let previous = |sha: &str, settings: Value| owner.previous_api_run("take", sha, "deepgram", "nova-3", &settings, "test").unwrap();
+        assert!(previous(&"d".repeat(64), json!({"filler_words": true})).is_some(), "same audio and settings: already transcribed");
+        assert!(previous(&"d".repeat(64), json!({"filler_words": false})).is_none(), "other settings are a different request");
+        assert!(previous(&"f".repeat(64), json!({"filler_words": true})).is_none(), "other audio is a different request");
+        // Untimed: one segment with the reason, and a later run is a separate revision.
+        owner.save_api_transcript(&api_result(&take, "api-deepgram-2", None), &json!({}), 7).unwrap();
+        let view = owner.attempt_transcript("take").unwrap();
+        assert_eq!(view["revision"]["id"], "api-deepgram-2");
+        assert!(view["revision"]["segments"][0]["startMs"].is_null());
+        assert!(view["revision"]["segments"][0]["timingUnavailableReason"].as_str().unwrap().contains("no usable word timings"));
+        let revisions: i64 = owner.connection.lock().unwrap().query_row("SELECT COUNT(*) FROM transcript_revisions WHERE attempt_id='take'", [], |r| r.get(0)).unwrap();
+        assert_eq!(revisions, 2);
+
+        // A result for different audio than the saved take is refused.
+        let mut other = api_result(&take, "api-deepgram-3", None);
+        other.source_sha256 = "e".repeat(64);
+        assert!(owner.save_api_transcript(&other, &json!({}), 8).is_err());
+
+        owner.move_to_trash("take", 10).unwrap();
+        owner.delete_permanently(&["take".into()]).unwrap();
+        let runs: i64 = owner.connection.lock().unwrap().query_row("SELECT COUNT(*) FROM api_runs", [], |r| r.get(0)).unwrap();
+        assert_eq!(runs, 0, "API runs and raw responses are purged with the take");
     }
     #[test]
     fn corrections_are_child_revisions_and_leave_the_original_untouched() {

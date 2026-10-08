@@ -45,7 +45,7 @@ it("previews exactly what is sent and needs a stored key and an explicit Send", 
   expect(client.requestApiTranscription).not.toHaveBeenCalled();
 });
 
-it("sends once after approval and shows the result without replacing the local transcript", async () => {
+it("sends once after approval and saves the result as a separate transcript without replacing the local one", async () => {
   const user = userEvent.setup();
   const client = setup({ getTranscriptionApiKeys: async () => [{ provider: "deepgram", present: true }, { provider: "assemblyai", present: false }] });
   await user.click(await screen.findByRole("button", { name: "Preview request" }));
@@ -53,6 +53,6 @@ it("sends once after approval and shows the result without replacing the local t
   expect(client.requestApiTranscription).toHaveBeenCalledWith("api-deepgram-1", "b".repeat(64));
   expect(await screen.findByText("Well, uh, indexes help.")).toBeInTheDocument();
   expect(screen.getByText(/1 filler candidates · word timings returned \(Estimated\)/)).toBeInTheDocument();
-  expect(screen.getByText(/Your local transcript is unchanged/)).toBeInTheDocument();
+  expect(screen.getByText(/Saved with this take as a separate transcript.*local transcript and corrections are unchanged/)).toBeInTheDocument();
   expect(screen.queryByLabelText("API transcription request preview")).not.toBeInTheDocument();
 });

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
+import { API_MODE_ENABLED, TakeApiTranscribe } from "./ApiTranscribe";
 import type { AttemptTranscript, TranscriptMeasures, TranscriptionEvent } from "@/lib/ipc/schemas";
 
 const PHASES: Record<string, string> = {
@@ -173,6 +174,8 @@ function JobMessage({ data }: { data: AttemptTranscript }) {
  * Local transcript for one saved take (plan 3.8, 3.11). Text is shown as
  * transcribed; fillers are kept on purpose and every timing is Estimated.
  */
+const API_PROVIDER_NAMES: Record<string, string> = { deepgram: "Deepgram", assemblyai: "AssemblyAI" };
+
 export function TakeTranscript({ attemptId }: { attemptId: string }) {
   const ipc = useIpc();
   const qc = useQueryClient();
@@ -224,7 +227,7 @@ export function TakeTranscript({ attemptId }: { attemptId: string }) {
         </h3>
         {revision && (
           <span className="text-meta text-muted-foreground">
-            As transcribed · local {revision.modelId ?? "Whisper"}
+            As transcribed · {revision.source === "api" ? `${API_PROVIDER_NAMES[revision.provider ?? ""] ?? revision.provider ?? "API"} ${revision.modelId ?? ""} (sent with your approval)` : `local ${revision.modelId ?? "Whisper"}`}
             {revision.backend ? ` (${revision.backend.toUpperCase()})` : ""}
             {revision.workerElapsedMs != null ? ` · ${Math.round(revision.workerElapsedMs / 1000)} s` : ""}
           </span>
@@ -258,6 +261,7 @@ export function TakeTranscript({ attemptId }: { attemptId: string }) {
           Local transcription isn't set up yet. <Link className="underline" to="/settings/transcription">Set it up in Settings → Transcription</Link>.
         </p>
       )}
+      {API_MODE_ENABLED && !running && <TakeApiTranscribe attemptId={attemptId} />}
       {start.error && <p role="alert" className="text-meta text-destructive">{start.error.message}</p>}
       {transcript.error && <p role="alert" className="text-meta text-destructive">{transcript.error.message}</p>}
       {data && !running && <JobMessage data={data} />}

@@ -190,7 +190,10 @@ async fn preview_api_transcription(
     let owner = owner.inner().clone();
     with_storage(&storage, move |db| {
         let saved = db.checked_recording(&attempt_id)?;
-        owner.preview(db.root(), &saved, provider)
+        let mut preview = owner.preview(db.root(), &saved, provider)?;
+        let key = serde_json::to_value(preview.provider).map_err(|e| e.to_string())?;
+        preview.previous_run_at = db.previous_api_run(&attempt_id, &preview.audio_sha256, key.as_str().unwrap_or(""), &preview.model, &preview.settings, api::audio::ADAPTER_VERSION)?;
+        Ok(preview)
     })
     .await
     .map_err(|_| "Preview failed.".to_string())?
@@ -206,6 +209,7 @@ fn cancel_api_transcription_preview(owner: State<'_, Arc<api::audio::AudioPrevie
 #[tauri::command]
 async fn request_api_transcription(
     service: State<'_, Arc<CaptureService>>,
+    storage: State<'_, Arc<SessionStorage>>,
     owner: State<'_, Arc<api::audio::AudioPreviewOwner>>,
     accounting: State<'_, Arc<ApiAccounting>>,
     request_id: String,
@@ -217,7 +221,20 @@ async fn request_api_transcription(
     let owner = owner.inner().clone();
     let accounting = accounting.inner().clone();
     let budget = accounting.0.as_ref().map_err(Clone::clone)?;
-    owner.send(&accounting.1, budget, &request_id, &payload_sha256).await
+    let run = owner.send(budget, &request_id, &payload_sha256).await?;
+    // Store it with the take as its own revision (3.16). If that fails, the paid
+    // result is kept in the app's cache and the user is told; nothing is resent.
+    let run = Arc::new(run);
+    let stored = run.clone();
+    let saved = with_storage(&storage, move |db| db.save_api_transcript(&stored.result, &stored.raw, storage::recording::now_ms()))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())
+        .and_then(|r| r);
+    if let Err(error) = saved {
+        let kept = api::audio::keep_unsaved(&accounting.1, &run).map(|d| d.display().to_string()).unwrap_or_else(|e| e);
+        return Err(format!("The transcript arrived but could not be saved with the take ({error}). It was kept at {kept}; nothing will be sent again."));
+    }
+    Ok(run.summary.clone())
 }
 
 #[tauri::command]

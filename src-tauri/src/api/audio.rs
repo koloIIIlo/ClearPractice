@@ -2,8 +2,8 @@
 //! complete saved take, prepared as 16 kHz mono WAV, sent only after a
 //! single-use preview approval. Adapters: Deepgram Nova-3 and AssemblyAI
 //! Universal-3.5 Pro, both asked to keep fillers. Results are validated into the
-//! provider-neutral `TranscriptionResult` and saved locally for comparison;
-//! they do not replace the local transcript in the product (that is M3 3.14–3.16).
+//! provider-neutral `TranscriptionResult` and stored with the take as their own
+//! transcript revision (3.16); they never replace local or corrected text.
 use super::budget::{BudgetOwner, PriceQuote, Purpose, Usage};
 use super::transport::{ApiTransport, MAX_AUDIO_UPLOAD};
 use crate::audio::prepare;
@@ -29,7 +29,7 @@ type Result<T> = std::result::Result<T, String>;
 const PRICE_DATE: &str = "2026-10-08";
 const MAX_AUDIO_MS: u64 = 15 * 60 * 1000;
 const PREVIEW_TTL: Duration = Duration::from_secs(15 * 60);
-const ADAPTER_VERSION: &str = "audio-api-v1";
+pub const ADAPTER_VERSION: &str = "audio-api-v1";
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
@@ -113,6 +113,9 @@ pub struct AudioPreview {
     pub price_date: String,
     pub data_handling: String,
     pub payload_sha256: String,
+    /// When this exact audio was already transcribed with the same provider,
+    /// model, settings and adapter (3.16). Sending again is a new paid run.
+    pub previous_run_at: Option<String>,
 }
 
 struct Pending {
@@ -178,6 +181,7 @@ impl AudioPreviewOwner {
             price_date: PRICE_DATE.into(),
             data_handling: provider.data_handling().into(),
             payload_sha256: String::new(),
+            previous_run_at: None,
         };
         preview.payload_sha256 = fingerprint(&preview)?;
         let mut pending = self.0.lock().map_err(|_| "Preview state is unavailable.")?;
@@ -206,14 +210,14 @@ impl AudioPreviewOwner {
     }
 
     /// Sends one approved take. Budget is reserved first; dispatch is recorded
-    /// before any network I/O; the result is validated and saved locally.
+    /// before any network I/O; the result is validated and returned for the
+    /// caller to store with the take.
     pub async fn send(
         &self,
-        root: &Path,
         budget: &BudgetOwner,
         request_id: &str,
         payload_sha256: &str,
-    ) -> Result<AudioResult> {
+    ) -> Result<ApiRun> {
         let item = self.consume(request_id, payload_sha256)?;
         let preview = item.preview;
         let audio = fs::read(&item.audio_path).map_err(|_| "The prepared audio is unavailable. Preview again.")?;
@@ -277,14 +281,8 @@ impl AudioPreviewOwner {
         )?;
 
         let result = to_result(&preview, &item.source_sha256, parsed, provider_request_id.clone(), cost)?;
-        let dir = root.join("cache").join("api-transcription").join(request_id);
-        fs::create_dir_all(&dir).map_err(|_| "Cannot save the API result locally.")?;
-        prepare::contained(root, &dir)?;
-        fs::write(dir.join("raw.json"), serde_json::to_vec(&raw).map_err(|e| e.to_string())?).map_err(|_| "Cannot save the API result locally.")?;
-        fs::write(dir.join("transcription.json"), serde_json::to_vec_pretty(&result).map_err(|e| e.to_string())?)
-            .map_err(|_| "Cannot save the API result locally.")?;
         let measures = crate::analysis::measure(&[crate::analysis::SegmentInput { text: &result.raw_text, start_ms: None, end_ms: None }]);
-        Ok(AudioResult {
+        let summary = AudioResult {
             request_id: request_id.into(),
             provider: preview.provider,
             model: preview.model,
@@ -296,8 +294,29 @@ impl AudioPreviewOwner {
             provider_request_id,
             audio_duration_ms: Some(billed_ms),
             estimated_cost_micro_usd: cost,
-        })
+        };
+        Ok(ApiRun { summary, raw, result })
     }
+}
+
+/// Last resort when the session database cannot take a paid result: keep the raw
+/// response and result in the app's cache so the charge is not wasted silently.
+pub fn keep_unsaved(root: &Path, run: &ApiRun) -> Result<std::path::PathBuf> {
+    recording::validate_id(&run.result.run_id)?;
+    let dir = root.join("cache").join("api-transcription").join(&run.result.run_id);
+    fs::create_dir_all(&dir).map_err(|_| "Cannot keep the API result.")?;
+    prepare::contained(root, &dir)?;
+    fs::write(dir.join("raw.json"), run.raw.to_string()).map_err(|_| "Cannot keep the API result.")?;
+    fs::write(dir.join("transcription.json"), serde_json::to_vec_pretty(&run.result).map_err(|e| e.to_string())?).map_err(|_| "Cannot keep the API result.")?;
+    Ok(dir)
+}
+
+/// A finished, settled API transcription: the summary shown to the user, plus
+/// the raw response and validated result the caller stores (3.16).
+pub struct ApiRun {
+    pub summary: AudioResult,
+    pub raw: Value,
+    pub result: TranscriptionResult,
 }
 
 fn uncertain(budget: &BudgetOwner, id: &str, message: &str) -> String {

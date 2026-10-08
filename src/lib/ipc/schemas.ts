@@ -574,6 +574,8 @@ export const AudioPreview = z.object({
   priceDate: z.string(),
   dataHandling: z.string(),
   payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  /** Set when this exact audio + provider/model/settings was transcribed before (3.16). */
+  previousRunAt: z.string().nullish(),
 });
 export type AudioPreview = z.infer<typeof AudioPreview>;
 
