@@ -19,7 +19,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 
 | | |
 | --- | --- |
-| Active milestone | M4 started at the user's request (2026-10-08): 40-prompt pack (4.1), 12 thought-group passages (4.2) and 8 guides (4.3) written and awaiting the user's review; the Thought groups exercise (4.7) is built; cloud or local transcription is now chosen per take (D-26). M3 Review and transcription: all code items are built; exit gate: timing after resampling and edit-keeps-original passed, worker crash passed apart from recording a live take afterwards; what remains are desktop checks, a live provider response (0.22) and the separate API enablement gate. Milestone P: P.2–P.4, P.7, P.8 done (stored YIN contour, intonation view with playhead and click-to-seek, phrase-ending readout); P.1 waits on the Praat spot-check, P.5/P.6 on M4 reference clips; gate P's gaps/no-score item is passed, the Praat comparison remains. E is done. M0 is done except the two checks that need the user's provider keys (0.22 live request, 0.23 benchmark). M1 is done (1.9 empty/error states verified by tests). M2's code is done; its remaining items are desktop/hardware checks and the exit gate |
+| Active milestone | M4 started at the user's request (2026-10-08): 40-prompt pack (4.1), 12 thought-group passages (4.2) and 8 guides (4.3) written and awaiting the user's review; the four exercises are built (4.6, 4.7, 4.9; 4.8 waits on reference clips); cloud or local transcription is now chosen per take (D-26). M3 Review and transcription: all code items are built; exit gate: timing after resampling and edit-keeps-original passed, worker crash passed apart from recording a live take afterwards; what remains are desktop checks, a live provider response (0.22) and the separate API enablement gate. Milestone P: P.2–P.4, P.7, P.8 done (stored YIN contour, intonation view with playhead and click-to-seek, phrase-ending readout); P.1 waits on the Praat spot-check, P.5/P.6 on M4 reference clips; gate P's gaps/no-score item is passed, the Praat comparison remains. E is done. M0 is done except the two checks that need the user's provider keys (0.22 live request, 0.23 benchmark). M1 is done (1.9 empty/error states verified by tests). M2's code is done; its remaining items are desktop/hardware checks and the exit gate |
 | Last updated | 2026-10-08 |
 | Repository | Everything is committed on `main` and pushed to `origin` (github.com/koloIIIlo/ClearPractice); authored by Alex only |
 | Built, not yet checked in the desktop app | removing a single take (2.23), Studio timer / Ctrl+Enter / live waveform, waveform player (2.14), Trash (2.17), backup / check / replace / weekly / export (2.18–2.22), microphone test (2.12), discard interrupted take (2.5), close guard (2.10), local transcription with measures, filler review, corrections and search (M3), model pack import (3.3), intonation view with playhead, click-to-seek and phrase endings (P.4, P.7), API transcription test panel with playable preview audio and Stop waiting (0.22, 3.15, 3.18) |
@@ -31,7 +31,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 3. M3: no code items left; the rest waits on desktop checks, a live provider response (0.22) and the API enablement gate.
 4. Physical check: unplug a USB microphone mid-take (2.9).
 5. Milestone P: the Praat spot-check (gate P, settles D-17), then P.5/P.6 with M4 reference clips. Then M4 content (start the licensed reference-clip search early).
-6. M4 next: 4.5 sessions storing the curriculum version, then the remaining exercises (4.6 repeat, 4.8 imitate, 4.9 better expression) and the daily sequences (4.10).
+6. M4 next: 4.5 sessions storing the curriculum version, then reference clips (4.4) for Listen and imitate, the daily sequences (4.10) and the completion view (4.11).
 
 **Standing notes (not blockers)**
 - Do not request another personal speech sample or repeat the completed paid coaching test; the public benchmark (D-24) stands in for personal audio.
@@ -289,10 +289,10 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 - [ ] 4.5 Curriculum versioning; sessions snapshot the version they used
 
 **Exercises**
-- [ ] 4.6 Repeat an answer (repetition groups, 2–3 takes, selected focus)
+- [~] 4.6 Repeat an answer (repetition groups, 2–3 takes, selected focus). Built: after the first take the Studio asks for one thing to improve (five presets or your own), stored as the session focus (`set_session_focus`, shown in the session view as Your focus); after three takes it says that is usually enough and links to the session for comparison. Remaining: the attempt comparison view (4.14) and a desktop check
 - [~] 4.7 Thought groups (listen, read, hide, explain). Built: the Thought groups exercise in the Studio shows a chosen passage split into its groups (picker locked once a take exists), a Hide the text and explain step, and records takes under "Read <passage> in thought groups, then explain it"; tests cover hide/show, the take task and the route. Remaining: "listen" (needs a recorded or synthesised reading of each passage) and a desktop check
-- [ ] 4.8 Listen and imitate (verify pitch-preserving speed before enabling 0.75/1.25×; uses the P.5 contour overlay)
-- [ ] 4.9 Use a better expression (typed or recorded sentences)
+- [~] 4.8 Listen and imitate (verify pitch-preserving speed before enabling 0.75/1.25×; uses the P.5 contour overlay). Built so far: choose one feature (emphasis, phrase rhythm, clear endings), stored as the session focus after the first take, with a plain note that reference clips are not bundled yet. Blocked: the clips themselves (4.4) and the contour overlay (P.5); pitch-preserving 0.75/1.25× is already verified in the player
+- [~] 4.9 Use a better expression (typed or recorded sentences). Built: the exercise starts from a saved phrase (picker, explanation, examples), three sentence fields for typed drafts, takes recorded under "Use <expression> in three sentences of your own", and Save sentences to session notes once a take exists. Remaining: typed-only practice without a recording (needs a session without audio) and a desktop check
 - [ ] 4.10 Daily 13-minute and 5-minute sequences; custom session; resume / start fresh
 - [ ] 4.11 Completion view: attempts, chosen improvement, save a phrase, ease self-report 1–5
 
@@ -372,6 +372,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Exercises 4.6, 4.8 (partial), 4.9: Rust 72 passed / 12 ignored (session focus stored, validated, cleared); Vitest 83/83 in 27 files; typecheck clean; expression screen checked in the browser preview.
 - 2026-10-08: Remove a single take (2.23, schema v8): Rust 72 passed / 12 ignored; Vitest 80/80 in 26 files; typecheck clean.
 - 2026-10-08: Added 2.23 (remove a single take) at the user's request; not built yet.
 - 2026-10-08: Thought groups exercise (4.7): passage panel in the Studio; Vitest 79/79 in 26 files; typecheck clean.

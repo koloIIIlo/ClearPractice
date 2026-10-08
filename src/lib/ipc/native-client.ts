@@ -101,6 +101,7 @@ export function createNativeClient(): IpcClient {
       }
       return () => removers.forEach((remove) => remove());
     },
+    setSessionFocus: async (sessionId, focus) => { await command("set_session_focus", z.null(), { sessionId, focus }); },
     updateSession: async (sessionId, details) => { await command("update_session", S.Id.nullable(), { sessionId, ...details }); },
     getSavedRecording: (assetId) => command("get_saved_recording", S.SavedRecording, { assetId }),
     getAttemptReview: async () => { throw new IpcError("analysis_pending", "Transcription and analysis are not connected to saved sessions yet."); },

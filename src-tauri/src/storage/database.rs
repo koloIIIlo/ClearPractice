@@ -545,6 +545,24 @@ impl DatabaseOwner {
         Ok(())
     }
 
+    /// The one thing to improve in the next take of a repeated answer (4.6).
+    /// `None` clears it. Stored on the session so review shows what was tried.
+    pub fn set_session_focus(&self, id: &str, focus: Option<&str>) -> Result<()> {
+        recording::validate_id(id)?;
+        let focus = focus.map(str::trim).filter(|f| !f.is_empty());
+        if focus.is_some_and(|f| f.len() > 160 || f.contains('\0')) {
+            return Err("Keep the focus to one short phrase (up to 160 characters).".into());
+        }
+        let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+        let count = conn
+            .execute("UPDATE sessions SET focus=?1 WHERE id=?2 AND deleted_at_ms IS NULL", params![focus, id])
+            .map_err(db_error)?;
+        if count != 1 {
+            return Err("This session is unavailable.".into());
+        }
+        Ok(())
+    }
+
     pub fn trash_retention_days(&self) -> Result<u32> {
         let conn = self
             .connection
@@ -1722,6 +1740,13 @@ mod tests {
         drop(owner);
         let owner = DatabaseOwner::open(&root.0).unwrap();
         assert_eq!(takes(&owner), [2]);
+
+        // The chosen focus for the next take is stored on the session (4.6).
+        owner.set_session_focus("session", Some("  State the point earlier ")).unwrap();
+        assert_eq!(owner.get_session("session").unwrap()["focus"], "State the point earlier");
+        assert!(owner.set_session_focus("session", Some(&"x".repeat(161))).is_err());
+        owner.set_session_focus("session", None).unwrap();
+        assert!(owner.get_session("session").unwrap()["focus"].is_null());
 
         // Removing the last take keeps the session and its note.
         owner.move_take_to_trash("take-2", 30).unwrap();

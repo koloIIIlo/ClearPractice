@@ -18,9 +18,10 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatClock } from "@/lib/format";
-import { useExercises, usePrompts, useInputDevices } from "@/lib/ipc/queries";
+import { useExercises, usePhrases, usePrompts, useInputDevices } from "@/lib/ipc/queries";
 import { useIpc } from "@/lib/ipc";
-import type { ExerciseDefinition, PracticePrompt } from "@/lib/ipc/schemas";
+import type { ExerciseDefinition, PhraseCard, PracticePrompt } from "@/lib/ipc/schemas";
+import { ExpressionPanel, expressionPrompt, ImitationPanel, RepeatFocus } from "./ExercisePanels";
 import { cn } from "@/lib/utils";
 import { describeDemands } from "@/features/exercises/describe";
 import { useRecorder, type Recorder } from "./recorder";
@@ -35,19 +36,26 @@ export function StudioPage() {
   const [params] = useSearchParams();
   const exercises = useExercises();
   const prompts = usePrompts();
+  const phrases = usePhrases();
 
   return (
     <Page className="max-w-4xl">
       <QueryView query={exercises}>
         {(exList) => (
           <QueryView query={prompts}>
-            {(promptList) => {
+            {(promptList) => (
+            <QueryView query={phrases}>
+            {(phraseList) => {
               const exercise = exList.find((e) => e.id === exerciseId) ?? exList[0];
               // Thought groups practise a passage, not a prompt (4.7).
               const passage = exercise.type === "thought_groups" ? (PASSAGES.find((p) => p.id === params.get("passage")) ?? PASSAGES[0]) : undefined;
-              const prompt = passage ? passagePrompt(passage) : (promptList.find((p) => p.id === params.get("prompt")) ?? promptList[0]);
-              return <Studio key={`${exercise.id}-${prompt.id}`} exercise={exercise} prompt={prompt} passage={passage} />;
+              // Use a better expression practises a saved phrase (4.9).
+              const phrase = exercise.type === "expression" && phraseList.length > 0 ? (phraseList.find((p) => p.id === params.get("phrase")) ?? phraseList[0]) : undefined;
+              const prompt = passage ? passagePrompt(passage) : phrase ? expressionPrompt(phrase) : (promptList.find((p) => p.id === params.get("prompt")) ?? promptList[0]);
+              return <Studio key={`${exercise.id}-${prompt.id}`} exercise={exercise} prompt={prompt} passage={passage} phrase={phrase} phrases={phraseList} />;
             }}
+            </QueryView>
+            )}
           </QueryView>
         )}
       </QueryView>
@@ -55,7 +63,7 @@ export function StudioPage() {
   );
 }
 
-function Studio({ exercise, prompt, passage }: { exercise: ExerciseDefinition; prompt: PracticePrompt; passage?: Passage }) {
+function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise: ExerciseDefinition; prompt: PracticePrompt; passage?: Passage; phrase?: PhraseCard; phrases?: PhraseCard[] }) {
   const ipc = useIpc();
   const native = ipc.recordingMode === "native";
   const [sessionId] = useState(() => crypto.randomUUID());
@@ -145,7 +153,21 @@ function Studio({ exercise, prompt, passage }: { exercise: ExerciseDefinition; p
         />
       )}
 
-      {!passage && <fieldset disabled={locked} className="grid gap-3 sm:grid-cols-3">
+      {phrase && (
+        <ExpressionPanel
+          phrase={phrase}
+          phrases={phrases}
+          sessionId={sessionId}
+          hasTake={rec.takes.length > 0}
+          locked={locked}
+          native={native}
+          onChoose={(id) => navigate(`/practice/${exercise.id}?phrase=${id}`, { replace: true })}
+        />
+      )}
+      {exercise.type === "imitate" && <ImitationPanel sessionId={sessionId} hasTake={rec.takes.length > 0} locked={locked} native={native} />}
+      {exercise.type === "repeat" && <RepeatFocus sessionId={sessionId} takeCount={rec.takes.length} locked={locked} native={native} />}
+
+      {!passage && !phrase && exercise.type !== "imitate" && <fieldset disabled={locked} className="grid gap-3 sm:grid-cols-3">
         <legend className="mb-2 text-meta font-medium">Outline (optional, up to three keywords)</legend>
         {(["point", "reason", "example"] as const).map((k) => (
           <div key={k} className="space-y-1">

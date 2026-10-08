@@ -561,6 +561,13 @@ async fn delete_sessions_permanently(
     .map_err(|_| "Session storage failed.".to_string())?
 }
 
+#[tauri::command]
+async fn set_session_focus(storage: State<'_, Arc<SessionStorage>>, session_id: String, focus: Option<String>) -> Result<(), String> {
+    with_storage(&storage, move |owner| owner.set_session_focus(&session_id, focus.as_deref()))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
 /// Single takes in Trash (2.23).
 #[tauri::command]
 async fn move_take_to_trash(storage: State<'_, Arc<SessionStorage>>, attempt_id: String) -> Result<(), String> {
@@ -1223,6 +1230,7 @@ pub fn run() {
             delete_sessions_permanently,
             empty_trash,
             move_take_to_trash,
+            set_session_focus,
             restore_take,
             delete_takes_permanently,
             set_trash_retention,

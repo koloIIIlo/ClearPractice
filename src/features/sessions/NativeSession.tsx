@@ -33,6 +33,7 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
   return <div className="space-y-4">
     <PageHeader title={session.title} description={`${formatLongDay(session.localDate)} · ${session.attemptCount} saved takes · ${formatClock(session.durationMs)}`} />
     {session.prompt && <Panel><p>{session.prompt}</p></Panel>}
+    {session.focus && <p className="text-meta"><span className="text-muted-foreground">Your focus for the retakes:</span> {session.focus}</p>}
     {session.conditionsUnavailableReason && <p className="text-meta text-muted-foreground">Task conditions unavailable: {session.conditionsUnavailableReason}</p>}
     <p className="text-meta text-muted-foreground">Listen, transcribe a take on this computer, review fillers and pauses, and keep your own notes. Coaching feedback is still being developed.</p>
     {attempts.length === 0 && <p role="status">This take is unavailable.</p>}

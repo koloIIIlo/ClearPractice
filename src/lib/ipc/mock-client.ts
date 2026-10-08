@@ -173,6 +173,11 @@ export function createMockClient(): IpcClient {
     getMicTestPlaybackUrl: async () => { throw new IpcError("desktop_required", "The microphone test runs in the desktop app."); },
     onMicTestEvent: async () => () => {},
     getAttemptReview: (attemptId) => respond(S.AttemptReview, data.reviewForAttempt(attemptId)),
+    setSessionFocus: async (id, focus) => {
+      const session = sessions.find((s) => s.id === id);
+      if (!session) throw new IpcError("not_found", "This session is unavailable.");
+      session.focus = focus;
+    },
     updateSession: async (id, details) => {
       const session = sessions.find((s) => s.id === id);
       if (!session) throw new IpcError("not_found", "This session is unavailable.");

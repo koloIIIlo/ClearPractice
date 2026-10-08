@@ -77,6 +77,8 @@ export interface IpcClient {
 
   listSessions(filter?: SessionFilter): Promise<SessionSummary[]>;
   getSession(sessionId: string): Promise<SessionDetail>;
+  /** The one thing to improve in the next take (4.6), or the imitated feature (4.8); null clears it. */
+  setSessionFocus(sessionId: string, focus: string | null): Promise<void>;
   updateSession(sessionId: string, details: { title: string; notes: string; tags: string[]; favorite: boolean }): Promise<void>;
   listTrash(): Promise<TrashList>;
   moveSessionToTrash(sessionId: string): Promise<void>;
