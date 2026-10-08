@@ -282,7 +282,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 - [ ] 4.1 40 reviewed prompts with situation tags and task demands
 - [ ] 4.2 12 thought-group passages (40–80 words, pause marks)
 - [ ] 4.3 8 offline guides (pauses, main-point structure, self-review, limits of automatic feedback, …)
-- [ ] 4.4 10 licensed or original reference clips with transcripts + attribution file
+- [ ] 4.4 10 licensed or original reference clips with transcripts + attribution file. Sourcing started early (see `resources/content/SOURCES.md`): VOA Learning English is the first choice (its own page states its texts and MP3s are public domain, reusable commercially with credit; news-agency material excluded), LibriVox for read passages, original recordings with a speaker release; per-clip record format drafted. No clip downloaded yet
 - [ ] 4.5 Curriculum versioning; sessions snapshot the version they used
 
 **Exercises**
@@ -369,6 +369,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Reference-clip sourcing for 4.4 (research only, no downloads): `resources/content/SOURCES.md`.
 - 2026-10-08: M3 gate, timing after resampling (hardware, 33 s): passes after clamping the padded final segment (previously the last 7 s of the public sample had no timing); Whisper unit test updated; Rust 68 passed / 12 ignored, both transcription hardware tests pass.
 - 2026-10-08: M3 gate, worker crash (hardware, 54 s): passes; see the gate item.
 - 2026-10-08: End-of-session full checks: Rust 68 passed / 10 hardware tests ignored, no warnings; Vitest 69/69 in 21 files; typecheck clean; production build OK. Plan and handout re-checked (one status table, no control bytes).
