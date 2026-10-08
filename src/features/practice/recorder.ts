@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useIpc } from "@/lib/ipc";
 import type { RecordingStatus, SavedRecording } from "@/lib/ipc/schemas";
 import type { PracticeContext } from "@/lib/ipc/client";
+import { LEVEL_HISTORY } from "@/components/live-waveform";
 
 export type RecorderPhase = "idle" | "countdown" | RecordingStatus["phase"];
 export interface Take {
@@ -21,7 +22,6 @@ interface State {
   error: string | null;
   takes: Take[];
 }
-export const LEVEL_HISTORY = 80;
 const initial: State = { phase: "idle", countdown: 0, elapsedMs: 0, level: 0, clipping: false, levels: [], error: null, takes: [] };
 export interface Recorder extends State {
   ready: boolean;

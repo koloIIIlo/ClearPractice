@@ -2,7 +2,6 @@ import { useState, type ReactNode } from "react";
 import { NavLink, useParams } from "react-router";
 import { useTheme, type ThemePreference } from "@/app/theme";
 import { Page, PageHeader, Panel } from "@/components/page";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -12,6 +11,7 @@ import { useInputDevices } from "@/lib/ipc/queries";
 import { cn } from "@/lib/utils";
 import { BackupSettings } from "./BackupSettings";
 import { TranscriptionSetup } from "./TranscriptionSetup";
+import { MicrophoneTest } from "./MicrophoneTest";
 import { ApiCredentialSettings } from "./ApiCredentialSettings";
 import { ApiBudgetStatus } from "./ApiBudgetStatus";
 import { CoachingSpike } from "./CoachingSpike";
@@ -122,12 +122,7 @@ function AudioSettings() {
           </SelectContent>
         </Select>
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="outline" disabled>
-          Test microphone
-        </Button>
-        <Later milestone={2}>Records five seconds and plays them back.</Later>
-      </div>
+      <MicrophoneTest deviceId={selected || null} />
       <SwitchRow id="rec-sounds" label="Recording sounds" hint="A short tone when recording starts and stops." defaultChecked />
     </Section>
   );

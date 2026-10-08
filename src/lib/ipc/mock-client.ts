@@ -151,6 +151,9 @@ export function createMockClient(): IpcClient {
     saveTranscriptCorrection: async () => { throw new IpcError("desktop_required", "Transcripts are available in the desktop app."); },
     cancelTranscription: async () => null,
     onTranscriptionEvent: async () => () => {},
+    startMicTest: async () => { throw new IpcError("desktop_required", "The microphone test runs in the desktop app."); },
+    getMicTestPlaybackUrl: async () => { throw new IpcError("desktop_required", "The microphone test runs in the desktop app."); },
+    onMicTestEvent: async () => () => {},
     getAttemptReview: (attemptId) => respond(S.AttemptReview, data.reviewForAttempt(attemptId)),
     updateSession: async (id, details) => {
       const session = sessions.find((s) => s.id === id);

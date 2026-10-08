@@ -33,6 +33,7 @@ import type {
   TranscriptionSetup,
   AttemptTranscript,
   TranscriptionEvent,
+  MicTestFinished,
   RecoverableRecording,
   RecordingStatus,
   CredentialStatus,
@@ -98,6 +99,10 @@ export interface IpcClient {
   /** Cancels the running transcription; resolves with its attempt ID, or null when none was running. */
   cancelTranscription(): Promise<string | null>;
   onTranscriptionEvent(listener: (event: TranscriptionEvent) => void): Promise<() => void>;
+  /** Records five seconds for playback; nothing is added to session history. */
+  startMicTest(deviceId: string | null): Promise<RecordingStatus>;
+  getMicTestPlaybackUrl(attemptId: string): Promise<string>;
+  onMicTestEvent(onLevel: (status: RecordingStatus) => void, onFinished: (result: MicTestFinished) => void): Promise<() => void>;
   getSavedRecording(assetId: string): Promise<SavedRecording>;
   getAttemptReview(attemptId: string): Promise<AttemptReview>;
 

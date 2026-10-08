@@ -28,7 +28,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 **Next actions, in order**
 1. One desktop pass after rebuilding (`npm run tauri dev`) over the "Built, not yet checked" list above, then the manual M2 exit gate.
 2. M3: transcript seeking, filler candidates and measures (3.6–3.8), transcript corrections (3.9), search (3.13). The Transcribe flow itself is built; check it in the desktop app (Settings → Transcription → choose `bench/runtime.local/config-selected.json`, then Transcribe on a take).
-3. Remaining M2: recovery presentation (2.5), recording failure and close-guard checks (2.8–2.10), microphone test (2.12), API usage ledger in backups.
+3. Remaining M2: recovery presentation (2.5), recording failure and close-guard checks (2.8–2.10). Decide whether backups should carry the API usage ledger (restoring an older ledger would undercount spending, so it is deliberately left out for now).
 4. M1 manual keyboard pass and compact-navigation check.
 
 **Standing notes (not blockers)**
@@ -209,7 +209,7 @@ These API transcription items add an estimated 1–2 days to feasibility if cred
 - [ ] 2.9 Device disconnect → safe stop and preserved audio; full-disk simulation → no false "Saved"
 - [ ] 2.10 Close-app guard during recording (Stop and save / Continue recording)
 - [ ] 2.11 Practice studio UI: PromptOutline, RecorderTransport, InputLevelMeter, AttemptList, optional prep countdown
-- [ ] 2.12 Microphone picker + 5-second test with playback (onboarding step 2)
+- [~] 2.12 Microphone picker + 5-second test with playback (onboarding step 2). Settings → Audio: Test microphone records 5 s from the selected device through the verified capture path with its own root (`cache/mic-test`, wiped at start and before each test, never in history/SQLite/backups), live waveform, playback, and quiet-input advice (peak below about −32 dBFS). Mutually exclusive with real recording both ways. Live microphone hardware test passes; onboarding step itself is M4
 
 **Playback & history**
 - [x] 2.13 Scoped asset protocol for playback by trusted ID. `get_recording_playback_path` resolves only committed, checksum-verified assets; asset scope is limited to `$APPLOCALDATA/recordings/*/audio.wav`
@@ -373,6 +373,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Microphone test (2.12): `cargo test --lib mic_test -- --ignored` recorded the laptop microphone into cache/mic-test and wiped it; Vitest settings/practice/ipc 22/22. Live waveform moved to src/components for reuse. Asset scope gained `$APPLOCALDATA/cache/mic-test/recordings/*/audio.wav`.
 - 2026-10-08: Native search (3.13): fixed a desktop bug where Ctrl+K listed sample sessions. Rust storage 15/15 incl. search (prefix, multi-term, note/transcript excerpts, edits re-indexed, Trash excluded, query syntax as text); Vitest ipc 9/9.
 - 2026-10-08: Transcript corrections (3.9 start): Rust storage 1 new test (25/25 in storage/analysis/transcribe/backup), Vitest transcript + ipc 11/11.
 - 2026-10-08: Transcript measures v1 (3.6/3.7 start). On the real public-sample transcript: 13 filler candidates (M0 reference: 14 UH/UM), pace 171.5 wpm over 54 s of timed speech, one untimed final segment (Whisper's end exceeded the recording) left out instead of hiding all measures, no ≥700 ms pauses (clips are concatenated without silence). Rust analysis 3/3 + hardware run; Vitest transcript 3/3.

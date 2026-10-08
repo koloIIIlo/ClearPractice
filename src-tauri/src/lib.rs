@@ -5,6 +5,7 @@ pub mod audio;
 pub mod backup;
 mod audio_devices;
 pub mod credentials;
+pub mod mic_test;
 pub mod storage;
 pub mod transcribe;
 
@@ -186,9 +187,13 @@ async fn start_recording(
     service: State<'_, Arc<CaptureService>>,
     storage: State<'_, Arc<SessionStorage>>,
     transcription: State<'_, Arc<Transcription>>,
+    mic: State<'_, Arc<mic_test::MicTest>>,
     context: Option<storage::database::PracticeContext>,
     request: StartRequest,
 ) -> Result<RecordingStatus, String> {
+    if mic.capture.is_active() {
+        return Err("Wait for the microphone test to finish (5 seconds).".into());
+    }
     // Recording takes priority: a running transcription is cancelled and can be retried.
     transcription.active.cancel();
     let service = service.inner().clone();
@@ -713,6 +718,68 @@ fn cancel_transcription(transcription: State<'_, Arc<Transcription>>) -> Option<
     transcription.active.cancel()
 }
 
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MicTestFinished {
+    attempt_id: String,
+    duration_ms: Option<u64>,
+    error: Option<String>,
+}
+
+/// Records five seconds from the chosen microphone for playback (plan 2.12).
+/// Levels arrive as `mic_test_level`; `mic_test_finished` follows the stop.
+#[tauri::command]
+async fn start_mic_test(
+    app: tauri::AppHandle,
+    service: State<'_, Arc<CaptureService>>,
+    mic: State<'_, Arc<mic_test::MicTest>>,
+    device_id: Option<String>,
+) -> Result<RecordingStatus, String> {
+    if service.is_active() {
+        return Err("Stop the current recording before testing the microphone.".into());
+    }
+    let mic = mic.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        mic.clear()?;
+        let id = format!("mic-test-{}", storage::recording::now_ms());
+        let status = mic.capture.start(StartRequest {
+            attempt_id: id.clone(),
+            idempotency_key: id.clone(),
+            device_id,
+            title: "Microphone test".into(),
+        })?;
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(mic_test::TEST_MS));
+            let result = mic.capture.stop(&id);
+            let _ = app.emit(
+                "mic_test_finished",
+                MicTestFinished {
+                    attempt_id: id,
+                    duration_ms: result.as_ref().ok().map(|s| s.duration_ms),
+                    error: result.err(),
+                },
+            );
+        });
+        Ok(status)
+    })
+    .await
+    .map_err(|_| "Microphone test failed.".to_string())?
+}
+
+#[tauri::command]
+async fn get_mic_test_playback_path(
+    mic: State<'_, Arc<mic_test::MicTest>>,
+    attempt_id: String,
+) -> Result<String, String> {
+    let mic = mic.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        storage::recording::playback_path(&mic.root, &attempt_id)
+            .map(|path| path.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|_| "Microphone test failed.".to_string())?
+}
+
 /// Picks a backup file natively and validates it into a staging folder. The
 /// current profile is not changed; `None` means the picker was cancelled.
 #[tauri::command]
@@ -840,6 +907,15 @@ pub fn run() {
                 root.clone(),
             )));
             app.manage(Arc::new(api::coaching::PreviewOwner::default()));
+            let mic_events = app.handle().clone();
+            app.manage(Arc::new(mic_test::MicTest::new(
+                &root,
+                Arc::new(move |event, status| {
+                    // recording_status/level/saved → mic_test_status/level/saved
+                    let name = format!("mic_test_{}", event.trim_start_matches("recording_"));
+                    let _ = mic_events.emit(&name, status);
+                }),
+            )?));
             app.manage(Arc::new(Transcription {
                 worker: audio::whisper::WhisperWorker::new(root.clone()),
                 active: transcribe::ActiveJob::default(),
@@ -911,6 +987,8 @@ pub fn run() {
             get_attempt_transcript,
             save_transcript_correction,
             search_content,
+            start_mic_test,
+            get_mic_test_playback_path,
             transcribe_attempt,
             cancel_transcription,
             close_after_recording

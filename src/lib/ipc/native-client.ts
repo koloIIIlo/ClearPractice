@@ -50,6 +50,25 @@ export function createNativeClient(): IpcClient {
     saveTranscriptCorrection: (attemptId, parentRevisionId, text) => command("save_transcript_correction", S.Id, { attemptId, parentRevisionId, text }),
     transcribeAttempt: (attemptId) => command("transcribe_attempt", S.Id, { attemptId }),
     cancelTranscription: () => command("cancel_transcription", S.Id.nullable()),
+    startMicTest: (deviceId) => command("start_mic_test", S.RecordingStatus, { deviceId }),
+    getMicTestPlaybackUrl: async (attemptId) => convertFileSrc(await command("get_mic_test_playback_path", S.Id, { attemptId })),
+    onMicTestEvent: async (onLevel, onFinished) => {
+      const removers: (() => void)[] = [];
+      try {
+        removers.push(await listen("mic_test_level", ({ payload }) => {
+          const parsed = S.RecordingStatus.safeParse(payload);
+          if (parsed.success) onLevel(parsed.data);
+        }));
+        removers.push(await listen("mic_test_finished", ({ payload }) => {
+          const parsed = S.MicTestFinished.safeParse(payload);
+          if (parsed.success) onFinished(parsed.data);
+        }));
+      } catch (error) {
+        removers.forEach((remove) => remove());
+        throw error;
+      }
+      return () => removers.forEach((remove) => remove());
+    },
     onTranscriptionEvent: async (listener) => {
       const removers: (() => void)[] = [];
       try {

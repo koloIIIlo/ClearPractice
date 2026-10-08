@@ -497,6 +497,14 @@ export const RecordingStatus = z.object({
 });
 export type RecordingStatus = z.infer<typeof RecordingStatus>;
 
+/** End of a five-second microphone test (plan 2.12); exactly one of durationMs/error is set. */
+export const MicTestFinished = z.object({
+  attemptId: Id,
+  durationMs: z.number().int().nonnegative().nullable(),
+  error: z.string().nullable(),
+});
+export type MicTestFinished = z.infer<typeof MicTestFinished>;
+
 export const CredentialStatus = z.object({
   provider: z.literal("OpenAI"),
   present: z.boolean(),
