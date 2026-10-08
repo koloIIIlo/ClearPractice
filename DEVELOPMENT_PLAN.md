@@ -19,7 +19,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 
 | | |
 | --- | --- |
-| Active milestone | M3 Review and transcription (in progress). E is done. M0 is done except the two checks that need the user's provider keys (0.22 live request, 0.23 benchmark). M1 is done except a responsive check and empty/error states. M2's code is done; its remaining items are desktop/hardware checks and the exit gate |
+| Active milestone | M3 Review and transcription (in progress). E is done. M0 is done except the two checks that need the user's provider keys (0.22 live request, 0.23 benchmark). M1 is done except an empty/error-state pass (1.9). M2's code is done; its remaining items are desktop/hardware checks and the exit gate |
 | Last updated | 2026-10-08 |
 | Repository | Everything is committed on `main` and pushed to `origin` (github.com/koloIIIlo/ClearPractice); authored by Alex only |
 | Built, not yet checked in the desktop app | Studio timer / Ctrl+Enter / live waveform, waveform player (2.14), Trash (2.17), backup / check / replace / weekly / export (2.18–2.22), microphone test (2.12), discard interrupted take (2.5), close guard (2.10), local transcription with measures, filler review, corrections and search (M3), API transcription test panel (0.22) |
@@ -29,7 +29,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 1. User: one desktop pass after rebuilding (`npm run tauri dev`) over the "Built, not yet checked" list, then the manual M2 exit gate. For transcription: Settings → Transcription → choose `bench/runtime.local/config-selected.json`, record a take, open its session, Transcribe.
 2. User (optional): store a Deepgram and/or AssemblyAI key in Settings → Transcription → API transcription test, preview a take and approve one Send (closes 0.22); then plan 0.23.
 3. M3 remaining code: model pack registry and verified import (3.3), worker protocol versioning (3.2), stored analysis runs/metric values (3.4), API transcription in the product behind its gate (3.14–3.19).
-4. Physical checks: unplug a USB microphone mid-take (2.9); M1 responsive check below 1100 px and 800×600 (1.8); empty/error states pass (1.9).
+4. Physical check: unplug a USB microphone mid-take (2.9). M1: empty/error-state pass (1.9).
 5. Then milestone P (pitch tracker choice, P.1) and M4 content (start the licensed reference-clip search early).
 
 **Standing notes (not blockers)**
@@ -177,7 +177,7 @@ These API transcription items add an estimated 1–2 days to feasibility if cred
 - [x] 1.5 React Router with hash routing; routes for all 8 destinations including contextual Studio and Review
 - [x] 1.6 TanStack Query provider; `src/lib/ipc` typed command wrappers with a mock implementation for browser-only dev
 - [x] 1.7 Zod schemas for the core DTOs (Session, Attempt, TranscriptRevision, PhraseCard, …). FeedbackResult comes with 0.19 / 5.2
-- [~] 1.8 Responsive rules: sidebar at ≥1100 px, stacked feedback below 1100 px, compact nav below 800 px; test at 800×600
+- [x] 1.8 Responsive rules: sidebar at ≥1100 px, stacked feedback below 1100 px, compact nav below 800 px; test at 800×600. Checked in the browser preview on 2026-10-08: at 1300 px the feedback column sits beside the transcript, at 1050 px it stacks below, at 800×600 everything fits without horizontal scrolling, and below 800 px (790) the compact menu works by keyboard
 - [~] 1.9 Real empty / loading / unavailable / error states for each screen (§5)
 - [x] 1.10 Command palette (Ctrl+K), local search stub
 - [x] 1.11 Reduced motion, 120–180 ms transitions, visible focus rings
