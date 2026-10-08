@@ -202,7 +202,7 @@ These API transcription items add an estimated 1–2 days to feasibility if cred
 - [x] 2.3 SQLite v1 tables and indexes implemented for profiles, exercise_definitions, prompts, sessions, session_steps, attempts, audio_assets, task_conditions, jobs and backup_records. Curriculum seeding/full job behavior follow their milestones
 - [~] 2.4 Native commands reserve attempt/asset identity before capture, finalize verified files then commit the reference, and announce Saved only after both succeed. Receipt-import/restart/idempotency tests pass; whole-app failure acceptance remains
 - [~] 2.5 Startup imports healthy legacy receipts idempotently, marks reserved captures interrupted and flags missing/corrupt assets without deleting them. Interrupted takes can now be recovered or discarded (confirmation states the audio length and that it is permanent; saved takes are refused and go through Trash; a recording in progress cannot be discarded). Remaining: desktop check, and a clearer note for sessions whose audio is flagged missing
-- [~] 2.6 Trusted native IDs and generated relative asset paths; recording, chunk, database and snapshot access checks links/junctions/containment. Traversal tests pass. Remaining adversarial link/archive and restore checks pending
+- [x] 2.6 Trusted native IDs and generated relative asset paths; recording, chunk, database and snapshot access checks links/junctions/containment. Traversal tests pass. Adversarial checks done 2026-10-08: a real NTFS junction planted in `recordings/<id>` is refused by backup (no partial file) and by permanent delete (left pending, outside target untouched); restore rejects link entries, traversal and unlisted paths in archives (2.19 tests)
 
 **Recording in the app**
 - [ ] 2.7 `start_recording` / `stop_recording` with idempotency keys; a second Stop creates no duplicate. The native behaviour is already proven by 0.7 and 2.4; what remains here is the whole-app check from the Studio (double-click Stop, Ctrl+Enter twice)
@@ -374,6 +374,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Junction attack test (2.6) passes on Windows with `mklink /J`.
 - 2026-10-08: Discard for interrupted takes (2.5): Rust recording 6/6, Vitest practice + ipc 15/15, crate builds.
 - 2026-10-08: E and M0 completion pass. E-7 resolved as not needed (prebuilt binaries). 0.22 spike built and tested offline (no request sent; no test reads a real provider key slot, so tests can never bill). 0.22's live check and 0.23 need the user. Sources: Deepgram pre-recorded docs, Deepgram model-improvement opt-out page, AssemblyAI submit/upload API reference and data-retention FAQ (8 Oct).
 - 2026-10-08: M1 keyboard pass in the browser preview: fixed invisible focus on Radix tab panels (TabsContent had outline-none and no ring; affects every Tabs use) and gave the three "From a session" links on Phrases distinct accessible names. The tablist briefly receiving focus is Radix's internal hand-off, not a Tab stop (verified with Tab / Shift+Tab).

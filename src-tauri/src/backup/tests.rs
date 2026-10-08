@@ -338,3 +338,39 @@ fn session_export_is_readable_and_explains_unavailable_audio() {
     assert!(read(&mut zip, "session.md").contains("Unavailable:"));
     assert!(zip.by_name("take-1.wav").is_err());
 }
+
+/// Plan 2.6: a junction planted inside app storage must never make backup read,
+/// or permanent delete remove, anything outside the app data folder.
+#[cfg(windows)]
+#[test]
+fn junctions_in_storage_are_refused_by_backup_and_permanent_delete() {
+    let (root, owner) = profile_with_two_takes();
+    let outside = TestRoot::new();
+    let victim = outside.0.join("victim");
+    fs::create_dir(&victim).unwrap();
+    fs::write(victim.join("keep.txt"), b"must survive").unwrap();
+
+    // Replace take-a's recording folder with a junction to the outside folder.
+    let take = root.0.join("recordings").join("take-a");
+    fs::rename(&take, root.0.join("take-a-moved")).unwrap();
+    let status = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&take)
+        .arg(&victim)
+        .output()
+        .unwrap();
+    assert!(status.status.success(), "{}", String::from_utf8_lossy(&status.stderr));
+
+    let destination = TestRoot::new();
+    let folder = destination.0.join("backups");
+    fs::create_dir(&folder).unwrap();
+    assert!(create(&owner, &folder, recording::now_ms()).is_err(), "backup must not follow the junction");
+    assert_eq!(fs::read_dir(&folder).unwrap().count(), 0, "no partial file kept");
+
+    // Trash then permanent delete: the junction target must survive.
+    owner.move_to_trash("take-a", recording::now_ms()).unwrap();
+    let pending = owner.delete_permanently(&["take-a".into()]).unwrap();
+    assert!(pending, "removal through a junction is refused and left pending");
+    assert_eq!(fs::read(victim.join("keep.txt")).unwrap(), b"must survive");
+    let _ = fs::remove_dir(&take); // remove the junction itself, not its target
+}
