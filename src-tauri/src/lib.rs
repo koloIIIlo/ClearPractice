@@ -706,7 +706,7 @@ async fn get_attempt_transcript(
     storage: State<'_, Arc<SessionStorage>>,
     attempt_id: String,
 ) -> Result<serde_json::Value, String> {
-    with_storage(&storage, move |owner| owner.attempt_transcript(&attempt_id))
+    with_storage(&storage, move |owner| owner.attempt_transcript_with_voice(&attempt_id))
         .await
         .map_err(|_| "Session storage failed.".to_string())?
 }

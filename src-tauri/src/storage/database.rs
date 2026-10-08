@@ -824,6 +824,22 @@ impl DatabaseOwner {
         Ok(id)
     }
 
+    /// The transcript view plus voice activity measured from the take's own
+    /// waveform (plan 3.5). Runs after the transcript query has released the
+    /// connection, because the waveform check needs it too.
+    pub fn attempt_transcript_with_voice(&self, attempt_id: &str) -> Result<Value> {
+        let mut view = self.attempt_transcript(attempt_id)?;
+        if view["revision"].is_object() {
+            let voice = match self.waveform(attempt_id) {
+                Ok(peaks) => serde_json::to_value(crate::analysis::voice_activity(&peaks.peaks, peaks.samples_per_peak, peaks.sample_rate)),
+                Err(error) => Ok(json!({"method":"peak-energy-v1","source":"Estimated","speechStartMs":null,"speechEndMs":null,"pauses":[],"unavailableReason":error})),
+            }
+            .map_err(|e| e.to_string())?;
+            view["revision"]["measures"]["voice"] = voice;
+        }
+        Ok(view)
+    }
+
     /// The newest transcript revision of a take plus its newest job, either may be null.
     pub fn attempt_transcript(&self, attempt_id: &str) -> Result<Value> {
         recording::validate_id(attempt_id)?;

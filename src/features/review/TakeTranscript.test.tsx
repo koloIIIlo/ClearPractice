@@ -63,6 +63,7 @@ it("shows progress, then the saved transcript with estimated timings and kept fi
         definitionVersion: 1, source: "Estimated", wordCount: 5, speechSpanMs: 3_000, paceWpm: null,
         paceUnavailableReason: "Needs at least 15 seconds of speech.", pauseThresholdMs: 700, pauses: [], pausesUnavailableReason: null,
         fillers: [{ segment: 0, word: "uh", segmentStartMs: 12_000, decision: null }], repeatedWords: [], untimedSegments: 0,
+        voice: { method: "peak-energy-v1", source: "Estimated", speechStartMs: 0, speechEndMs: 3_000, pauses: [{ afterSegment: 0, startMs: 1_500, durationMs: 900 }], unavailableReason: null },
       },
     },
   };
@@ -72,6 +73,7 @@ it("shows progress, then the saved transcript with estimated timings and kept fi
   expect(filler.closest("li")).toHaveTextContent("Well, uh, indexes speed up reads.");
   expect(screen.getByText("Unavailable: Needs at least 15 seconds of speech.")).toBeInTheDocument();
   expect(screen.getByText("1 (uh)")).toBeInTheDocument();
+  expect(screen.getByText("0.9 s at 0:02 · from the recording")).toBeInTheDocument();
   expect(screen.getByText("0:12")).toBeInTheDocument();
   expect(screen.getByText(/As transcribed · local large-v3-turbo-q5_0 \(CUDA\) · 12 s/)).toBeInTheDocument();
   expect(screen.getByText(/kept on\s+purpose/)).toBeInTheDocument();

@@ -243,6 +243,18 @@ export const TranscriptMeasures = z.object({
   ),
   repeatedWords: z.array(z.string()),
   untimedSegments: z.number().int().nonnegative(),
+  /** Pauses found in the recording's own waveform (plan 3.5); preferred over segment gaps. */
+  voice: z
+    .object({
+      method: z.string(),
+      source: z.literal("Estimated"),
+      speechStartMs: z.number().int().nonnegative().nullable(),
+      speechEndMs: z.number().int().nonnegative().nullable(),
+      pauses: z.array(z.object({ afterSegment: z.number().int().nonnegative(), startMs: z.number().int().nonnegative(), durationMs: z.number().int().nonnegative() })),
+      unavailableReason: z.string().nullable(),
+    })
+    .nullable()
+    .default(null),
 });
 export type TranscriptMeasures = z.infer<typeof TranscriptMeasures>;
 

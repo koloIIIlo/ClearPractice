@@ -45,11 +45,14 @@ function Measures({ m }: { m: TranscriptMeasures }) {
       <dd>{m.fillers.length ? `${m.fillers.length} (${fillerWords})` : "None found"}</dd>
       <dt className="text-muted-foreground">Pauses of {m.pauseThresholdMs / 1000} s or more</dt>
       <dd>
-        {m.pausesUnavailableReason
-          ? `Unavailable: ${m.pausesUnavailableReason}`
-          : m.pauses.length
-            ? m.pauses.map((p) => `${(p.durationMs / 1000).toFixed(1)} s at ${formatClock(p.startMs)}`).join(", ")
-            : "None"}
+        {(() => {
+          // Silence in the recording itself beats gaps between model segments.
+          const fromAudio = m.voice && !m.voice.unavailableReason;
+          const pauses = fromAudio ? m.voice!.pauses : m.pauses;
+          const reason = fromAudio ? null : m.pausesUnavailableReason;
+          const list = reason ? `Unavailable: ${reason}` : pauses.length ? pauses.map((p) => `${(p.durationMs / 1000).toFixed(1)} s at ${formatClock(p.startMs)}`).join(", ") : "None";
+          return `${list}${fromAudio ? " · from the recording" : " · from transcript timing"}`;
+        })()}
       </dd>
       <dt className="text-muted-foreground">Repeated words</dt>
       <dd>{m.repeatedWords.length ? m.repeatedWords.join(", ") : "None"}</dd>

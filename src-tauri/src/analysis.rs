@@ -138,9 +138,98 @@ pub fn measure(segments: &[SegmentInput]) -> Measures {
     }
 }
 
+/// Silences found in the recording itself (plan 3.5): from the waveform peaks
+/// of the original take, so times are on the original timeline and nothing is
+/// trimmed. Speech is any bucket above an adaptive threshold between the noise
+/// floor and the loudest speech; pauses are quiet runs of at least 700 ms
+/// between the first and last speech.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceActivity {
+    pub method: &'static str,
+    pub source: &'static str,
+    pub speech_start_ms: Option<u64>,
+    pub speech_end_ms: Option<u64>,
+    pub pauses: Vec<Pause>,
+    pub unavailable_reason: Option<String>,
+}
+
+pub fn voice_activity(peaks: &[u16], samples_per_peak: u32, sample_rate: u32) -> VoiceActivity {
+    let method = "peak-energy-v1";
+    let ms_per_bucket = u64::from(samples_per_peak) * 1000 / u64::from(sample_rate.max(1));
+    let unavailable = |reason: &str| VoiceActivity {
+        method,
+        source: "Estimated",
+        speech_start_ms: None,
+        speech_end_ms: None,
+        pauses: Vec::new(),
+        unavailable_reason: Some(reason.into()),
+    };
+    if peaks.len() < 10 || ms_per_bucket == 0 {
+        return unavailable("The recording is too short to find pauses.");
+    }
+    let mut sorted = peaks.to_vec();
+    sorted.sort_unstable();
+    let floor = f64::from(sorted[sorted.len() / 10]);
+    let loud = f64::from(sorted[sorted.len() * 95 / 100]);
+    if loud < 300.0 || loud < floor * 3.0 {
+        return unavailable("No clear speech above the background noise.");
+    }
+    // Geometric midpoint between noise and speech copes with quiet microphones.
+    let threshold = (floor.max(30.0) * loud).sqrt();
+    let voiced: Vec<bool> = peaks.iter().map(|p| f64::from(*p) >= threshold).collect();
+    let (Some(first), Some(last)) = (voiced.iter().position(|v| *v), voiced.iter().rposition(|v| *v)) else {
+        return unavailable("No clear speech above the background noise.");
+    };
+    let mut pauses = Vec::new();
+    let mut run_start: Option<usize> = None;
+    for (index, &is_voiced) in voiced.iter().enumerate().take(last + 1).skip(first) {
+        match (is_voiced, run_start) {
+            (false, None) => run_start = Some(index),
+            (true, Some(start)) => {
+                let duration = (index - start) as u64 * ms_per_bucket;
+                if duration >= PAUSE_THRESHOLD_MS {
+                    pauses.push(Pause { after_segment: 0, start_ms: start as u64 * ms_per_bucket, duration_ms: duration });
+                }
+                run_start = None;
+            }
+            _ => {}
+        }
+    }
+    VoiceActivity {
+        method,
+        source: "Estimated",
+        speech_start_ms: Some(first as u64 * ms_per_bucket),
+        speech_end_ms: Some((last as u64 + 1) * ms_per_bucket),
+        pauses,
+        unavailable_reason: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn voice_activity_finds_real_silences_on_the_original_timeline() {
+        // 100 buckets per second: 0.5 s noise, 2 s speech, 1.2 s pause, 1 s speech, 0.3 s gap, 1 s speech, 0.5 s noise.
+        let mut peaks = vec![40u16; 50];
+        peaks.extend(vec![9_000; 200]);
+        peaks.extend(vec![60; 120]);
+        peaks.extend(vec![7_000; 100]);
+        peaks.extend(vec![50; 30]);
+        peaks.extend(vec![8_000; 100]);
+        peaks.extend(vec![40; 50]);
+        let v = voice_activity(&peaks, 480, 48_000);
+        assert_eq!(v.speech_start_ms, Some(500));
+        assert_eq!(v.speech_end_ms, Some(6_000));
+        assert_eq!(v.pauses.len(), 1, "the 0.3 s gap is below the threshold");
+        assert_eq!((v.pauses[0].start_ms, v.pauses[0].duration_ms), (2_500, 1_200));
+
+        let silence = voice_activity(&vec![40u16; 500], 480, 48_000);
+        assert!(silence.unavailable_reason.is_some() && silence.pauses.is_empty());
+        assert!(voice_activity(&[1, 2, 3], 480, 48_000).unavailable_reason.is_some());
+    }
 
     fn seg(text: &str, start: u64, end: u64) -> SegmentInput<'_> {
         SegmentInput { text, start_ms: Some(start), end_ms: Some(end) }

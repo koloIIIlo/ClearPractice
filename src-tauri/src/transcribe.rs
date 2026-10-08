@@ -183,7 +183,9 @@ mod tests {
             .unwrap();
         owner.save_local_transcript("job-1", "public", &transcript, recording::now_ms()).unwrap();
 
-        let saved = owner.attempt_transcript("public").unwrap();
+        let saved = owner.attempt_transcript_with_voice("public").unwrap();
+        println!("VOICE: {}", saved["revision"]["measures"]["voice"]);
+        assert_eq!(saved["revision"]["measures"]["voice"]["method"], "peak-energy-v1");
         assert_eq!(saved["job"]["state"], "completed");
         let text = saved["revision"]["text"].as_str().unwrap().to_lowercase();
         println!("TRANSCRIPT: {text}");
