@@ -919,6 +919,35 @@ async fn choose_link_tool(app: tauri::AppHandle, storage: State<'_, Arc<SessionS
     .map_err(|_| "Session storage failed.".to_string())?
 }
 
+/// Downloads the official yt-dlp.exe into the app's tools folder after an explicit
+/// click, with progress, and verifies it against the release checksum (4.4f).
+#[tauri::command]
+async fn download_link_tool(app: tauri::AppHandle, storage: State<'_, Arc<SessionStorage>>, work: State<'_, Arc<ClipWork>>) -> Result<LinkToolStatus, String> {
+    let root = {
+        let storage = storage.inner().clone();
+        storage.with(|owner| Ok(owner.root().to_path_buf()))?
+    };
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    if let Ok(mut slot) = work.fetch.lock() {
+        *slot = Some(cancel.clone());
+    }
+    let events = app.clone();
+    let result = linkaudio::download_tool(&root, &cancel, move |received, total| {
+        let _ = events.emit("link_tool_download", serde_json::json!({ "received": received, "total": total }));
+    })
+    .await;
+    if let Ok(mut slot) = work.fetch.lock() {
+        *slot = None;
+    }
+    let path = result?;
+    with_storage(&storage, move |owner| {
+        owner.set_setting(linkaudio::SETTING_KEY, &path.to_string_lossy())?;
+        link_tool(owner)
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
 /// Downloads the audio of a YouTube link with the user's yt-dlp and stages it (4.4d).
 #[tauri::command]
 async fn fetch_link_audio(storage: State<'_, Arc<SessionStorage>>, work: State<'_, Arc<ClipWork>>, url: String) -> Result<linkaudio::LinkAudio, String> {
@@ -1648,6 +1677,7 @@ pub fn run() {
             get_link_tool_status,
             choose_link_tool,
             fetch_link_audio,
+            download_link_tool,
             list_clips,
             get_clip_playback_path,
             delete_clip,

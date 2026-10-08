@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { expect, it, vi } from "vitest";
@@ -165,4 +165,23 @@ it("lets AI choose the best parts from the annotated transcript, with the tone h
   await waitFor(() => expect(screen.getByLabelText("Title of clip 1")).toHaveValue("The best part"));
   expect(screen.getByText("Why: ending falling -4.0 st")).toBeInTheDocument();
   expect(screen.getByLabelText("Description of clip 1")).toHaveValue("Calm, clear falling endings.");
+});
+
+it("downloads yt-dlp on request with progress, then enables links (4.4f)", async () => {
+  const user = userEvent.setup();
+  let available = false;
+  let report: (p: { received: number; total: number | null }) => void = () => {};
+  let finish: () => void = () => {};
+  const { client } = setup({
+    getLinkToolStatus: async () => ({ available, path: available ? "C:/data/tools/yt-dlp.exe" : null }),
+    onLinkToolDownload: async (listener) => { report = listener; return () => {}; },
+    downloadLinkTool: vi.fn(() => new Promise<{ available: boolean; path: string | null }>((resolve) => { finish = () => { available = true; resolve({ available: true, path: "C:/data/tools/yt-dlp.exe" }); }; })),
+  });
+  expect(await screen.findByRole("link", { name: "project page" })).toHaveAttribute("href", "https://github.com/yt-dlp/yt-dlp");
+  await user.click(screen.getByRole("button", { name: "Download yt-dlp" }));
+  expect(client.downloadLinkTool).toHaveBeenCalledOnce();
+  act(() => report({ received: 8 * 1_048_576, total: 16 * 1_048_576 }));
+  expect(screen.getByRole("status", { name: "yt-dlp download progress" })).toHaveTextContent("8.0 MB of 16.0 MB");
+  await act(async () => finish());
+  await waitFor(() => expect(screen.getByLabelText("YouTube link")).toBeEnabled());
 });

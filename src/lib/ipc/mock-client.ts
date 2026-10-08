@@ -148,6 +148,8 @@ export function createMockClient(): IpcClient {
     requestClipPicks: async () => { throw new IpcError("desktop_required", "AI choices run in the desktop app."); },
     getLinkToolStatus: async () => ({ available: false, path: null }),
     chooseLinkTool: async () => { throw new IpcError("desktop_required", "Links work in the desktop app."); },
+    downloadLinkTool: async () => { throw new IpcError("desktop_required", "yt-dlp can be downloaded in the desktop app."); },
+    onLinkToolDownload: async () => () => {},
     fetchLinkAudio: async () => { throw new IpcError("desktop_required", "Links work in the desktop app."); },
     deleteClip: async () => { throw new IpcError("desktop_required", "Clips can be deleted in the desktop app."); },
     moveTakeToTrash: async () => { throw new IpcError("desktop_required", "Takes can be moved to Trash in the desktop app."); },

@@ -185,6 +185,17 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
   };
   const chooseFile = () => run("file", async () => { const next = await ipc.chooseClipFile(); if (next) await adopt(next); });
   const fetchLink = () => run("link", async () => { const got = await ipc.fetchLinkAudio(link); await adopt(got.staged, got.source, got.title); });
+  const [toolProgress, setToolProgress] = useState<{ received: number; total: number | null } | null>(null);
+  useEffect(() => {
+    let remove: (() => void) | undefined;
+    let disposed = false;
+    void ipc.onLinkToolDownload((p) => setToolProgress(p)).then((u) => (disposed ? u() : (remove = u))).catch(() => {});
+    return () => { disposed = true; remove?.(); };
+  }, [ipc]);
+  const downloadTool = async () => {
+    setBusy("link"); setError(null); setToolProgress({ received: 0, total: null });
+    try { await ipc.downloadLinkTool(); await qc.invalidateQueries({ queryKey: ["link-tool"] }); } catch (e) { setError(e instanceof Error ? e.message : "yt-dlp could not be downloaded."); } finally { setBusy(null); setToolProgress(null); }
+  };
   const chooseTool = async () => { try { await ipc.chooseLinkTool(); await qc.invalidateQueries({ queryKey: ["link-tool"] }); } catch (e) { setError(e instanceof Error ? e.message : "yt-dlp could not be set."); } };
 
   const split = async () => {
@@ -266,17 +277,33 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
         </div>
       </div>
       {tool.data && !tool.data.available && (
-        <p className="text-meta text-muted-foreground">
-          Links need yt-dlp, which ClearPractice does not include. Install it with <code>winget install yt-dlp.yt-dlp</code>, then reopen this dialog, or{" "}
-          <button type="button" className="underline" onClick={() => void chooseTool()}>choose yt-dlp.exe</button>.
-        </p>
+        <div className="space-y-2 rounded-md border border-dashed p-2 text-meta">
+          <p className="text-muted-foreground">
+            Links need yt-dlp, a free open-source tool (<a className="underline" href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noreferrer">project page</a>).
+            ClearPractice can download the official release from GitHub and check it against its published checksum before using it.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" disabled={!!busy} onClick={() => void downloadTool()}>Download yt-dlp</Button>
+            <span className="text-muted-foreground">or install it yourself (<code>winget install yt-dlp.yt-dlp</code>) or</span>
+            <button type="button" className="underline" onClick={() => void chooseTool()}>choose yt-dlp.exe</button>
+          </div>
+          {toolProgress && (
+            <div className="space-y-1" role="status" aria-label="yt-dlp download progress">
+              <progress className="h-2 w-full max-w-md" max={toolProgress.total ?? undefined} value={toolProgress.total ? toolProgress.received : undefined} />
+              <p>
+                Downloading yt-dlp… {(toolProgress.received / 1_048_576).toFixed(1)} MB{toolProgress.total ? ` of ${(toolProgress.total / 1_048_576).toFixed(1)} MB` : ""}
+                <Button variant="ghost" size="sm" onClick={() => void ipc.cancelClipWork()}>Stop</Button>
+              </p>
+            </div>
+          )}
+        </div>
       )}
       {tool.data?.available && (
         <p className="text-meta text-muted-foreground">
           Audio only, videos up to 15 minutes. Downloading may not be allowed for every video; only use videos you have the right to keep, and follow YouTube's terms.
         </p>
       )}
-      {(busy === "link" || busy === "file") && (
+      {((busy === "link" && !toolProgress) || busy === "file") && (
         <p role="status" className="flex items-center gap-2 text-meta">
           <Loader2 aria-hidden className="size-4 animate-spin" /> {busy === "link" ? "Getting the audio…" : "Opening the file…"}
           {busy === "link" && <Button variant="ghost" size="sm" onClick={() => void ipc.cancelClipWork()}>Stop</Button>}

@@ -47,6 +47,9 @@ export function createNativeClient(): IpcClient {
     getLinkToolStatus: () => command("get_link_tool_status", S.LinkToolStatus),
     chooseLinkTool: () => command("choose_link_tool", S.LinkToolStatus),
     fetchLinkAudio: (url) => command("fetch_link_audio", S.LinkAudio, { url }),
+    downloadLinkTool: () => command("download_link_tool", S.LinkToolStatus),
+    onLinkToolDownload: (listener) =>
+      listen("link_tool_download", (e) => listener(z.object({ received: z.number().nonnegative(), total: z.number().nonnegative().nullable() }).parse(e.payload))),
     moveTakeToTrash: async (attemptId) => { await command("move_take_to_trash", z.null(), { attemptId }); },
     restoreTake: async (attemptId) => { await command("restore_take", z.null(), { attemptId }); },
     deleteTakesPermanently: (attemptIds) => command("delete_takes_permanently", S.PurgeOutcome, { attemptIds }),

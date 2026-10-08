@@ -135,6 +135,98 @@ pub fn fetch(root: &Path, ytdlp: &Path, url: &str, cancel: &AtomicBool) -> Resul
     result
 }
 
+// ── Getting yt-dlp from the app (4.4f) ──────────────────────────────────────
+
+pub const PROJECT_PAGE: &str = "https://github.com/yt-dlp/yt-dlp";
+const SUMS_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS";
+const EXE_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
+const MAX_TOOL_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Release downloads redirect to GitHub's file storage; nothing else is followed.
+pub fn allowed_host(host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    host == "github.com" || host.ends_with(".github.com") || host == "githubusercontent.com" || host.ends_with(".githubusercontent.com")
+}
+
+/// The expected SHA-256 of `yt-dlp.exe` from the release's published list.
+pub fn expected_sha256(sums: &str) -> Option<String> {
+    sums.lines().find_map(|line| {
+        let mut parts = line.split_whitespace();
+        let (hash, name) = (parts.next()?, parts.next()?);
+        (name.trim_start_matches('*') == "yt-dlp.exe" && hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())).then(|| hash.to_ascii_lowercase())
+    })
+}
+
+/// Downloads the official yt-dlp.exe into `tools/`, verifies it against the
+/// release's SHA-256 list, and returns its path. A failed or mismatched file is
+/// deleted. Reports (received, total) bytes.
+pub async fn download_tool(root: &Path, cancel: &AtomicBool, progress: impl Fn(u64, Option<u64>)) -> Result<PathBuf> {
+    use sha2::{Digest, Sha256};
+    let client = reqwest::Client::builder()
+        .https_only(true)
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(10 * 60))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() > 5 {
+                attempt.error("too many redirects")
+            } else if attempt.url().host_str().is_some_and(allowed_host) {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
+        .user_agent("ClearPractice/0.1.0")
+        .build()
+        .map_err(|_| "Cannot prepare the download.")?;
+    let sums = client.get(SUMS_URL).send().await.and_then(|r| r.error_for_status()).map_err(|_| "Could not reach the yt-dlp release page. Check your connection.")?;
+    if sums.content_length().is_some_and(|n| n > 256 * 1024) {
+        return Err("The yt-dlp checksum list looks wrong. Nothing was installed.".into());
+    }
+    let sums = sums.text().await.map_err(|_| "Could not read the yt-dlp checksum list.")?;
+    let expected = expected_sha256(&sums).ok_or("The yt-dlp release lists no checksum for yt-dlp.exe. Nothing was installed.")?;
+
+    let dir = root.join("tools");
+    fs::create_dir_all(&dir).map_err(|_| "Cannot create the tools folder.")?;
+    crate::audio::prepare::contained(root, &dir)?;
+    let part = dir.join("yt-dlp.exe.part");
+    let target = dir.join("yt-dlp.exe");
+    let result = async {
+        let mut response = client.get(EXE_URL).send().await.and_then(|r| r.error_for_status()).map_err(|_| "The yt-dlp download could not start.")?;
+        let total = response.content_length();
+        if total.is_some_and(|n| n > MAX_TOOL_BYTES) {
+            return Err("The yt-dlp download is larger than expected. Nothing was installed.".to_string());
+        }
+        let mut file = fs::File::create(&part).map_err(|_| "Cannot write the download.")?;
+        let mut digest = Sha256::new();
+        let mut received = 0u64;
+        while let Some(chunk) = response.chunk().await.map_err(|_| "The download was interrupted. Nothing was installed.")? {
+            if cancel.load(Ordering::Relaxed) {
+                return Err("Stopped. Nothing was installed.".into());
+            }
+            received += chunk.len() as u64;
+            if received > MAX_TOOL_BYTES {
+                return Err("The yt-dlp download is larger than expected. Nothing was installed.".into());
+            }
+            digest.update(&chunk);
+            std::io::Write::write_all(&mut file, &chunk).map_err(|_| "Cannot write the download.")?;
+            progress(received, total);
+        }
+        file.sync_all().map_err(|_| "Cannot write the download.")?;
+        drop(file);
+        if format!("{:x}", digest.finalize()) != expected {
+            return Err("The downloaded yt-dlp did not match its published checksum, so it was deleted. Try again later.".into());
+        }
+        let _ = fs::remove_file(&target);
+        fs::rename(&part, &target).map_err(|_| "Cannot install the download.".to_string())?;
+        Ok(target.clone())
+    }
+    .await;
+    if result.is_err() {
+        let _ = fs::remove_file(&part);
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,6 +251,21 @@ mod tests {
         assert!(args.iter().any(|a| a == "duration <= 900 & !is_live"));
         let dash = args.iter().position(|a| a == "--").unwrap();
         assert_eq!(&args[dash + 1..], ["https://youtu.be/abc"], "the link is never parsed as an option");
+    }
+
+    #[test]
+    fn the_tool_download_trusts_only_github_hosts_and_the_published_checksum() {
+        for ok in ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"] {
+            assert!(allowed_host(ok), "{ok}");
+        }
+        for bad in ["evil.com", "github.com.evil.com", "githubusercontent.com.example", "notgithub.com"] {
+            assert!(!allowed_host(bad), "{bad}");
+        }
+        let hash = "a".repeat(64);
+        let sums = format!("{}  yt-dlp\n{hash}  yt-dlp.exe\n{}  yt-dlp_macos\n", "b".repeat(64), "c".repeat(64));
+        assert_eq!(expected_sha256(&sums), Some(hash));
+        assert_eq!(expected_sha256("short  yt-dlp.exe\n"), None);
+        assert_eq!(expected_sha256("nothing here"), None);
     }
 
     #[test]

@@ -124,6 +124,9 @@ export interface IpcClient {
   getLinkToolStatus(): Promise<LinkToolStatus>;
   chooseLinkTool(): Promise<LinkToolStatus>;
   fetchLinkAudio(url: string): Promise<LinkAudio>;
+  /** Downloads the official yt-dlp.exe after an explicit click and verifies its checksum (4.4f). */
+  downloadLinkTool(): Promise<LinkToolStatus>;
+  onLinkToolDownload(listener: (progress: { received: number; total: number | null }) => void): Promise<() => void>;
   /** Moves one saved take to Trash; its session and other takes stay (2.23). */
   moveTakeToTrash(attemptId: string): Promise<void>;
   restoreTake(attemptId: string): Promise<void>;
