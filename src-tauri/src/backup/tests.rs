@@ -296,3 +296,45 @@ fn weekly_backup_catches_up_skips_when_not_due_and_keeps_only_the_newest() {
     assert_eq!(fs::read_dir(&folder).unwrap().count(), 3);
     assert!(!is_backup_name("ClearPractice-backup-../x.zip"));
 }
+
+#[test]
+fn session_export_is_readable_and_explains_unavailable_audio() {
+    let root = TestRoot::new();
+    record(&root.0, "take-a");
+    record(&root.0, "take-b");
+    let owner = DatabaseOwner::open(&root.0).unwrap();
+    owner.update_session("take-a", "Indexes, \"fast\" reads", "Said it twice.", &["db".into()], false).unwrap();
+    drop(owner);
+    // A missing file is reported, never silently left out.
+    fs::remove_file(root.0.join("recordings/take-b/audio.wav")).unwrap();
+    let owner = DatabaseOwner::open(&root.0).unwrap();
+
+    let out = TestRoot::new();
+    let target = out.0.join(export::suggested_name("Indexes, \"fast\" reads", "2026-10-08"));
+    assert_eq!(target.file_name().unwrap(), "Indexes fast reads 2026-10-08.zip");
+    let summary = export::export_session(&owner, "take-a", &target, 0).unwrap();
+    assert_eq!((summary.recordings, summary.unavailable_recordings), (1, 0));
+
+    let mut zip = ZipArchive::new(File::open(&target).unwrap()).unwrap();
+    let read = |zip: &mut ZipArchive<File>, name: &str| {
+        let mut s = String::new();
+        zip.by_name(name).unwrap().read_to_string(&mut s).unwrap();
+        s
+    };
+    let md = read(&mut zip, "session.md");
+    assert!(md.contains("# Indexes, \"fast\" reads") && md.contains("Said it twice.") && md.contains("take-1.wav"));
+    let csv = read(&mut zip, "measures.csv");
+    assert!(csv.starts_with("take,created_at,duration_ms,duration_source"));
+    assert!(csv.contains(",1000,Measured,true,"));
+    let mut wav = Vec::new();
+    zip.by_name("take-1.wav").unwrap().read_to_end(&mut wav).unwrap();
+    assert_eq!(hex(Sha256::new_with_prefix(&wav)), hash_file(&root.0.join("recordings/take-a/audio.wav")).unwrap());
+    assert!(read(&mut zip, "manifest.json").contains("clearpractice-session-export"));
+    assert!(!out.0.join(format!("{}.partial", summary.file_name)).exists());
+
+    let missing = export::export_session(&owner, "take-b", &out.0.join("b.zip"), 0).unwrap();
+    assert_eq!((missing.recordings, missing.unavailable_recordings), (0, 1));
+    let mut zip = ZipArchive::new(File::open(out.0.join("b.zip")).unwrap()).unwrap();
+    assert!(read(&mut zip, "session.md").contains("Unavailable:"));
+    assert!(zip.by_name("take-1.wav").is_err());
+}

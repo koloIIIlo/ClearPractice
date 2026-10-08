@@ -29,6 +29,7 @@ import type {
   BackupSummary,
   RestorePreview,
   RestoreOutcome,
+  ExportSummary,
   RecoverableRecording,
   RecordingStatus,
   CredentialStatus,
@@ -81,6 +82,8 @@ export interface IpcClient {
   discardRestorePreview(stagingId: string): Promise<void>;
   /** Replaces the current data with a checked backup; the previous data is kept as rollback material. */
   restoreBackup(stagingId: string): Promise<RestoreOutcome>;
+  /** Opens the native Save dialog and writes a readable session ZIP; null when cancelled. */
+  exportSession(sessionId: string): Promise<ExportSummary | null>;
   getSavedRecording(assetId: string): Promise<SavedRecording>;
   getAttemptReview(attemptId: string): Promise<AttemptReview>;
 

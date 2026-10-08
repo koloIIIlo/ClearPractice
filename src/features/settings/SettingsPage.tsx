@@ -339,7 +339,7 @@ function DataSettings() {
         description="A backup on another drive protects against drive failure. A copy on the same drive doesn't. API keys are never included."
       >
         <BackupSettings />
-        <Later milestone={2}>Readable session exports (Markdown, CSV, WAV).</Later>
+        <p className="text-meta text-muted-foreground">To export one session as readable files (Markdown notes, CSV measurements, original WAV), open it and choose Export.</p>
       </Section>
     </>
   );

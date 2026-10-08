@@ -34,6 +34,7 @@ export function createNativeClient(): IpcClient {
     previewRestore: () => command("preview_restore", S.RestorePreview.nullable()),
     discardRestorePreview: async (stagingId) => { await command("discard_restore_preview", z.null(), { stagingId }); },
     restoreBackup: (stagingId) => command("restore_backup", S.RestoreOutcome, { stagingId }),
+    exportSession: (sessionId) => command("export_session", S.ExportSummary.nullable(), { sessionId }),
     updateSession: async (sessionId, details) => { await command("update_session", S.Id.nullable(), { sessionId, ...details }); },
     getSavedRecording: (assetId) => command("get_saved_recording", S.SavedRecording, { assetId }),
     getAttemptReview: async () => { throw new IpcError("analysis_pending", "Transcription and analysis are not connected to saved sessions yet."); },

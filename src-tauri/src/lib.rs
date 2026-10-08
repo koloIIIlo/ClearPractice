@@ -532,6 +532,37 @@ fn spawn_auto_backup(app: tauri::AppHandle, storage: Arc<SessionStorage>, captur
         });
 }
 
+/// Exports one session as a readable ZIP to a location chosen in the native
+/// Save dialog. `None` means the dialog was cancelled.
+#[tauri::command]
+async fn export_session(
+    app: tauri::AppHandle,
+    storage: State<'_, Arc<SessionStorage>>,
+    session_id: String,
+) -> Result<Option<backup::export::ExportSummary>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    with_storage(&storage, move |owner| {
+        let session = owner.get_session(&session_id)?;
+        let name = backup::export::suggested_name(
+            session["title"].as_str().unwrap_or(""),
+            session["localDate"].as_str().unwrap_or(""),
+        );
+        let picked = app
+            .dialog()
+            .file()
+            .set_title("Export session")
+            .set_file_name(name)
+            .add_filter("ZIP archive", &["zip"])
+            .blocking_save_file();
+        let Some(target) = picked.and_then(|p| p.into_path().ok()) else {
+            return Ok(None);
+        };
+        backup::export::export_session(owner, &session_id, &target, storage::recording::now_ms()).map(Some)
+    })
+    .await
+    .map_err(|_| "Export failed.".to_string())?
+}
+
 /// Picks a backup file natively and validates it into a staging folder. The
 /// current profile is not changed; `None` means the picker was cancelled.
 #[tauri::command]
@@ -716,6 +747,7 @@ pub fn run() {
             discard_restore_preview,
             restore_backup,
             set_auto_backup,
+            export_session,
             close_after_recording
         ])
         .run(tauri::generate_context!())

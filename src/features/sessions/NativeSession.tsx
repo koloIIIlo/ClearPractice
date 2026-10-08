@@ -11,6 +11,7 @@ import type { SessionDetail } from "@/lib/ipc/schemas";
 import { formatClock, formatLongDay } from "@/lib/format";
 import { SavedAudio } from "@/features/practice/RecordingLibrary";
 import { MoveToTrashButton } from "./TrashPage";
+import { Download } from "lucide-react";
 
 /** Real saved audio never falls through to simulated review or mock observations. */
 export function NativeSession({ session, selectedOrdinal }: { session: SessionDetail; selectedOrdinal?: number }) {
@@ -24,6 +25,7 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
     mutationFn: () => ipc.updateSession(session.id, { title, notes, tags: tags.split(",").map((t) => t.trim()).filter(Boolean), favorite }),
     onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["sessions"] }); await qc.invalidateQueries({ queryKey: ["session", session.id] }); },
   });
+  const exporting = useMutation({ mutationFn: () => ipc.exportSession(session.id) });
   const attempts = selectedOrdinal === undefined ? session.attempts : session.attempts.filter((a) => a.ordinal === selectedOrdinal);
   return <div className="space-y-4">
     <PageHeader title={session.title} description={`${formatLongDay(session.localDate)} · ${session.attemptCount} saved takes · ${formatClock(session.durationMs)}`} />
@@ -49,7 +51,20 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
     </Panel>
     <div className="flex flex-wrap gap-2">
       <Button variant="outline" asChild><Link to="/sessions">Back to sessions</Link></Button>
+      <Button variant="outline" disabled={exporting.isPending} onClick={() => exporting.mutate()}>
+        <Download aria-hidden /> {exporting.isPending ? "Exporting…" : "Export…"}
+      </Button>
       <MoveToTrashButton session={session} />
+    </div>
+    <div aria-live="polite">
+      {exporting.data && (
+        <p role="status" className="text-meta">
+          Exported {exporting.data.fileName}: notes, measurements and {exporting.data.recordings} original{" "}
+          {exporting.data.recordings === 1 ? "recording" : "recordings"}
+          {exporting.data.unavailableRecordings > 0 && ` (${exporting.data.unavailableRecordings} unavailable, listed in the file)`}.
+        </p>
+      )}
+      {exporting.error && <p role="alert" className="text-meta text-destructive">{exporting.error.message}</p>}
     </div>
   </div>;
 }

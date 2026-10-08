@@ -676,5 +676,7 @@ pub fn roll_back(root: &Path) -> Result<()> {
     fs::remove_file(root.join(JOURNAL)).map_err(io_error)
 }
 
+pub mod export;
+
 #[cfg(test)]
 mod tests;

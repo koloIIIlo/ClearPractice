@@ -192,6 +192,14 @@ export const RestorePreview = z.object({
 export type RestorePreview = z.infer<typeof RestorePreview>;
 
 export const RestoreOutcome = z.object({ rollbackFolder: z.string() });
+
+export const ExportSummary = z.object({
+  fileName: z.string(),
+  recordings: z.number().int().nonnegative(),
+  unavailableRecordings: z.number().int().nonnegative(),
+  bytes: z.number().int().nonnegative(),
+});
+export type ExportSummary = z.infer<typeof ExportSummary>;
 export type RestoreOutcome = z.infer<typeof RestoreOutcome>;
 
 export const Attempt = z.object({

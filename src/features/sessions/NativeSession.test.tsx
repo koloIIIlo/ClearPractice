@@ -28,3 +28,14 @@ it("keeps user edits after failed saving and never substitutes sample analysis f
   expect(screen.getByLabelText("Title")).toHaveValue("My new title");
   expect(screen.queryByText("Session details saved on this computer.")).not.toBeInTheDocument();
 });
+
+it("exports a session through the native save dialog and reports what was included", async () => {
+  const session = { ...structuredClone(sessions[0]), conditions: null, conditionsUnavailableReason: "Not recorded.",
+    attempts: [{ ...sessions[0].attempts[0], audioUnavailableReason: "File is missing." }] };
+  const client = { ...createMockClient(), recordingMode: "native" as const,
+    exportSession: vi.fn(async () => ({ fileName: "Habit 2026-10-08.zip", recordings: 1, unavailableRecordings: 1, bytes: 10 })) };
+  render(<MemoryRouter><QueryClientProvider client={new QueryClient()}><IpcContext.Provider value={client}><NativeSession session={session} /></IpcContext.Provider></QueryClientProvider></MemoryRouter>);
+  fireEvent.click(screen.getByRole("button", { name: "Export…" }));
+  expect(await screen.findByRole("status")).toHaveTextContent("Exported Habit 2026-10-08.zip: notes, measurements and 1 original recording (1 unavailable, listed in the file).");
+  expect(client.exportSession).toHaveBeenCalledWith(session.id);
+});
