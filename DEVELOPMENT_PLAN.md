@@ -31,7 +31,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 3. M3: no code items left; the rest waits on desktop checks, a live provider response (0.22) and the API enablement gate.
 4. Physical check: unplug a USB microphone mid-take (2.9).
 5. Milestone P: the Praat spot-check (gate P, settles D-17), then P.5/P.6 with M4 reference clips. Then M4 content (start the licensed reference-clip search early).
-6. M4 next: 4.5 sessions storing the curriculum version, then the exercises (4.6–4.9) using the prompt pack and passages.
+6. M4 next: 4.5 sessions storing the curriculum version, then the remaining exercises (4.6 repeat, 4.8 imitate, 4.9 better expression) and the daily sequences (4.10).
 
 **Standing notes (not blockers)**
 - Do not request another personal speech sample or repeat the completed paid coaching test; the public benchmark (D-24) stands in for personal audio.
@@ -289,7 +289,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 **Exercises**
 - [ ] 4.6 Repeat an answer (repetition groups, 2–3 takes, selected focus)
-- [ ] 4.7 Thought groups (listen, read, hide, explain)
+- [~] 4.7 Thought groups (listen, read, hide, explain). Built: the Thought groups exercise in the Studio shows a chosen passage split into its groups (picker locked once a take exists), a Hide the text and explain step, and records takes under "Read <passage> in thought groups, then explain it"; tests cover hide/show, the take task and the route. Remaining: "listen" (needs a recorded or synthesised reading of each passage) and a desktop check
 - [ ] 4.8 Listen and imitate (verify pitch-preserving speed before enabling 0.75/1.25×; uses the P.5 contour overlay)
 - [ ] 4.9 Use a better expression (typed or recorded sentences)
 - [ ] 4.10 Daily 13-minute and 5-minute sequences; custom session; resume / start fresh
@@ -371,6 +371,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Thought groups exercise (4.7): passage panel in the Studio; Vitest 79/79 in 26 files; typecheck clean.
 - 2026-10-08: Guides (4.3): 8 guides with full text; Vitest 76/76 in 25 files; typecheck clean.
 - 2026-10-08: Thought-group passages (4.2): 12 passages in `src/content/passages.ts`; content tests 4/4.
 - 2026-10-08: Prompt pack (4.1, M4 started at the user's request): 40 prompts in `src/content/prompts.ts`; Vitest 73/73 in 23 files; typecheck clean.

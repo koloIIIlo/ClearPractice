@@ -26,6 +26,8 @@ import { describeDemands } from "@/features/exercises/describe";
 import { useRecorder, type Recorder } from "./recorder";
 import { LiveWaveform } from "@/components/live-waveform";
 import { RecordingLibrary, SavedAudio } from "./RecordingLibrary";
+import { PASSAGES, type Passage } from "@/content/passages";
+import { passagePrompt, ThoughtGroupPassage } from "./ThoughtGroupPassage";
 
 export function StudioPage() {
   const { exerciseId } = useParams();
@@ -40,8 +42,10 @@ export function StudioPage() {
           <QueryView query={prompts}>
             {(promptList) => {
               const exercise = exList.find((e) => e.id === exerciseId) ?? exList[0];
-              const prompt = promptList.find((p) => p.id === params.get("prompt")) ?? promptList[0];
-              return <Studio key={`${exercise.id}-${prompt.id}`} exercise={exercise} prompt={prompt} />;
+              // Thought groups practise a passage, not a prompt (4.7).
+              const passage = exercise.type === "thought_groups" ? (PASSAGES.find((p) => p.id === params.get("passage")) ?? PASSAGES[0]) : undefined;
+              const prompt = passage ? passagePrompt(passage) : (promptList.find((p) => p.id === params.get("prompt")) ?? promptList[0]);
+              return <Studio key={`${exercise.id}-${prompt.id}`} exercise={exercise} prompt={prompt} passage={passage} />;
             }}
           </QueryView>
         )}
@@ -50,7 +54,7 @@ export function StudioPage() {
   );
 }
 
-function Studio({ exercise, prompt }: { exercise: ExerciseDefinition; prompt: PracticePrompt }) {
+function Studio({ exercise, prompt, passage }: { exercise: ExerciseDefinition; prompt: PracticePrompt; passage?: Passage }) {
   const ipc = useIpc();
   const native = ipc.recordingMode === "native";
   const [sessionId] = useState(() => crypto.randomUUID());
@@ -131,7 +135,15 @@ function Studio({ exercise, prompt }: { exercise: ExerciseDefinition; prompt: Pr
         {native ? "Recordings stay on this computer. After saving, open the session to transcribe a take and review fillers and pauses. Coaching feedback is still being developed." : "Browser preview: recording is simulated. Open the desktop app to capture and save real audio."}
       </div>
 
-      <fieldset disabled={locked} className="grid gap-3 sm:grid-cols-3">
+      {passage && (
+        <ThoughtGroupPassage
+          passage={passage}
+          locked={locked || rec.takes.length > 0}
+          onChoose={(id) => navigate(`/practice/${exercise.id}?passage=${id}`, { replace: true })}
+        />
+      )}
+
+      {!passage && <fieldset disabled={locked} className="grid gap-3 sm:grid-cols-3">
         <legend className="mb-2 text-meta font-medium">Outline (optional, up to three keywords)</legend>
         {(["point", "reason", "example"] as const).map((k) => (
           <div key={k} className="space-y-1">
@@ -147,7 +159,7 @@ function Studio({ exercise, prompt }: { exercise: ExerciseDefinition; prompt: Pr
             />
           </div>
         ))}
-      </fieldset>
+      </fieldset>}
 
       <div className="space-y-1">
         <Label htmlFor="studio-microphone">Microphone</Label>
