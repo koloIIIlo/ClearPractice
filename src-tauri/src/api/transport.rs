@@ -114,6 +114,127 @@ impl ApiTransport {
     }
 }
 
+/// Responses for audio transcription carry word lists; still bounded.
+const MAX_AUDIO_RESPONSE: usize = 8 * 1024 * 1024;
+/// Prepared 16 kHz mono audio for up to 15 minutes fits well inside this.
+pub const MAX_AUDIO_UPLOAD: usize = 32 * 1024 * 1024;
+
+impl ApiTransport {
+    /// Builds one request to a fixed, adapter-chosen HTTPS endpoint. `scheme`
+    /// prefixes the key ("Token " for Deepgram, "" for AssemblyAI).
+    pub fn audio_request(
+        &self,
+        method: reqwest::Method,
+        url: &str,
+        scheme: &str,
+        key: &Secret,
+        content_type: &str,
+        body: Option<Vec<u8>>,
+    ) -> Result<Request> {
+        if !url.starts_with("https://api.deepgram.com/") && !url.starts_with("https://api.assemblyai.com/") {
+            return Err("This transcription endpoint is not allowed.".into());
+        }
+        if body.as_ref().is_some_and(|b| b.len() > MAX_AUDIO_UPLOAD) {
+            return Err("The prepared audio is too large to upload.".into());
+        }
+        let mut authorization = Vec::with_capacity(key.as_bytes().len() + scheme.len());
+        authorization.extend_from_slice(scheme.as_bytes());
+        authorization.extend_from_slice(key.as_bytes());
+        let header = HeaderValue::from_bytes(&authorization);
+        for byte in &mut authorization {
+            unsafe {
+                std::ptr::write_volatile(byte, 0);
+            }
+        }
+        let mut header = header.map_err(|_| "The stored API key is invalid. Replace it in Settings.")?;
+        header.set_sensitive(true);
+        let mut builder = self
+            .client
+            .request(method, url)
+            .header(AUTHORIZATION, header)
+            .timeout(Duration::from_secs(180));
+        if let Some(body) = body {
+            builder = builder.header(CONTENT_TYPE, content_type).body(body);
+        }
+        builder
+            .build()
+            .map_err(|_| "Cannot prepare the approved API request.".into())
+    }
+
+    /// First outbound request of an approved audio job: the reservation is
+    /// marked dispatched durably before any network I/O.
+    pub async fn send_reserved_audio(
+        &self,
+        owner: &BudgetOwner,
+        id: &str,
+        approved_sha256: &str,
+        request: Request,
+    ) -> Result<ApiResponse> {
+        owner.mark_dispatched(id, approved_sha256)?;
+        self.send_dispatched(owner, id, request).await
+    }
+
+    /// Follow-up request of an already dispatched job (submit, poll). Any
+    /// failure leaves the charge Uncertain; nothing is retried automatically.
+    pub async fn send_dispatched(&self, owner: &BudgetOwner, id: &str, request: Request) -> Result<ApiResponse> {
+        let response = match self.client.execute(request).await {
+            Ok(response) => response,
+            Err(_) => {
+                owner.settle(id, None, None, None)?;
+                return Err("The API request did not finish. Its charge is uncertain; no automatic retry will occur.".into());
+            }
+        };
+        let request_id = request_id(&response).or_else(|| header_id(&response, "dg-request-id"));
+        let status = response.status().as_u16();
+        if !(200..=299).contains(&status) {
+            owner.settle(id, None, None, request_id)?;
+            return Err(match status {
+                401 | 403 => "The provider rejected the credentials or model access. Check Settings.",
+                413 => "The provider refused the audio size.",
+                429 => "The provider rate or account limit was reached. Retry only after a new preview.",
+                300..=399 => "The provider attempted a redirect. The request was stopped.",
+                _ => "The provider could not complete the request. The recording is unchanged; retry deliberately.",
+            }
+            .into());
+        }
+        match bounded(response, MAX_AUDIO_RESPONSE).await {
+            Ok(bytes) => Ok(ApiResponse { status, request_id, bytes }),
+            Err(error) => {
+                owner.settle(id, None, None, request_id)?;
+                Err(error)
+            }
+        }
+    }
+}
+
+fn header_id(response: &Response, name: &str) -> Option<String> {
+    response
+        .headers()
+        .get(name)?
+        .to_str()
+        .ok()
+        .filter(|id| !id.is_empty() && id.len() <= 128 && id.bytes().all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b)))
+        .map(String::from)
+}
+
+async fn bounded(mut response: Response, limit: usize) -> Result<Vec<u8>> {
+    if response.content_length().is_some_and(|n| n > limit as u64) {
+        return Err("The API response exceeded the safe size limit. The request may still be billed.".into());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| "The API response was interrupted. Its charge is uncertain.")?
+    {
+        if chunk.len() > limit.saturating_sub(body.len()) {
+            return Err("The API response exceeded the safe size limit. The request may still be billed.".into());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
 fn request_id(response: &Response) -> Option<String> {
     response
         .headers()

@@ -51,6 +51,12 @@ export function createNativeClient(): IpcClient {
     setFillerDecision: async (revisionId, candidate, word, decision) => { await command("set_filler_decision", z.null(), { revisionId, candidate, word, decision }); },
     transcribeAttempt: (attemptId) => command("transcribe_attempt", S.Id, { attemptId }),
     cancelTranscription: () => command("cancel_transcription", S.Id.nullable()),
+    getTranscriptionApiKeys: () => command("get_transcription_api_keys", S.ProviderKeyStatus.array()),
+    storeTranscriptionApiKey: (provider, key) => command("store_transcription_api_key", S.ProviderKeyStatus, { provider, key }),
+    removeTranscriptionApiKey: (provider) => command("remove_transcription_api_key", S.ProviderKeyStatus, { provider }),
+    previewApiTranscription: (attemptId, provider) => command("preview_api_transcription", S.AudioPreview, { attemptId, provider }),
+    cancelApiTranscriptionPreview: async (requestId) => { await command("cancel_api_transcription_preview", z.null(), { requestId }); },
+    requestApiTranscription: (requestId, payloadSha256) => command("request_api_transcription", S.AudioResult, { requestId, payloadSha256 }),
     startMicTest: (deviceId) => command("start_mic_test", S.RecordingStatus, { deviceId }),
     getMicTestPlaybackUrl: async (attemptId) => convertFileSrc(await command("get_mic_test_playback_path", S.Id, { attemptId })),
     onMicTestEvent: async (onLevel, onFinished) => {

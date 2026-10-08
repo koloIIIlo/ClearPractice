@@ -9,6 +9,8 @@ use serde_json::{json, Value};
 pub enum TranscriptionProvider {
     LocalWhisper,
     Openai,
+    Deepgram,
+    Assemblyai,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

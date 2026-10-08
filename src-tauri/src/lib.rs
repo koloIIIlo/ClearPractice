@@ -150,6 +150,75 @@ async fn request_coaching(
 }
 
 #[tauri::command]
+async fn get_transcription_api_keys() -> Result<Vec<credentials::ProviderKeyStatus>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        ["deepgram", "assemblyai"].iter().map(|p| credentials::provider_status(p)).collect()
+    })
+    .await
+    .map_err(|_| "Credential worker failed.".to_string())?
+}
+
+#[tauri::command]
+async fn store_transcription_api_key(provider: String, key: String) -> Result<credentials::ProviderKeyStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || credentials::store_provider(&provider, key))
+        .await
+        .map_err(|_| "Credential worker failed.".to_string())?
+}
+
+#[tauri::command]
+async fn remove_transcription_api_key(provider: String) -> Result<credentials::ProviderKeyStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || credentials::remove_provider(&provider))
+        .await
+        .map_err(|_| "Credential worker failed.".to_string())?
+}
+
+/// Prepares one saved take and shows exactly what would be sent (M0 0.22).
+/// Nothing is sent and no budget is reserved.
+#[tauri::command]
+async fn preview_api_transcription(
+    service: State<'_, Arc<CaptureService>>,
+    storage: State<'_, Arc<SessionStorage>>,
+    owner: State<'_, Arc<api::audio::AudioPreviewOwner>>,
+    attempt_id: String,
+    provider: api::audio::AudioProvider,
+) -> Result<api::audio::AudioPreview, String> {
+    if service.is_active() {
+        return Err("Finish the recording first.".into());
+    }
+    let owner = owner.inner().clone();
+    with_storage(&storage, move |db| {
+        let saved = db.checked_recording(&attempt_id)?;
+        owner.preview(db.root(), &saved, provider)
+    })
+    .await
+    .map_err(|_| "Preview failed.".to_string())?
+}
+
+#[tauri::command]
+fn cancel_api_transcription_preview(owner: State<'_, Arc<api::audio::AudioPreviewOwner>>, request_id: String) {
+    owner.cancel(&request_id);
+}
+
+/// Sends one previewed take after the user's explicit approval. The approval is
+/// single-use and bound to the exact audio, settings, recipient and price.
+#[tauri::command]
+async fn request_api_transcription(
+    service: State<'_, Arc<CaptureService>>,
+    owner: State<'_, Arc<api::audio::AudioPreviewOwner>>,
+    accounting: State<'_, Arc<ApiAccounting>>,
+    request_id: String,
+    payload_sha256: String,
+) -> Result<api::audio::AudioResult, String> {
+    if service.is_active() {
+        return Err("Finish the recording first. Nothing was sent.".into());
+    }
+    let owner = owner.inner().clone();
+    let accounting = accounting.inner().clone();
+    let budget = accounting.0.as_ref().map_err(Clone::clone)?;
+    owner.send(&accounting.1, budget, &request_id, &payload_sha256).await
+}
+
+#[tauri::command]
 async fn get_api_usage_summary(
     accounting: State<'_, Arc<ApiAccounting>>,
 ) -> Result<api::budget::BudgetSummary, String> {
@@ -922,6 +991,7 @@ pub fn run() {
                 root.clone(),
             )));
             app.manage(Arc::new(api::coaching::PreviewOwner::default()));
+            app.manage(Arc::new(api::audio::AudioPreviewOwner::default()));
             let mic_events = app.handle().clone();
             app.manage(Arc::new(mic_test::MicTest::new(
                 &root,
@@ -1003,6 +1073,12 @@ pub fn run() {
             save_transcript_correction,
             search_content,
             set_filler_decision,
+            get_transcription_api_keys,
+            store_transcription_api_key,
+            remove_transcription_api_key,
+            preview_api_transcription,
+            cancel_api_transcription_preview,
+            request_api_transcription,
             start_mic_test,
             get_mic_test_playback_path,
             transcribe_attempt,

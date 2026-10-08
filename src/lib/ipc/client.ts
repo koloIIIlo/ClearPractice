@@ -34,6 +34,10 @@ import type {
   AttemptTranscript,
   TranscriptionEvent,
   MicTestFinished,
+  AudioProvider,
+  ProviderKeyStatus,
+  AudioPreview,
+  AudioResult,
   RecoverableRecording,
   RecordingStatus,
   CredentialStatus,
@@ -103,6 +107,14 @@ export interface IpcClient {
   onTranscriptionEvent(listener: (event: TranscriptionEvent) => void): Promise<() => void>;
   /** Records five seconds for playback; nothing is added to session history. */
   startMicTest(deviceId: string | null): Promise<RecordingStatus>;
+  getTranscriptionApiKeys(): Promise<ProviderKeyStatus[]>;
+  storeTranscriptionApiKey(provider: AudioProvider, key: string): Promise<ProviderKeyStatus>;
+  removeTranscriptionApiKey(provider: AudioProvider): Promise<ProviderKeyStatus>;
+  /** Shows exactly what would be sent; sends nothing and reserves nothing. */
+  previewApiTranscription(attemptId: string, provider: AudioProvider): Promise<AudioPreview>;
+  cancelApiTranscriptionPreview(requestId: string): Promise<void>;
+  /** Sends one previewed take; the approval is single-use and bound to the payload fingerprint. */
+  requestApiTranscription(requestId: string, payloadSha256: string): Promise<AudioResult>;
   getMicTestPlaybackUrl(attemptId: string): Promise<string>;
   onMicTestEvent(onLevel: (status: RecordingStatus) => void, onFinished: (result: MicTestFinished) => void): Promise<() => void>;
   getSavedRecording(assetId: string): Promise<SavedRecording>;

@@ -513,6 +513,47 @@ export const MicTestFinished = z.object({
 });
 export type MicTestFinished = z.infer<typeof MicTestFinished>;
 
+// ── Optional API transcription test (M0 0.22, D-21) ─────────────────────────
+export const AudioProvider = z.enum(["deepgram", "assemblyai"]);
+export type AudioProvider = z.infer<typeof AudioProvider>;
+
+export const ProviderKeyStatus = z.object({ provider: AudioProvider, present: z.boolean() });
+export type ProviderKeyStatus = z.infer<typeof ProviderKeyStatus>;
+
+export const AudioPreview = z.object({
+  requestId: Id,
+  provider: AudioProvider,
+  providerLabel: z.string(),
+  model: z.string(),
+  recipient: z.string(),
+  attemptId: Id,
+  durationMs: z.number().int().nonnegative(),
+  bytes: z.number().int().nonnegative(),
+  audioSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  settings: z.record(z.string(), z.unknown()),
+  estimatedCostMicroUsd: z.number().int().positive(),
+  priceSource: z.string().url(),
+  priceDate: z.string(),
+  dataHandling: z.string(),
+  payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
+});
+export type AudioPreview = z.infer<typeof AudioPreview>;
+
+export const AudioResult = z.object({
+  requestId: Id,
+  provider: AudioProvider,
+  model: z.string(),
+  text: z.string(),
+  wordCount: z.number().int().nonnegative(),
+  fillerCount: z.number().int().nonnegative(),
+  wordTimings: z.boolean(),
+  wordTimingsUnavailableReason: z.string().nullable(),
+  providerRequestId: z.string().nullable(),
+  audioDurationMs: z.number().int().nonnegative().nullable(),
+  estimatedCostMicroUsd: z.number().int().nonnegative(),
+});
+export type AudioResult = z.infer<typeof AudioResult>;
+
 export const CredentialStatus = z.object({
   provider: z.literal("OpenAI"),
   present: z.boolean(),

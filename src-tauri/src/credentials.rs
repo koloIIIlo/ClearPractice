@@ -65,6 +65,41 @@ pub fn read() -> Result<Option<Secret>> {
     vault::read(TARGET)
 }
 
+/// Transcription providers each get their own slot, bound to their endpoint,
+/// so a key is never sent to a different service (D-21, shared rule 5).
+pub fn transcription_target(provider: &str) -> Result<&'static str> {
+    match provider {
+        "deepgram" => Ok("ClearPractice/v1/https-api.deepgram.com"),
+        "assemblyai" => Ok("ClearPractice/v1/https-api.assemblyai.com"),
+        _ => Err("Unknown transcription provider.".into()),
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderKeyStatus {
+    pub provider: String,
+    pub present: bool,
+}
+
+pub fn provider_status(provider: &str) -> Result<ProviderKeyStatus> {
+    Ok(ProviderKeyStatus { provider: provider.into(), present: vault::read(transcription_target(provider)?)?.is_some() })
+}
+pub fn store_provider(provider: &str, key: String) -> Result<ProviderKeyStatus> {
+    let target = transcription_target(provider)?;
+    let secret = Secret::new(key)?;
+    vault::write(target, &secret)?;
+    provider_status(provider)
+}
+pub fn remove_provider(provider: &str) -> Result<ProviderKeyStatus> {
+    vault::delete(transcription_target(provider)?)?;
+    provider_status(provider)
+}
+/// Native adapters only. Never register this as a Tauri command.
+pub fn read_provider(provider: &str) -> Result<Option<Secret>> {
+    vault::read(transcription_target(provider)?)
+}
+
 #[cfg(windows)]
 mod vault {
     use super::*;

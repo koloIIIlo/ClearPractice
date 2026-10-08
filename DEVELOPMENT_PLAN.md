@@ -19,13 +19,14 @@ This file tracks *how far we are*. Section references like **§9** point into th
 
 | | |
 | --- | --- |
-| Active milestone | M3 local transcription and review, started early because M2's build items are done. M2 still needs its manual desktop checks and exit gate |
+| Active milestone | E is done; M0 is done except the user-dependent API transcription checks (0.22 live request, 0.23 benchmark). M2 build items are done but need desktop checks and the exit gate; M3 is in progress |
 | Last updated | 2026-10-08 |
 | Repository | Everything is committed on `main`; the working tree is clean at the end of each session |
 | Built, not yet checked in the desktop app | Studio timer / Ctrl+Enter / live waveform fixes, waveform player (2.14), Trash (2.17), backup folder / create / check / replace / weekly (2.18–2.21), session Export (2.22) |
 | Blockers | None for coding. Desktop checks need the user at the laptop (or an agent driving the desktop app) |
 
 **Next actions, in order**
+0. User: store a Deepgram and/or AssemblyAI key in Settings → Transcription → API transcription test, preview a take and approve one Send (closes 0.22).
 1. One desktop pass after rebuilding (`npm run tauri dev`) over the "Built, not yet checked" list above, then the manual M2 exit gate.
 2. M3: transcript seeking, filler candidates and measures (3.6–3.8), transcript corrections (3.9), search (3.13). The Transcribe flow itself is built; check it in the desktop app (Settings → Transcription → choose `bench/runtime.local/config-selected.json`, then Transcribe on a take).
 3. Remaining M2: recovery presentation (2.5), recording failure and close-guard checks (2.8–2.10). Decide whether backups should carry the API usage ledger (restoring an older ledger would undercount spending, so it is deliberately left out for now).
@@ -121,7 +122,7 @@ Resolves the hardware open questions in §10 and §18.
 - [x] E-4 Verify `cargo build` links a hello-world binary
 - [x] E-5 Install the Tauri CLI (as an npm dev dependency) and check prerequisites with `tauri info`
 - [x] E-6 Initialize Git on `main`, add `.gitignore`, `.gitattributes`, and `.editorconfig`, and make the initial commit
-- [ ] E-7 Install CMake (needed only if we build whisper.cpp from source; skip if prebuilt binaries are used)
+- [x] E-7 Install CMake (needed only if we build whisper.cpp from source; skip if prebuilt binaries are used). Resolved 2026-10-08 as not needed: the app uses the pinned official prebuilt whisper.cpp 1.9.1 CPU/CUDA archives (0.11, D-13). Install CMake only if a source build is ever chosen
 
 ## Milestone 0 — Feasibility (§17, §18) · budget 3–5 days
 
@@ -162,8 +163,8 @@ Goal: prove recording durability, Whisper on this laptop, and one bounded API ca
 **Optional API transcription spike (§10, D-20–23)**
 - [x] 0.20 Shared native USD 5 stop / USD 4 warning ledger passes concurrent-purpose, duplicate, corrupt-ledger and restart-uncertainty checks. Real approved request settled with 291/163 tokens and 227 micro-USD conservatively estimated. Locked JSON foundation remains until the later SQLite usage migration; preserve all existing charges
 - [x] 0.21 Provider-neutral TranscriptionResult local adapter and real normalized artifacts verified; native + Zod tests cover identity, unknown reasons, capabilities and invalid timing. Word alignment/diarization remain unavailable
-- [ ] 0.22 Verify candidate request/response formats, limits, current prices, data-use/training terms and retention for Deepgram and AssemblyAI, then build the native spike: prepare/hash a complete saved take, show recipient/model, duration/size, all language/context hints, and estimated charge; reserve budget and submit one approved multipart request to verify model access. Validate/save raw output and reject stale approval, invalid output, oversize audio, and duplicates. Requires 0.10, 0.17–18, and 0.20–21; credentials stay in the app
-- [ ] 0.23 After 0.22, benchmark the D-21 candidates (Deepgram Nova-3, AssemblyAI Universal-3.5 Pro; free credits cover the test) against the same hand-checked audio as 0.14a **only after an in-app preview and explicit approval for each request**; measure upload + processing time, errors, filler omissions/insertions, alignment where available, and cost. Record the selected API model separately from D-4's local default
+- [~] 0.22 Verify candidate request/response formats, limits, current prices, data-use/training terms and retention for Deepgram and AssemblyAI, then build the native spike. Done 2026-10-08: formats checked on the official docs (Deepgram: raw `audio/wav` POST to /v1/listen, word times in seconds, 2 GB / 10-minute processing limits, `filler_words=true`, `mip_opt_out=true` keeps audio out of training; AssemblyAI: /v2/upload → /v2/transcript with `speech_models:["universal-3-5-pro"]`, `disfluencies:true` → poll, word times in ms, transcripts kept 30 days by default, training controlled in the dashboard). `api/audio.rs`: prepares and hashes the complete take (≤15 min), previews recipient/model/duration/size/hash/exact settings/estimated charge/price source and date/data handling, single-use approval bound to a payload fingerprint (15-minute expiry), shared-budget reservation, dispatch recorded before any I/O, fixed HTTPS hosts only, provider-specific Credential Manager slots, bounded responses, validation into `TranscriptionResult` (bad word timings withheld with a reason), raw + normalised output saved under cache/api-transcription, settlement at list price. Settings → Transcription → API transcription test. Rust 11/11 api tests, Vitest 2 UI tests. **Remaining (needs the user): store a Deepgram and/or AssemblyAI key and approve one Send to verify model access**
+- [!] 0.23 After 0.22, benchmark the D-21 candidates (Deepgram Nova-3, AssemblyAI Universal-3.5 Pro; free credits cover the test) against the same hand-checked audio as 0.14a **only after an in-app preview and explicit approval for each request**; measure upload + processing time, errors, filler omissions/insertions, alignment where available, and cost. Record the selected API model separately from D-4's local default. Blocked on the user's keys and approvals, and on bringing the public 62 s sample into the app as a take (an import path, see 4.4)
 
 These API transcription items add an estimated 1–2 days to feasibility if credentials are available. They have their own enablement gate in M3; unavailable credentials must not stall durable local practice. API transcription is not enabled by merely choosing API coaching.
 
@@ -373,6 +374,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: E and M0 completion pass. E-7 resolved as not needed (prebuilt binaries). 0.22 spike built and tested offline (no request sent; no test reads a real provider key slot, so tests can never bill). 0.22's live check and 0.23 need the user. Sources: Deepgram pre-recorded docs, Deepgram model-improvement opt-out page, AssemblyAI submit/upload API reference and data-retention FAQ (8 Oct).
 - 2026-10-08: M1 keyboard pass in the browser preview: fixed invisible focus on Radix tab panels (TabsContent had outline-none and no ring; affects every Tabs use) and gave the three "From a session" links on Phrases distinct accessible names. The tablist briefly receiving focus is Radix's internal hand-off, not a Tab stop (verified with Tab / Shift+Tab).
 - 2026-10-08: Filler review (3.7, schema v4): Rust storage/backup/analysis/transcribe 26/26 incl. v1→v4 upgrade and decision validation; Vitest transcript + ipc 12/12; crate builds. The real profile (now v3) will migrate to v4 with a snapshot on next launch.
 - 2026-10-08: End-of-session checks: full Rust suite 47 passed + all 8 hardware tests (live capture, forced-kill recovery, Credential Manager disposable key, microphone test, CUDA transcription); full Vitest 44/44 (15 files); production build. Started the real desktop app (`npm run tauri dev`): no startup errors; the real profile migrated v2 → v3 with `database/snapshots/before-v3-*.sqlite`, quick_check ok, `cache/mic-test` created; app stopped afterwards. The real profile `%LOCALAPPDATA%\com.clearpractice.app` was created on 8 Oct 01:33 and had 0 sessions and a fresh 26-byte usage ledger: the Codex-era takes and the USD 0.000227 ledger entry are not on this profile (no other ClearPractice folder exists on the machine). Nothing in this session wrote to the real profile before this launch; tests use temporary folders.

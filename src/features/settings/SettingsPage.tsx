@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { BackupSettings } from "./BackupSettings";
 import { TranscriptionSetup } from "./TranscriptionSetup";
 import { MicrophoneTest } from "./MicrophoneTest";
+import { ApiTranscriptionTest } from "./ApiTranscriptionTest";
 import { ApiCredentialSettings } from "./ApiCredentialSettings";
 import { ApiBudgetStatus } from "./ApiBudgetStatus";
 import { CoachingSpike } from "./CoachingSpike";
@@ -221,6 +222,9 @@ function TranscriptionSettings() {
             </Label>
           ))}
         </RadioGroup>
+      </Section>
+      <Section title="API transcription (optional)" description="Off by default. Local transcription stays the default; these providers keep fillers and return word timings (D-21).">
+        <ApiTranscriptionTest />
       </Section>
     </>
   );
