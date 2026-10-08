@@ -310,4 +310,99 @@ mod tests {
         assert!(append(&mut body, &[4]).is_err());
         assert_eq!(body.len(), MAX_RESPONSE);
     }
+
+    /// One-shot local HTTP server: answers every connection with `reply` and
+    /// counts connections, so a test can prove nothing was retried.
+    fn serve(reply: impl Fn(&mut std::net::TcpStream) + Send + 'static) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::io::Read;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/v1/listen", listener.local_addr().unwrap());
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = hits.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { return };
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                stream.set_read_timeout(Some(Duration::from_millis(500))).unwrap();
+                let mut seen = Vec::new();
+                let mut buf = [0u8; 4096];
+                while !seen.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match stream.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => seen.extend_from_slice(&buf[..n]),
+                    }
+                }
+                reply(&mut stream);
+            }
+        });
+        (url, hits)
+    }
+
+    fn status(code: &'static str) -> impl Fn(&mut std::net::TcpStream) + Send + 'static {
+        move |s| {
+            use std::io::Write;
+            let _ = write!(s, "HTTP/1.1 {code}\r\nContent-Length: 2\r\nLocation: https://elsewhere.invalid/\r\nConnection: close\r\n\r\n{{}}");
+        }
+    }
+
+    /// 3.18: every way an audio request can fail after dispatch gives a plain
+    /// message, keeps the possible charge as Uncertain in the shared ledger, and
+    /// reaches the server exactly once (no automatic retry or redirect).
+    #[test]
+    fn audio_failures_keep_the_charge_uncertain_and_never_retry() {
+        use super::super::budget::{PriceQuote, Purpose};
+        use std::io::Write;
+        let root = crate::storage::recording::tests::TestRoot::new();
+        let budget = BudgetOwner::open(&root.0).unwrap();
+        let client = Client::builder().redirect(reqwest::redirect::Policy::none()).retry(reqwest::retry::never()).build().unwrap();
+        let transport = ApiTransport { client };
+        let quote = || PriceQuote { currency: "USD".into(), source: "https://deepgram.com/pricing".into(), effective_date: "2026-10-08".into(),
+            model: "nova-3".into(), billing_unit: "started audio minute".into(), rate_micro_usd: 4_300, maximum_cost_micro_usd: 4_300 };
+        let refused = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            format!("http://{}/v1/listen", listener.local_addr().unwrap())
+        }; // listener dropped: nothing accepts there (offline)
+        type Reply = Box<dyn Fn(&mut std::net::TcpStream) + Send>;
+        let cases: Vec<(&str, Option<Reply>, &str)> = vec![
+            ("rejected-key", Some(Box::new(status("401 Unauthorized"))), "rejected the credentials"),
+            ("rate-limit", Some(Box::new(status("429 Too Many Requests"))), "rate or account limit"),
+            ("server-error", Some(Box::new(status("500 Internal Server Error"))), "could not complete"),
+            ("too-large", Some(Box::new(status("413 Payload Too Large"))), "refused the audio size"),
+            ("redirect", Some(Box::new(status("302 Found"))), "attempted a redirect"),
+            ("dropped", Some(Box::new(|s: &mut std::net::TcpStream| { let _ = s.shutdown(std::net::Shutdown::Both); })), "did not finish"),
+            ("truncated", Some(Box::new(|s: &mut std::net::TcpStream| { let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{\"res"); })), "interrupted"),
+            ("oversized", Some(Box::new(|s: &mut std::net::TcpStream| { let _ = s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", MAX_AUDIO_RESPONSE + 1).as_bytes()); })), "safe size limit"),
+            ("offline", None, "did not finish"),
+        ];
+        let total = cases.len() as u64;
+        for (id, reply, expected) in cases {
+            let hash = format!("{:x}", Sha256::digest(id.as_bytes()));
+            budget.reserve(id, Purpose::Transcription, &hash, Some(quote())).unwrap();
+            let (url, hits) = match reply {
+                Some(reply) => { let (u, h) = serve(reply); (u, Some(h)) }
+                None => (refused.clone(), None),
+            };
+            let request = transport.client.post(&url).timeout(Duration::from_secs(5)).body(vec![0u8; 64]).build().unwrap();
+            let error = tauri::async_runtime::block_on(transport.send_reserved_audio(&budget, id, &hash, request)).err().unwrap_or_else(|| panic!("{id}: should fail"));
+            assert!(error.contains(expected), "{id}: {error}");
+            if let Some(hits) = hits {
+                assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 1, "{id}: sent exactly once");
+            }
+            // A dispatched request can never be released as unsent or sent again.
+            assert!(budget.release_unsent(id).is_err(), "{id}");
+            assert!(budget.mark_dispatched(id, &hash).is_err(), "{id}");
+        }
+        let summary = budget.summary().unwrap();
+        assert_eq!(summary.uncertain_micro_usd, 4_300 * total, "every failed request keeps its possible charge");
+
+        // A timeout counts the same way.
+        let (url, hits) = serve(|_| std::thread::sleep(Duration::from_secs(3)));
+        let hash = "e".repeat(64);
+        budget.reserve("timeout", Purpose::Transcription, &hash, Some(quote())).unwrap();
+        let request = transport.client.post(&url).timeout(Duration::from_millis(300)).body(vec![0u8; 64]).build().unwrap();
+        let error = tauri::async_runtime::block_on(transport.send_reserved_audio(&budget, "timeout", &hash, request)).err().unwrap();
+        assert!(error.contains("charge is uncertain; no automatic retry"), "{error}");
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(budget.summary().unwrap().uncertain_micro_usd, 4_300 * (total + 1));
+    }
 }
