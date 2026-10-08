@@ -636,6 +636,12 @@ export const AudioProvider = z.enum(["deepgram", "assemblyai"]);
 export type AudioProvider = z.infer<typeof AudioProvider>;
 
 /** Default way to transcribe takes (§10). Cloud never sends by itself: each take is previewed and sent on Send. */
+/** Where the data lives (2.25). */
+export const DataLocation = z.object({
+  current: z.string(), default: z.string(), custom: z.boolean(), problem: z.string().nullable(), previous: z.string().nullable(), previousBytes: z.number().int().nonnegative(),
+});
+export type DataLocation = z.infer<typeof DataLocation>;
+
 /** Settings that change how the app behaves (stored natively in app_settings). */
 export const Preferences = z
   .object({

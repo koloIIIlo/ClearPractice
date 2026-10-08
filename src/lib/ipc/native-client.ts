@@ -80,6 +80,12 @@ export function createNativeClient(): IpcClient {
     importModelPack: () => command("import_model_pack", S.ModelPack.array()),
     getTranscriptionSetup: () => command("get_transcription_setup", S.TranscriptionSetup),
     getPreferences: () => command("get_preferences", S.Preferences),
+    getDataLocation: () => command("get_data_location", S.DataLocation),
+    moveDataFolder: (toDefault) => command("move_data_folder", z.string().nullable(), { toDefault }),
+    onDataMoveProgress: (listener) =>
+      listen("data_move_progress", (e) => listener(z.object({ done: z.number().nonnegative(), total: z.number().nonnegative() }).parse(e.payload))),
+    removeOldDataCopy: async () => { await command("remove_old_data_copy", z.null()); },
+    restartApp: async () => { await command("restart_app", z.null()); },
     setPreferences: (preferences) => command("set_preferences", S.Preferences, { preferences }),
     getTranscriptionPreference: () => command("get_transcription_preference", S.TranscriptionPreference),
     setTranscriptionPreference: (preference) => command("set_transcription_preference", S.TranscriptionPreference, { preference }),

@@ -1,6 +1,7 @@
 pub mod analysis;
 pub mod api;
 mod app_paths;
+pub mod data_location;
 pub mod audio;
 pub mod backup;
 mod audio_devices;
@@ -1675,6 +1676,126 @@ async fn restore_backup(
     .map_err(|_| "Restore failed.".to_string())?
 }
 
+/// Where the data lives (2.25).
+struct DataLocation {
+    default: std::path::PathBuf,
+    resolved: data_location::Resolved,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DataLocationStatus {
+    current: String,
+    default: String,
+    custom: bool,
+    problem: Option<String>,
+    /// The folder the data was copied from, while its copy still exists.
+    previous: Option<String>,
+    previous_bytes: u64,
+}
+
+#[tauri::command]
+async fn get_data_location(location: State<'_, Arc<DataLocation>>) -> Result<DataLocationStatus, String> {
+    let location = location.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let r = &location.resolved;
+        let previous_bytes = r.previous.as_deref().map(data_location::previous_copy_bytes).unwrap_or(0);
+        DataLocationStatus {
+            current: r.root.to_string_lossy().into_owned(),
+            default: location.default.to_string_lossy().into_owned(),
+            custom: r.root != location.default,
+            problem: r.problem.clone(),
+            previous: r.previous.as_ref().filter(|_| previous_bytes > 0).map(|p| p.to_string_lossy().into_owned()),
+            previous_bytes,
+        }
+    })
+    .await
+    .map_err(|_| "Cannot read the data folder.".to_string())
+}
+
+/// Copies the data to a folder the user picks (or back to the default), checks
+/// every file, and points the app there from the next start (2.25). The
+/// database is closed during the copy; the caller restarts the app afterwards.
+/// `None` means the picker was cancelled.
+#[tauri::command]
+async fn move_data_folder(
+    app: tauri::AppHandle,
+    location: State<'_, Arc<DataLocation>>,
+    service: State<'_, Arc<CaptureService>>,
+    storage: State<'_, Arc<SessionStorage>>,
+    transcription: State<'_, Arc<Transcription>>,
+    work: State<'_, Arc<ClipWork>>,
+    to_default: bool,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    if service.is_active() {
+        return Err("Stop the recording before moving your data.".into());
+    }
+    if transcription.active.is_active() {
+        return Err("Wait for the transcription to finish, or cancel it, before moving your data.".into());
+    }
+    let (location, storage, service) = (location.inner().clone(), storage.inner().clone(), service.inner().clone());
+    let current = location.resolved.root.clone();
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    if let Ok(mut slot) = work.fetch.lock() {
+        *slot = Some(cancel.clone());
+    }
+    let events = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let target = if to_default {
+            if current == location.default {
+                return Err("Your data is already in the default folder.".to_string());
+            }
+            if data_location::MOVED_DIRS.iter().any(|d| location.default.join(d).exists()) {
+                return Err("The default folder still holds an older copy of your data. Remove it first (Explorer: the folders listed in Settings), then try again.".into());
+            }
+            location.default.clone()
+        } else {
+            let picked = app.dialog().file().set_title("Choose where ClearPractice keeps your data").blocking_pick_folder();
+            let Some(chosen) = picked.and_then(|p| p.into_path().ok()) else { return Ok(None) };
+            data_location::plan_target(&chosen, &current)?
+        };
+        let mut guard = storage.0.write().map_err(|_| "Session storage is unavailable.".to_string())?;
+        if service.is_active() {
+            return Err("Stop the recording before moving your data.".into());
+        }
+        // Close the database so its files are complete on disk while copied.
+        drop(std::mem::replace(&mut *guard, Err("Your data is moving to another folder. ClearPractice restarts when it is done.".into())));
+        let copied = data_location::copy_profile(&current, &target, &cancel, |done, total| {
+            let _ = events.emit("data_move_progress", serde_json::json!({ "done": done, "total": total }));
+        })
+        .and_then(|_| data_location::commit(&location.default, &target, &current));
+        if let Err(error) = copied {
+            *guard = storage::database::DatabaseOwner::open(&current);
+            return Err(error);
+        }
+        Ok(Some(target.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|_| "Moving the data failed.".to_string())?;
+    if let Ok(mut slot) = work.fetch.lock() {
+        *slot = None;
+    }
+    result
+}
+
+/// Removes the copy left in the previous folder after a move (2.25).
+#[tauri::command]
+async fn remove_old_data_copy(location: State<'_, Arc<DataLocation>>) -> Result<(), String> {
+    let location = location.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || data_location::remove_previous(&location.default, &location.resolved.root))
+        .await
+        .map_err(|_| "Removing the old copy failed.".to_string())?
+}
+
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle, service: State<'_, Arc<CaptureService>>) -> Result<(), String> {
+    if service.is_active() {
+        return Err("Stop the recording first.".into());
+    }
+    app.restart()
+}
+
 #[tauri::command]
 async fn discard_restore_preview(
     storage: State<'_, Arc<SessionStorage>>,
@@ -1705,7 +1826,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let root = app.path().app_local_data_dir()?;
+            // The data may live in a folder the user chose (2.25); WebView data
+            // and the pointer to it stay in the default location.
+            let default = app.path().app_local_data_dir()?;
+            std::fs::create_dir_all(&default)?;
+            let location = data_location::resolve(&default);
+            let root = location.root.clone();
+            app.manage(Arc::new(DataLocation { default, resolved: location }));
             app_paths::prepare_app_data(&root)?;
             let rollback = backup::roll_back(&root);
             if rollback.is_ok() {
@@ -1845,6 +1972,10 @@ pub fn run() {
             create_backup,
             preview_restore,
             discard_restore_preview,
+            get_data_location,
+            move_data_folder,
+            remove_old_data_copy,
+            restart_app,
             restore_backup,
             set_auto_backup,
             export_session,

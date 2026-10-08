@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BackupSettings } from "./BackupSettings";
+import { DataFolder } from "./DataFolder";
 import { TranscriptionSetup } from "./TranscriptionSetup";
 import { TranscriptionMode } from "./TranscriptionMode";
 import { MicrophoneTest } from "./MicrophoneTest";
@@ -337,10 +338,10 @@ function RecordingTotals() {
 function DataSettings() {
   return (
     <>
-      <Section title="Storage" description="Recordings, transcripts, and notes are stored in your Windows user profile.">
+      <Section title="Storage" description="Recordings, transcripts, and notes stay on this computer, in the data folder below.">
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-body">
           <dt className="text-muted-foreground">Data folder</dt>
-          <dd><code>%LOCALAPPDATA%\com.clearpractice.app</code></dd>
+          <dd><DataFolder /></dd>
           <dt className="text-muted-foreground">Recordings</dt>
           <dd><RecordingTotals /></dd>
         </dl>

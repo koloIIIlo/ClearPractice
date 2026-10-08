@@ -34,6 +34,7 @@ import type {
   Preferences,
   ClipFolder,
   ClipSource,
+  DataLocation,
   OpenedSource,
   ReferenceClip,
   ClipStaged,
@@ -166,6 +167,12 @@ export interface IpcClient {
   exportSession(sessionId: string): Promise<ExportSummary | null>;
   getTranscriptionSetup(): Promise<TranscriptionSetup>;
   getPreferences(): Promise<Preferences>;
+  /** Data folder (2.25). `moveDataFolder` asks for a folder (or uses the default) and returns the new folder, or null when cancelled. */
+  getDataLocation(): Promise<DataLocation>;
+  moveDataFolder(toDefault: boolean): Promise<string | null>;
+  onDataMoveProgress(listener: (progress: { done: number; total: number }) => void): Promise<() => void>;
+  removeOldDataCopy(): Promise<void>;
+  restartApp(): Promise<void>;
   setPreferences(preferences: Preferences): Promise<Preferences>;
   getTranscriptionPreference(): Promise<TranscriptionPreference>;
   /** Stores the default mode; choosing cloud sends nothing. */
