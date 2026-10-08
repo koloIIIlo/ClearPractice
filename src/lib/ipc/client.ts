@@ -94,6 +94,8 @@ export interface IpcClient {
   getAttemptTranscript(attemptId: string): Promise<AttemptTranscript>;
   /** Saves corrected wording as a new revision; resolves with its ID. */
   saveTranscriptCorrection(attemptId: string, parentRevisionId: string, text: string): Promise<string>;
+  /** Confirms or dismisses filler candidate `candidate` (its index), or clears the decision with null. */
+  setFillerDecision(revisionId: string, candidate: number, word: string, decision: "confirmed" | "dismissed" | null): Promise<void>;
   /** Starts a background local transcription; resolves with its job ID. */
   transcribeAttempt(attemptId: string): Promise<string>;
   /** Cancels the running transcription; resolves with its attempt ID, or null when none was running. */

@@ -62,7 +62,7 @@ it("shows progress, then the saved transcript with estimated timings and kept fi
       measures: {
         definitionVersion: 1, source: "Estimated", wordCount: 5, speechSpanMs: 3_000, paceWpm: null,
         paceUnavailableReason: "Needs at least 15 seconds of speech.", pauseThresholdMs: 700, pauses: [], pausesUnavailableReason: null,
-        fillers: [{ segment: 0, word: "uh", segmentStartMs: 12_000 }], repeatedWords: [], untimedSegments: 0,
+        fillers: [{ segment: 0, word: "uh", segmentStartMs: 12_000, decision: null }], repeatedWords: [], untimedSegments: 0,
       },
     },
   };
@@ -76,6 +76,22 @@ it("shows progress, then the saved transcript with estimated timings and kept fi
   expect(screen.getByText(/As transcribed · local large-v3-turbo-q5_0 \(CUDA\) · 12 s/)).toBeInTheDocument();
   expect(screen.getByText(/kept on\s+purpose/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Transcribe again" })).toBeEnabled();
+
+  // Filler review: decisions are stored per candidate; a dismissed word is no longer highlighted.
+  client.setFillerDecision = vi.fn(async (_revision: string, candidate: number, _word: string, decision: "confirmed" | "dismissed" | null) => {
+    const r = stored.revision!;
+    stored = { ...stored, revision: { ...r, measures: { ...r.measures, fillers: r.measures.fillers.map((f, i) => (i === candidate ? { ...f, decision } : f)) } } };
+  });
+  expect(screen.getByText(/0 confirmed, 0 dismissed, 1 to review/)).toBeInTheDocument();
+  await user.click(screen.getByText(/Review filler candidates/));
+  await user.click(screen.getByRole("button", { name: "Not a filler: “uh” 1" }));
+  expect(client.setFillerDecision).toHaveBeenCalledWith("take-1--1", 0, "uh", "dismissed");
+  expect(await screen.findByText(/0 confirmed, 1 dismissed, 0 to review/)).toBeInTheDocument();
+  expect(screen.queryByTitle("Filler candidate")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Not a filler: “uh” 1" })).toHaveAttribute("aria-pressed", "true");
+  await user.click(screen.getByRole("button", { name: "Not a filler: “uh” 1" }));
+  expect(client.setFillerDecision).toHaveBeenLastCalledWith("take-1--1", 0, "uh", null);
+  expect(await screen.findByTitle("Filler candidate")).toBeInTheDocument();
 
   // Corrections are saved as a child of the machine transcript, which stays visible.
   client.saveTranscriptCorrection = vi.fn(async () => {
@@ -91,7 +107,7 @@ it("shows progress, then the saved transcript with estimated timings and kept fi
   expect(client.saveTranscriptCorrection).toHaveBeenCalledWith("take-1", "take-1--1", "Well, uh, indexes speed up reads a lot.");
   expect(await screen.findByText("Well, uh, indexes speed up reads a lot.")).toBeInTheDocument();
   expect(screen.getByText(/7 words, 1 filler candidates/)).toBeInTheDocument();
-  expect(screen.getByTitle("Filler candidate").closest("li")).toHaveTextContent("Well, uh, indexes speed up reads.");
+  expect((await screen.findByTitle("Filler candidate")).closest("li")).toHaveTextContent("Well, uh, indexes speed up reads.");
 });
 
 it("explains a failed job and keeps the take available for another try", async () => {

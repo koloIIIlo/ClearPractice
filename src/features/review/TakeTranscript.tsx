@@ -62,6 +62,50 @@ function Measures({ m }: { m: TranscriptMeasures }) {
   );
 }
 
+/** Confirm or dismiss each filler candidate (plan 3.7); decisions are stored per revision. */
+function FillerReview({ revisionId, measures, onChanged }: { revisionId: string; measures: TranscriptMeasures; onChanged: () => void }) {
+  const ipc = useIpc();
+  const decide = useMutation({
+    mutationFn: ({ index, word, decision }: { index: number; word: string; decision: "confirmed" | "dismissed" | null }) =>
+      ipc.setFillerDecision(revisionId, index, word, decision),
+    onSuccess: onChanged,
+  });
+  const fillers = measures.fillers;
+  if (fillers.length === 0) return null;
+  const confirmed = fillers.filter((f) => f.decision === "confirmed").length;
+  const dismissed = fillers.filter((f) => f.decision === "dismissed").length;
+  return (
+    <details className="rounded-md border p-2">
+      <summary className="cursor-pointer text-meta">
+        Review filler candidates · {confirmed} confirmed, {dismissed} dismissed, {fillers.length - confirmed - dismissed} to review
+      </summary>
+      <ol className="mt-2 space-y-1">
+        {fillers.map((f, index) => (
+          <li key={index} className="flex flex-wrap items-center gap-2 text-meta">
+            <span className="w-28 tabular-nums text-muted-foreground">
+              “{f.word}” · {f.segmentStartMs != null ? `near ${formatClock(f.segmentStartMs)}` : "time unknown"}
+            </span>
+            {(["confirmed", "dismissed"] as const).map((choice) => (
+              <Button
+                key={choice}
+                size="sm"
+                variant={f.decision === choice ? "secondary" : "ghost"}
+                aria-pressed={f.decision === choice}
+                aria-label={`${choice === "confirmed" ? "Filler" : "Not a filler"}: “${f.word}” ${index + 1}`}
+                disabled={decide.isPending}
+                onClick={() => decide.mutate({ index, word: f.word, decision: f.decision === choice ? null : choice })}
+              >
+                {choice === "confirmed" ? "Filler" : "Not a filler"}
+              </Button>
+            ))}
+          </li>
+        ))}
+      </ol>
+      {decide.error && <p role="alert" className="text-meta text-destructive">{decide.error.message}</p>}
+    </details>
+  );
+}
+
 /** "My corrections" (plan 3.9): saved as a child revision; the machine transcript is never edited. */
 function Corrections({ data, onSaved }: { data: AttemptTranscript; onSaved: () => void }) {
   const ipc = useIpc();
@@ -226,13 +270,14 @@ export function TakeTranscript({ attemptId }: { attemptId: string }) {
                   </span>
                   <SegmentText
                     text={segment.text.trim()}
-                    fillers={new Set(revision.measures.fillers.filter((f) => f.segment === i).map((f) => f.word))}
+                    fillers={new Set(revision.measures.fillers.filter((f) => f.segment === i && f.decision !== "dismissed").map((f) => f.word))}
                   />
                 </li>
               ) : null,
             )}
           </ol>
           <Measures m={revision.measures} />
+          <FillerReview revisionId={revision.id} measures={revision.measures} onChanged={() => void qc.invalidateQueries({ queryKey: key })} />
           {data && <Corrections data={data} onSaved={() => void qc.invalidateQueries({ queryKey: key })} />}
           <p className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground">
             <EvidenceLabel source="estimated" /> Times and measures are estimated from the model's segments. Fillers such as “uh” and

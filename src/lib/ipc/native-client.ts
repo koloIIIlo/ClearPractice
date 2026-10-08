@@ -48,6 +48,7 @@ export function createNativeClient(): IpcClient {
     },
     getAttemptTranscript: (attemptId) => command("get_attempt_transcript", S.AttemptTranscript, { attemptId }),
     saveTranscriptCorrection: (attemptId, parentRevisionId, text) => command("save_transcript_correction", S.Id, { attemptId, parentRevisionId, text }),
+    setFillerDecision: async (revisionId, candidate, word, decision) => { await command("set_filler_decision", z.null(), { revisionId, candidate, word, decision }); },
     transcribeAttempt: (attemptId) => command("transcribe_attempt", S.Id, { attemptId }),
     cancelTranscription: () => command("cancel_transcription", S.Id.nullable()),
     startMicTest: (deviceId) => command("start_mic_test", S.RecordingStatus, { deviceId }),

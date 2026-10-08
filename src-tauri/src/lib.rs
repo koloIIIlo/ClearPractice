@@ -622,6 +622,21 @@ async fn get_attempt_transcript(
 }
 
 #[tauri::command]
+async fn set_filler_decision(
+    storage: State<'_, Arc<SessionStorage>>,
+    revision_id: String,
+    candidate: u32,
+    word: String,
+    decision: Option<String>,
+) -> Result<(), String> {
+    with_storage(&storage, move |owner| {
+        owner.set_filler_decision(&revision_id, candidate, &word, decision.as_deref(), storage::recording::now_ms())
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
 async fn search_content(
     storage: State<'_, Arc<SessionStorage>>,
     query: String,
@@ -987,6 +1002,7 @@ pub fn run() {
             get_attempt_transcript,
             save_transcript_correction,
             search_content,
+            set_filler_decision,
             start_mic_test,
             get_mic_test_playback_path,
             transcribe_attempt,

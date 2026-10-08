@@ -14,7 +14,7 @@ use std::{
 };
 
 type Result<T> = std::result::Result<T, String>;
-const VERSION: i64 = 3;
+const VERSION: i64 = 4;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
@@ -140,7 +140,10 @@ impl DatabaseOwner {
             if version < 2 {
                 migrate(&mut connection, include_str!("schema-v2.sql"))?;
             }
-            migrate(&mut connection, include_str!("schema-v3.sql"))?;
+            if version < 3 {
+                migrate(&mut connection, include_str!("schema-v3.sql"))?;
+            }
+            migrate(&mut connection, include_str!("schema-v4.sql"))?;
         }
         connection
             .pragma_update(None, "journal_mode", "WAL")
@@ -615,6 +618,7 @@ impl DatabaseOwner {
                 }
                 tx.execute(&format!("INSERT OR IGNORE INTO purged_assets(id,purged_at_ms) SELECT id,?2 FROM ({takes})"),params![id,now]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM task_conditions WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
+                tx.execute(&format!("DELETE FROM annotations WHERE revision_id IN (SELECT id FROM transcript_revisions WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM transcript_segments WHERE revision_id IN (SELECT id FROM transcript_revisions WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM transcript_revisions WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM jobs WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
@@ -752,6 +756,49 @@ impl DatabaseOwner {
         tx.commit().map_err(db_error)
     }
 
+    /// Confirms or dismisses one filler candidate of a machine revision, or clears
+    /// the decision (`None`). The candidate must still exist with the same word.
+    pub fn set_filler_decision(&self, revision_id: &str, candidate: u32, word: &str, decision: Option<&str>, now_ms: u64) -> Result<()> {
+        recording::validate_id(revision_id)?;
+        if decision.is_some_and(|d| d != "confirmed" && d != "dismissed") {
+            return Err("Choose Confirm or Dismiss.".into());
+        }
+        let now = i64::try_from(now_ms).map_err(|_| "Invalid date.")?;
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let source: Option<String> = conn.query_row("SELECT source FROM transcript_revisions WHERE id=?1",[revision_id],|r|r.get(0)).optional().map_err(db_error)?;
+        if source.as_deref().is_none_or(|s| s == "user") {
+            return Err("This transcript is no longer available.".into());
+        }
+        let segments: Vec<(String, Option<i64>, Option<i64>)> = {
+            let mut stmt = conn.prepare("SELECT text,start_ms,end_ms FROM transcript_segments WHERE revision_id=?1 ORDER BY position").map_err(db_error)?;
+            let rows = stmt.query_map([revision_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(db_error)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(db_error)?
+        };
+        let inputs: Vec<crate::analysis::SegmentInput> = segments
+            .iter()
+            .map(|(text, start, end)| crate::analysis::SegmentInput {
+                text,
+                start_ms: start.and_then(|v| u64::try_from(v).ok()),
+                end_ms: end.and_then(|v| u64::try_from(v).ok()),
+            })
+            .collect();
+        let measures = crate::analysis::measure(&inputs);
+        if measures.fillers.get(candidate as usize).is_none_or(|f| f.word != word) {
+            return Err("That filler candidate has changed. Reopen the transcript.".into());
+        }
+        match decision {
+            Some(decision) => conn.execute("INSERT INTO annotations(revision_id,definition_version,kind,candidate,word,decision,decided_at_ms) VALUES (?1,?2,'filler',?3,?4,?5,?6) ON CONFLICT(revision_id,definition_version,kind,candidate) DO UPDATE SET decision=excluded.decision,decided_at_ms=excluded.decided_at_ms",
+                params![revision_id, crate::analysis::DEFINITION_VERSION, candidate, word, decision, now]),
+            None => conn.execute("DELETE FROM annotations WHERE revision_id=?1 AND definition_version=?2 AND kind='filler' AND candidate=?3",
+                params![revision_id, crate::analysis::DEFINITION_VERSION, candidate]),
+        }
+        .map_err(db_error)?;
+        Ok(())
+    }
+
     /// Saves your corrected wording as a child revision of a machine transcript.
     /// The original revision, its segments and measures are never changed.
     pub fn save_transcript_correction(&self, attempt_id: &str, parent_id: &str, text: &str, now_ms: u64) -> Result<String> {
@@ -801,7 +848,19 @@ impl DatabaseOwner {
                         end_ms: s["endMs"].as_u64(),
                     })
                     .collect();
-                revision["measures"] = serde_json::to_value(crate::analysis::measure(&inputs)).map_err(|e| e.to_string())?;
+                let mut measures = serde_json::to_value(crate::analysis::measure(&inputs)).map_err(|e| e.to_string())?;
+                let mut decided = conn.prepare("SELECT candidate,decision FROM annotations WHERE revision_id=?1 AND definition_version=?2 AND kind='filler'").map_err(db_error)?;
+                let decisions: std::collections::HashMap<i64, String> = decided
+                    .query_map(params![revision["id"].as_str().unwrap_or(""), crate::analysis::DEFINITION_VERSION], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .map_err(db_error)?
+                    .collect::<rusqlite::Result<_>>()
+                    .map_err(db_error)?;
+                if let Some(fillers) = measures["fillers"].as_array_mut() {
+                    for (index, filler) in fillers.iter_mut().enumerate() {
+                        filler["decision"] = decisions.get(&(index as i64)).map_or(Value::Null, |d| json!(d));
+                    }
+                }
+                revision["measures"] = measures;
                 revision["segments"] = Value::Array(segments);
                 revision
             }
@@ -1466,7 +1525,7 @@ mod tests {
             .unwrap();
         {
             let conn = owner.connection.lock().unwrap();
-            conn.execute_batch("DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+            conn.execute_batch("DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
         }
         drop(owner);
         let upgraded = DatabaseOwner::open(&root.0).unwrap();
@@ -1476,7 +1535,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v3-")));
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v4-")));
         assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
     }
     #[test]
@@ -1503,6 +1562,18 @@ mod tests {
         assert_eq!(view["revision"]["text"], "Index is, uh, fast.");
         assert_eq!(view["correction"]["text"], "Indexes are, uh, fast.");
         assert_eq!(view["correction"]["fillerCount"], 1);
+        // Filler decisions attach to this revision's candidates only.
+        assert!(view["revision"]["measures"]["fillers"][0]["decision"].is_null());
+        assert!(owner.set_filler_decision("take--1", 0, "um", Some("confirmed"), 5).is_err(), "word must match");
+        assert!(owner.set_filler_decision("take--1", 3, "uh", Some("confirmed"), 5).is_err(), "candidate must exist");
+        assert!(owner.set_filler_decision(&id, 0, "uh", Some("confirmed"), 5).is_err(), "corrections have no candidates");
+        assert!(owner.set_filler_decision("take--1", 0, "uh", Some("maybe"), 5).is_err());
+        owner.set_filler_decision("take--1", 0, "uh", Some("dismissed"), 5).unwrap();
+        owner.set_filler_decision("take--1", 0, "uh", Some("confirmed"), 6).unwrap();
+        assert_eq!(owner.attempt_transcript("take").unwrap()["revision"]["measures"]["fillers"][0]["decision"], "confirmed");
+        owner.set_filler_decision("take--1", 0, "uh", None, 7).unwrap();
+        assert!(owner.attempt_transcript("take").unwrap()["revision"]["measures"]["fillers"][0]["decision"].is_null());
+        owner.set_filler_decision("take--1", 0, "uh", Some("confirmed"), 8).unwrap();
         // Trash purges corrections together with their originals.
         owner.move_to_trash("take", 10).unwrap();
         owner.delete_permanently(&["take".into()]).unwrap();

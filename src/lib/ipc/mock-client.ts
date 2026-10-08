@@ -148,6 +148,7 @@ export function createMockClient(): IpcClient {
     chooseTranscriptionSetup: async () => { throw new IpcError("desktop_required", "Local transcription runs in the desktop app."); },
     getAttemptTranscript: (attemptId) => respond(S.AttemptTranscript, { attemptId, revision: null, correction: null, job: null }),
     transcribeAttempt: async () => { throw new IpcError("desktop_required", "Local transcription runs in the desktop app."); },
+    setFillerDecision: async () => { throw new IpcError("desktop_required", "Transcripts are available in the desktop app."); },
     saveTranscriptCorrection: async () => { throw new IpcError("desktop_required", "Transcripts are available in the desktop app."); },
     cancelTranscription: async () => null,
     onTranscriptionEvent: async () => () => {},

@@ -232,7 +232,15 @@ export const TranscriptMeasures = z.object({
   pauseThresholdMs: z.number().int().positive(),
   pauses: z.array(z.object({ afterSegment: z.number().int().nonnegative(), startMs: z.number().int().nonnegative(), durationMs: z.number().int().nonnegative() })),
   pausesUnavailableReason: z.string().nullable(),
-  fillers: z.array(z.object({ segment: z.number().int().nonnegative(), word: z.string(), segmentStartMs: z.number().int().nonnegative().nullable() })),
+  fillers: z.array(
+    z.object({
+      segment: z.number().int().nonnegative(),
+      word: z.string(),
+      segmentStartMs: z.number().int().nonnegative().nullable(),
+      /** Your review of this candidate; null until you decide. */
+      decision: z.enum(["confirmed", "dismissed"]).nullable().default(null),
+    }),
+  ),
   repeatedWords: z.array(z.string()),
   untimedSegments: z.number().int().nonnegative(),
 });
