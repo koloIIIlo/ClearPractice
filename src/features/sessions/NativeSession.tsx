@@ -12,6 +12,7 @@ import { formatClock, formatLongDay } from "@/lib/format";
 import { SavedAudio } from "@/features/practice/RecordingLibrary";
 import { MoveToTrashButton } from "./TrashPage";
 import { TakeTranscript } from "@/features/review/TakeTranscript";
+import { IntonationTrack } from "@/features/review/IntonationTrack";
 import { Download } from "lucide-react";
 
 /** Real saved audio never falls through to simulated review or mock observations. */
@@ -36,7 +37,7 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
     {attempts.length === 0 && <p role="status">This take is unavailable.</p>}
     {attempts.map((a) => <Panel key={a.id} className="space-y-3">
       <h2 className="font-semibold">Take {a.ordinal} · {formatClock(a.durationMs)} <span className="text-meta font-normal text-muted-foreground">Measured duration</span></h2>
-      {a.audioUnavailableReason ? <p role="alert">Audio unavailable: {a.audioUnavailableReason}</p> : <><NativeTake assetId={a.id} /><TakeTranscript attemptId={a.id} /></>}
+      {a.audioUnavailableReason ? <p role="alert">Audio unavailable: {a.audioUnavailableReason}</p> : <><NativeTake assetId={a.id} /><IntonationTrack attemptId={a.id} /><TakeTranscript attemptId={a.id} /></>}
     </Panel>)}
     <Panel>
       <form className="space-y-4" onChange={() => save.reset()} onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>

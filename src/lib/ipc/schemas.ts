@@ -212,6 +212,20 @@ export const TranscriptionSetup = z.object({
 });
 export type TranscriptionSetup = z.infer<typeof TranscriptionSetup>;
 
+/** Pitch and loudness contour (milestone P); None values are gaps, never zero. */
+export const IntonationContour = z.object({
+  algorithm: z.string(),
+  source: z.literal("Estimated"),
+  hopMs: z.number().int().positive(),
+  sampleRate: z.number().int().positive(),
+  f0Hz: z.array(z.number().positive().nullable()),
+  rmsDb: z.array(z.number().nullable()),
+  medianF0Hz: z.number().positive().nullable(),
+  rangeSemitones: z.number().nonnegative().nullable(),
+  unavailableReason: z.string().nullable(),
+});
+export type IntonationContour = z.infer<typeof IntonationContour>;
+
 export const ModelPack = z.object({
   id: Id,
   bytes: z.number().int().positive(),

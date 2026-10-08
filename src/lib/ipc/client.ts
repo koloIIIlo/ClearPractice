@@ -32,6 +32,7 @@ import type {
   ExportSummary,
   TranscriptionSetup,
   ModelPack,
+  IntonationContour,
   AttemptTranscript,
   TranscriptionEvent,
   MicTestFinished,
@@ -95,6 +96,7 @@ export interface IpcClient {
   exportSession(sessionId: string): Promise<ExportSummary | null>;
   getTranscriptionSetup(): Promise<TranscriptionSetup>;
   listModelPacks(): Promise<ModelPack[]>;
+  getTakeProsody(attemptId: string): Promise<IntonationContour>;
   /** Opens the native picker; installs a known pack only after size and checksum match. */
   importModelPack(): Promise<ModelPack[]>;
   /** Opens the native file picker and verifies the Whisper runtime and model before storing the setup. */

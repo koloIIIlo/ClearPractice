@@ -36,6 +36,7 @@ export function createNativeClient(): IpcClient {
     discardRestorePreview: async (stagingId) => { await command("discard_restore_preview", z.null(), { stagingId }); },
     restoreBackup: (stagingId) => command("restore_backup", S.RestoreOutcome, { stagingId }),
     exportSession: (sessionId) => command("export_session", S.ExportSummary.nullable(), { sessionId }),
+    getTakeProsody: (attemptId) => command("get_take_prosody", S.IntonationContour, { attemptId }),
     listModelPacks: () => command("list_model_packs", S.ModelPack.array()),
     importModelPack: () => command("import_model_pack", S.ModelPack.array()),
     getTranscriptionSetup: () => command("get_transcription_setup", S.TranscriptionSetup),

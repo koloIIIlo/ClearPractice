@@ -704,6 +704,16 @@ async fn choose_transcription_setup(
 }
 
 #[tauri::command]
+async fn get_take_prosody(
+    storage: State<'_, Arc<SessionStorage>>,
+    attempt_id: String,
+) -> Result<prosody::Contour, String> {
+    with_storage(&storage, move |owner| owner.prosody(&attempt_id))
+        .await
+        .map_err(|_| "Intonation analysis failed.".to_string())?
+}
+
+#[tauri::command]
 async fn list_model_packs(storage: State<'_, Arc<SessionStorage>>) -> Result<Vec<models::PackStatus>, String> {
     with_storage(&storage, |owner| Ok(models::list(owner.root())))
         .await
@@ -1126,6 +1136,7 @@ pub fn run() {
             choose_transcription_setup,
             get_attempt_transcript,
             list_model_packs,
+            get_take_prosody,
             import_model_pack,
             save_transcript_correction,
             search_content,

@@ -19,7 +19,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 
 | | |
 | --- | --- |
-| Active milestone | M3 Review and transcription (in progress); milestone P has started (YIN contour, P.1/P.2/P.8 partial). E is done. M0 is done except the two checks that need the user's provider keys (0.22 live request, 0.23 benchmark). M1 is done except an empty/error-state pass (1.9). M2's code is done; its remaining items are desktop/hardware checks and the exit gate |
+| Active milestone | M3 Review and transcription (in progress); milestone P has started (YIN contour and Show intonation on saved takes; P.1–P.4 and P.8 partial). E is done. M0 is done except the two checks that need the user's provider keys (0.22 live request, 0.23 benchmark). M1 is done except an empty/error-state pass (1.9). M2's code is done; its remaining items are desktop/hardware checks and the exit gate |
 | Last updated | 2026-10-08 |
 | Repository | Everything is committed on `main` and pushed to `origin` (github.com/koloIIIlo/ClearPractice); authored by Alex only |
 | Built, not yet checked in the desktop app | Studio timer / Ctrl+Enter / live waveform, waveform player (2.14), Trash (2.17), backup / check / replace / weekly / export (2.18–2.22), microphone test (2.12), discard interrupted take (2.5), close guard (2.10), local transcription with measures, filler review, corrections and search (M3), model pack import (3.3), API transcription test panel (0.22) |
@@ -30,7 +30,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 2. User (optional): store a Deepgram and/or AssemblyAI key in Settings → Transcription → API transcription test, preview a take and approve one Send (closes 0.22); then plan 0.23.
 3. M3 remaining code: stored analysis runs/metric values (3.4), API transcription in the product behind its gate (3.14–3.19).
 4. Physical check: unplug a USB microphone mid-take (2.9). M1: empty/error-state pass (1.9).
-5. Milestone P: run the YIN contour on saved takes, store it (P.3) and draw it under the player (P.4); compare pYIN/McLeod (P.1). Then M4 content (start the licensed reference-clip search early).
+5. Milestone P: energy band, synced playhead and click-to-seek for the intonation view (P.4), `prosody_tracks` storage (P.3), pYIN/McLeod comparison (P.1). Then M4 content (start the licensed reference-clip search early).
 
 **Standing notes (not blockers)**
 - Do not request another personal speech sample or repeat the completed paid coaching test; the public benchmark (D-24) stands in for personal audio.
@@ -264,8 +264,8 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 - [~] P.1 Choose the pitch tracker (→ D-17). YIN implemented first as the classic baseline (no runtime dependency) and provisionally chosen; octave errors and voicing checked on synthetic voices and real speech. Remaining: compare pYIN/McLeod on noisy and weak-mic takes, Praat as dev-time reference
 - [~] P.2 Compute an F0 contour (Hz, plus semitones relative to the speaker's median), voicing flags, and RMS energy (dB) at a 10 ms hop on the **original recording timeline** (never VAD-trimmed audio, §9). `prosody::contour`: F0 per frame (None when unvoiced or silent, never 0), RMS dBFS (None for digital silence), median F0 and 5th–95th percentile range in semitones, with a reason when there is too little voicing. Remaining: run it on saved takes in the app and store/show it (P.3–P.4)
-- [ ] P.3 Storage: a versioned, regenerable analysis artifact (compact binary) plus a `prosody_tracks` record (run_id, attempt_id, algorithm, settings, hop_ms, definition_version, checksum). Metrics: pitch range (5th–95th percentile, semitones) and loudness variation, labelled **Estimated**; unavailable with a reason when there is too little voiced speech, clipping, or heavy noise
-- [ ] P.4 Contour view in Session review: pitch line + energy band under the transport, synced playhead, click to seek, gaps where the voice is unvoiced or silent (never drawn as zero), neutral colours only
+- [~] P.3 Storage: a versioned, regenerable analysis artifact (compact binary) plus a `prosody_tracks` record (run_id, attempt_id, algorithm, settings, hop_ms, definition_version, checksum). Metrics: pitch range (5th–95th percentile, semitones) and loudness variation, labelled **Estimated**; unavailable with a reason when there is too little voiced speech, clipping, or heavy noise. Built: a regenerable JSON cache per take in `cache/prosody/<take>--<audio hash>-yin-v1.json` (purged with the take), pitch range and median labelled Estimated, reason when voicing is too short. Remaining: compact binary artifact + `prosody_tracks` table, loudness variation, clipping/noise reasons
+- [~] P.4 Contour view in Session review: pitch line + energy band under the transport, synced playhead, click to seek, gaps where the voice is unvoiced or silent (never drawn as zero), neutral colours only. Built: Show intonation under each saved take draws the pitch line in semitones around your median with gaps for unvoiced/silent frames, neutral colours and a text summary; no score. Remaining: energy band, synced playhead and click-to-seek
 - [ ] P.5 Imitation overlay (feeds 4.8): reference clip vs. attempt, aligned at speech onset with optional time-normalisation. The user picks one feature (sentence-final fall/rise, stressed word, phrase rhythm) and compares by listening and looking. **No similarity score**. Untimed API text permits audio contours and audio-only comparison; word-linked stress requires separately verified alignment
 - [ ] P.6 Contours for bundled and imported reference clips are computed at import and versioned with the clip (links to 4.4)
 - [ ] P.7 Accessible equivalent: keyboard navigation between phrase endings, with a text readout per phrase ending (rising / falling / level, Estimated). Treat it as data, not advice
@@ -368,6 +368,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Intonation on saved takes (P.3/P.4 start): Rust storage test (150 Hz take → median within 3 Hz, 150 frames for 1.5 s, cache reused, purged with the take); Vitest review/sessions/ipc 23/23. Removed a literal NUL byte that a heredoc had written into `database.rs` (now the `'\0'` escape); a scan found no other control bytes in sources or docs.
 - 2026-10-08: Milestone P started: YIN pitch contour (P.1/P.2/P.8). Debug timing (8–11 s per 62 s) is not representative; the release build takes 0.30 s. Rust prosody 4/4 in release.
 - 2026-10-08: Model pack registry (3.3): Rust models 3/3 incl. real base-pack import; Vitest settings + ipc 19/19.
 - 2026-10-08: Final checks before push: Rust 56 passed (9 hardware tests ignored by default; the 8 original ones passed earlier tonight, the transcription one again after the voice-activity change, and the new real model-pack import passed), Vitest 47/47 in 17 files, production build. Double-checked this plan and the handout: removed six stale rows of the old status table that an earlier cleanup had left below the new one, and refreshed status and next actions.

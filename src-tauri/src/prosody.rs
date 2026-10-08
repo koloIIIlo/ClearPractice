@@ -121,6 +121,57 @@ pub fn contour(samples: &[f32], sample_rate: u32) -> Contour {
     }
 }
 
+/// Contour for one saved take (P.2–P.3), from its verified 16 kHz copy, which
+/// keeps the original timeline. Cached under `cache/prosody`, keyed by the
+/// prepared audio's checksum and the algorithm, so it is regenerable.
+pub fn for_take(root: &std::path::Path, asset_id: &str) -> Result<Contour, String> {
+    use crate::audio::prepare;
+    let audio = prepare::prepare(root, asset_id, &std::sync::atomic::AtomicBool::new(false))?;
+    let dir = root.join("cache").join("prosody");
+    std::fs::create_dir_all(&dir).map_err(|_| "Cannot create the intonation cache.")?;
+    prepare::contained(root, &dir)?;
+    let cached = dir.join(format!("{asset_id}--{}-yin-v1.json", &audio.sha256[..16]));
+    if let Ok(bytes) = std::fs::read(&cached) {
+        if let Ok(contour) = serde_json::from_slice::<CachedContour>(&bytes) {
+            return Ok(contour.into());
+        }
+    }
+    let bytes = std::fs::read(prepare::prepared_path(root, &audio)?).map_err(|_| "The prepared audio is unavailable.")?;
+    let samples: Vec<f32> = bytes
+        .get(44..)
+        .ok_or("The prepared audio is damaged.")?
+        .chunks_exact(2)
+        .map(|p| f32::from(i16::from_le_bytes([p[0], p[1]])) / 32768.0)
+        .collect();
+    let contour = contour(&samples, audio.sample_rate);
+    if let Ok(json) = serde_json::to_vec(&contour) {
+        let part = cached.with_extension("part");
+        if std::fs::write(&part, json).is_ok() {
+            let _ = std::fs::rename(&part, &cached);
+        }
+    }
+    Ok(contour)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CachedContour {
+    hop_ms: u64,
+    sample_rate: u32,
+    f0_hz: Vec<Option<f32>>,
+    rms_db: Vec<Option<f32>>,
+    median_f0_hz: Option<f32>,
+    range_semitones: Option<f32>,
+    unavailable_reason: Option<String>,
+}
+
+impl From<CachedContour> for Contour {
+    fn from(c: CachedContour) -> Self {
+        Contour { algorithm: "yin-v1", source: "Estimated", hop_ms: c.hop_ms, sample_rate: c.sample_rate, f0_hz: c.f0_hz, rms_db: c.rms_db,
+            median_f0_hz: c.median_f0_hz, range_semitones: c.range_semitones, unavailable_reason: c.unavailable_reason }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

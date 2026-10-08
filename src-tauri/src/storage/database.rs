@@ -334,6 +334,11 @@ impl DatabaseOwner {
         Ok(self.root.join("recordings").join(id).join("audio.wav"))
     }
 
+    pub fn prosody(&self, id: &str) -> Result<crate::prosody::Contour> {
+        self.checked_recording(id)?;
+        crate::prosody::for_take(&self.root, id)
+    }
+
     pub fn waveform(&self, id: &str) -> Result<crate::audio::peaks::WaveformPeaks> {
         let saved = self.checked_recording(id)?;
         crate::audio::peaks::load_or_build(&self.root, &saved)
@@ -804,7 +809,7 @@ impl DatabaseOwner {
     pub fn save_transcript_correction(&self, attempt_id: &str, parent_id: &str, text: &str, now_ms: u64) -> Result<String> {
         recording::validate_id(attempt_id)?;
         recording::validate_id(parent_id)?;
-        if text.trim().is_empty() || text.len() > 64_000 || text.contains(' ') {
+        if text.trim().is_empty() || text.len() > 64_000 || text.contains('\0') {
             return Err("Write the corrected transcript (up to 64 KB).".into());
         }
         let now = i64::try_from(now_ms).map_err(|_| "Invalid date.")?;
@@ -1083,6 +1088,16 @@ fn remove_take_files(root: &Path, id: &str) -> Result<()> {
             fs::remove_dir_all(&path).map_err(io_error)?;
         } else {
             fs::remove_file(&path).map_err(io_error)?;
+        }
+    }
+    // Intonation caches are named `<attempt>--<hash>-<algorithm>.json`.
+    if let Ok(entries) = fs::read_dir(cache.join("prosody")) {
+        let prefix = format!("{id}--");
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with(&prefix) {
+                contained(root, &entry.path())?;
+                fs::remove_file(entry.path()).map_err(io_error)?;
+            }
         }
     }
     // Transcription runs are named `<attempt>--<time>` (see transcribe::run_id).
@@ -1594,6 +1609,31 @@ mod tests {
         owner.move_to_trash("take", 10).unwrap();
         owner.delete_permanently(&["take".into()]).unwrap();
         assert!(owner.attempt_transcript("take").unwrap()["revision"].is_null());
+    }
+    #[test]
+    fn take_intonation_is_cached_on_the_prepared_timeline_and_purged_with_the_take() {
+        let root = TestRoot::new();
+        let mut writer = ChunkWriter::create(&root.0, &manifest("tone")).unwrap();
+        let mut phase = 0.0f64;
+        for _ in 0..72_000 {
+            phase += std::f64::consts::TAU * 150.0 / 48_000.0;
+            let s: f64 = (1..=5).map(|h| (phase * h as f64).sin() / h as f64).sum();
+            writer.push((s * 8_000.0) as i16).unwrap();
+        }
+        writer.flush().unwrap();
+        drop(writer);
+        recording::finalize(&root.0, "tone", false).unwrap();
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        let contour = owner.prosody("tone").unwrap();
+        let median = contour.median_f0_hz.unwrap();
+        assert!((median - 150.0).abs() < 3.0, "median {median}");
+        assert_eq!(contour.f0_hz.len(), 150, "10 ms frames over 1.5 s on the original timeline");
+        let cached: Vec<_> = fs::read_dir(root.0.join("cache/prosody")).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(cached.len(), 1);
+        assert_eq!(owner.prosody("tone").unwrap(), contour, "served from the cache unchanged");
+        owner.move_to_trash("tone", 1).unwrap();
+        owner.delete_permanently(&["tone".into()]).unwrap();
+        assert_eq!(fs::read_dir(root.0.join("cache/prosody")).unwrap().count(), 0);
     }
     #[test]
     fn search_finds_titles_notes_and_transcripts_follows_edits_and_skips_trash() {
