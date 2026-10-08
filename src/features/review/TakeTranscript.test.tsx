@@ -7,14 +7,15 @@ import { IpcContext, type IpcClient } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
 import type { AttemptTranscript, TranscriptionEvent } from "@/lib/ipc/schemas";
 import { TakeTranscript } from "./TakeTranscript";
+import { createPlayerLink, type PlayerLink } from "./player-link";
 
-function setup(overrides: Partial<IpcClient>) {
+function setup(overrides: Partial<IpcClient>, link?: PlayerLink) {
   const client: IpcClient = { ...createMockClient(), recordingMode: "native", ...overrides };
   render(
     <MemoryRouter>
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <IpcContext.Provider value={client}>
-          <TakeTranscript attemptId="take-1" />
+          <TakeTranscript attemptId="take-1" link={link} />
         </IpcContext.Provider>
       </QueryClientProvider>
     </MemoryRouter>,
@@ -103,6 +104,11 @@ it("shows progress, then the saved transcript with estimated timings and kept fi
   await user.click(screen.getByRole("button", { name: "Correct the transcript" }));
   const box = screen.getByLabelText("My corrections");
   expect(box).toHaveValue("Well, uh, indexes speed up reads.");
+  // Unchanged text (spacing aside) is not a correction.
+  expect(screen.getByRole("button", { name: "Save corrections" })).toBeDisabled();
+  await user.type(box, "  ");
+  expect(screen.getByRole("button", { name: "Save corrections" })).toBeDisabled();
+  expect(screen.getByText("Change a word to save a correction.")).toBeInTheDocument();
   await user.clear(box);
   await user.type(box, "Well, uh, indexes speed up reads a lot.");
   await user.click(screen.getByRole("button", { name: "Save corrections" }));
@@ -145,4 +151,34 @@ it("starts in the default mode from Settings and lets each take switch between t
   await user.click(screen.getByRole("radio", { name: "This computer" }));
   await user.click(screen.getByRole("button", { name: "Transcribe" }));
   expect(client.transcribeAttempt).toHaveBeenCalledWith("take-1");
+});
+
+it("plays the take from a transcript line when it is clicked", async () => {
+  const user = userEvent.setup();
+  const link = createPlayerLink();
+  const seek = vi.fn();
+  link.attach(seek);
+  const segment = (text: string, startMs: number, endMs: number) => ({ text, startMs, endMs, timingSource: "Estimated" as const, timingUnavailableReason: null });
+  setup({
+    getTranscriptionSetup: configured,
+    getAttemptTranscript: async () => ({
+      attemptId: "take-1", correction: null, job: null,
+      revision: {
+        id: "take-1--1", source: "local", provider: "whisper.cpp", modelId: "base", backend: "cpu", prompt: null, language: "en",
+        text: "First line. Second line.", workerElapsedMs: 1_000, createdAt: "2026-10-08T01:00:14.000Z",
+        segments: [segment(" First line.", 0, 2_000), segment(" Second line.", 2_000, 4_000)],
+        measures: {
+          definitionVersion: 1, source: "Estimated", wordCount: 4, speechSpanMs: 4_000, paceWpm: null, paceUnavailableReason: "Short.",
+          pauseThresholdMs: 700, pauses: [], pausesUnavailableReason: null, fillers: [], repeatedWords: [], untimedSegments: 0,
+          voice: { method: "peak-energy-v1", source: "Estimated", speechStartMs: 0, speechEndMs: 4_000, pauses: [], unavailableReason: null },
+        },
+      },
+    }),
+  }, link);
+  const second = await screen.findByRole("button", { name: "Play from 0:02: Second line." });
+  expect(screen.getByRole("button", { name: "Play from 0:00: First line." })).toHaveAttribute("aria-current", "true");
+  await user.click(second);
+  expect(seek).toHaveBeenCalledWith(2_000, true);
+  act(() => link.publish(2_500));
+  expect(second).toHaveAttribute("aria-current", "true");
 });

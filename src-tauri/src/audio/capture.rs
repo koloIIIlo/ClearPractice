@@ -18,6 +18,8 @@ use std::{
 type Result<T> = std::result::Result<T, String>;
 const BLOCK_SAMPLES: usize = 4096;
 const QUEUE_BLOCKS: usize = 16;
+/// Device-level glitch reports tolerated per take before it is stopped.
+const MAX_GLITCHES: u32 = 20;
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -294,6 +296,7 @@ where
     let channels = config.channels as usize;
     let block_size = (BLOCK_SAMPLES / channels) * channels;
     let error_fault = fault.clone();
+    let mut glitches = 0u32;
     device
         .build_input_stream::<T, _, _>(
             config,
@@ -324,7 +327,17 @@ where
                 if matches!(error.kind(), cpal::ErrorKind::RealtimeDenied | cpal::ErrorKind::DeviceChanged) { return; }
                 #[cfg(test)]
                 eprintln!("Capture diagnostic: {error}");
-                error_fault.store(if error.kind() == cpal::ErrorKind::Xrun { 2 } else { 1 }, Ordering::Release);
+                if error.kind() == cpal::ErrorKind::Xrun {
+                    // WASAPI flags a "discontinuity" for brief glitches, often right
+                    // after the stream starts. Only a device that keeps glitching
+                    // stops the take; a single report lost a few milliseconds at most.
+                    glitches += 1;
+                    if glitches > MAX_GLITCHES {
+                        error_fault.store(2, Ordering::Release);
+                    }
+                    return;
+                }
+                error_fault.store(1, Ordering::Release);
             },
             None,
         )

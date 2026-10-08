@@ -10,6 +10,7 @@ pub mod models;
 pub mod clips;
 pub mod clipsplit;
 pub mod linkaudio;
+pub mod preferences;
 pub mod prosody;
 pub mod storage;
 pub mod transcribe;
@@ -1187,6 +1188,16 @@ async fn get_transcription_setup(
 }
 
 #[tauri::command]
+async fn get_preferences(storage: State<'_, Arc<SessionStorage>>) -> Result<preferences::Preferences, String> {
+    with_storage(&storage, preferences::load).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn set_preferences(storage: State<'_, Arc<SessionStorage>>, preferences: preferences::Preferences) -> Result<preferences::Preferences, String> {
+    with_storage(&storage, move |db| preferences::save(db, preferences)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
 async fn get_transcription_preference(storage: State<'_, Arc<SessionStorage>>) -> Result<transcribe::Preference, String> {
     with_storage(&storage, transcribe::preference).await.map_err(|_| "Session storage failed.".to_string())?
 }
@@ -1709,6 +1720,8 @@ pub fn run() {
             cancel_api_transcription_preview,
             cancel_api_transcription,
             get_api_preview_audio_path,
+            get_preferences,
+            set_preferences,
             get_transcription_preference,
             set_transcription_preference,
             request_api_transcription,

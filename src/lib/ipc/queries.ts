@@ -4,7 +4,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useIpc, type SessionFilter } from "./index";
-import type { PhraseRating, ProgressView, SessionLength } from "./schemas";
+import { DEFAULT_PREFERENCES, type PhraseRating, type Preferences, type ProgressView, type SessionLength } from "./schemas";
 
 export const keys = {
   status: ["status"] as const,
@@ -19,7 +19,22 @@ export const keys = {
   progress: (view: ProgressView) => ["progress", view] as const,
   search: (q: string) => ["search", q] as const,
   devices: ["devices"] as const,
+  preferences: ["preferences"] as const,
 };
+
+/** Saved preferences; until they load, the defaults apply. */
+export function usePreferences() {
+  const ipc = useIpc();
+  const qc = useQueryClient();
+  const query = useQuery({ queryKey: keys.preferences, queryFn: () => ipc.getPreferences() });
+  const value = query.data ?? DEFAULT_PREFERENCES;
+  const update = useMutation({
+    mutationFn: (change: Partial<Preferences>) => ipc.setPreferences({ ...(qc.getQueryData<Preferences>(keys.preferences) ?? value), ...change }),
+    onMutate: (change) => qc.setQueryData<Preferences>(keys.preferences, (old) => ({ ...(old ?? DEFAULT_PREFERENCES), ...change })),
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.preferences }),
+  });
+  return { preferences: value, loaded: query.isSuccess, update: update.mutate };
+}
 
 export function useServiceStatus() {
   const ipc = useIpc();

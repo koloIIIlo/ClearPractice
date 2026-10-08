@@ -1150,6 +1150,20 @@ impl DatabaseOwner {
             Some("user") => return Err("Corrections start from the machine transcript.".into()),
             Some(_) => {}
         }
+        // Saving the text it started from would only add a duplicate revision.
+        let latest: Option<String> = conn.query_row("SELECT text FROM transcript_revisions WHERE parent_id=?1 AND attempt_id=?2 AND source='user' ORDER BY created_at_ms DESC LIMIT 1",params![parent_id,attempt_id],|r|r.get(0)).optional().map_err(db_error)?.flatten();
+        let base = match latest {
+            Some(text) => text,
+            None => {
+                let mut stmt = conn.prepare("SELECT text FROM transcript_segments WHERE revision_id=?1 ORDER BY position").map_err(db_error)?;
+                let parts = stmt.query_map([parent_id], |r| r.get::<_, String>(0)).map_err(db_error)?.collect::<std::result::Result<Vec<_>, _>>().map_err(db_error)?;
+                parts.join(" ")
+            }
+        };
+        let words = |t: &str| t.split_whitespace().collect::<Vec<_>>().join(" ");
+        if words(text) == words(&base) {
+            return Err("Nothing changed. Change a word to save a correction.".into());
+        }
         let id = format!("{parent_id}--edit-{now_ms}");
         recording::validate_id(&id)?;
         let mut conn = conn;
@@ -2190,8 +2204,12 @@ mod tests {
         owner.start_job("job-1", "take", 1).unwrap();
         owner.save_local_transcript("job-1", "take", &transcript, 2).unwrap();
         assert!(owner.save_transcript_correction("take", "take--1", "   ", 3).is_err());
+        let same = owner.save_transcript_correction("take", "take--1", "Index  is, uh,
+fast.", 3).unwrap_err();
+        assert!(same.contains("Nothing changed"), "{same}");
         let id = owner.save_transcript_correction("take", "take--1", "Indexes are, uh, fast.", 3).unwrap();
         assert!(owner.save_transcript_correction("take", &id, "Again", 4).is_err(), "corrections hang off the machine transcript");
+        assert!(owner.save_transcript_correction("take", "take--1", " Indexes are, uh, fast. ", 5).unwrap_err().contains("Nothing changed"), "same as the latest correction");
         let view = owner.attempt_transcript("take").unwrap();
         assert_eq!(view["revision"]["id"], "take--1");
         assert_eq!(view["revision"]["text"], "Index is, uh, fast.");

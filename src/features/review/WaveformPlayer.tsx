@@ -121,7 +121,10 @@ export function WaveformPlayer({ url, peaks, label, link }: { url: string; peaks
     const theme = new MutationObserver(() => ws.setOptions(tokenColors()));
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme"] });
 
-    const detach = link?.attach((ms) => ws.setTime(Math.min(peaks.durationMs, Math.max(0, ms)) / 1000));
+    const detach = link?.attach((ms, play) => {
+      ws.setTime(Math.min(peaks.durationMs, Math.max(0, ms)) / 1000);
+      if (play && !ws.isPlaying()) ws.play().catch(() => setPlayError("Playback could not start. The saved file is unchanged."));
+    });
 
     return () => {
       detach?.();

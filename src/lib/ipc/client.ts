@@ -31,6 +31,7 @@ import type {
   RestoreOutcome,
   ExportSummary,
   TranscriptionPreference,
+  Preferences,
   ReferenceClip,
   ClipStaged,
   ClipCandidate,
@@ -145,6 +146,8 @@ export interface IpcClient {
   /** Opens the native Save dialog and writes a readable session ZIP; null when cancelled. */
   exportSession(sessionId: string): Promise<ExportSummary | null>;
   getTranscriptionSetup(): Promise<TranscriptionSetup>;
+  getPreferences(): Promise<Preferences>;
+  setPreferences(preferences: Preferences): Promise<Preferences>;
   getTranscriptionPreference(): Promise<TranscriptionPreference>;
   /** Stores the default mode; choosing cloud sends nothing. */
   setTranscriptionPreference(preference: TranscriptionPreference): Promise<TranscriptionPreference>;

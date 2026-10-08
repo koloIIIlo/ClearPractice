@@ -613,6 +613,18 @@ export const AudioProvider = z.enum(["deepgram", "assemblyai"]);
 export type AudioProvider = z.infer<typeof AudioProvider>;
 
 /** Default way to transcribe takes (§10). Cloud never sends by itself: each take is previewed and sent on Send. */
+/** Settings that change how the app behaves (stored natively in app_settings). */
+export const Preferences = z
+  .object({
+    recordingSounds: z.boolean(),
+    recordingShortcuts: z.boolean(),
+    inputDeviceId: z.string().min(1).max(512).nullable(),
+    sessionLength: SessionLength,
+  })
+  .strict();
+export type Preferences = z.infer<typeof Preferences>;
+export const DEFAULT_PREFERENCES: Preferences = { recordingSounds: true, recordingShortcuts: true, inputDeviceId: null, sessionLength: "standard" };
+
 export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api"]), provider: AudioProvider }).strict();
 export type TranscriptionPreference = z.infer<typeof TranscriptionPreference>;
 

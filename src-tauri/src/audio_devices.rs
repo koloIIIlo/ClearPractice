@@ -20,9 +20,16 @@ pub struct InputDevice {
     supported_configs: Vec<InputConfig>,
 }
 
-/// Only reads device metadata; it does not open a microphone stream.
+/// Only reads device metadata; it does not open a microphone stream. Runs off
+/// the window thread, so Refresh never freezes the interface.
 #[tauri::command]
-pub fn list_input_devices() -> Result<Vec<InputDevice>, String> {
+pub async fn list_input_devices() -> Result<Vec<InputDevice>, String> {
+    tauri::async_runtime::spawn_blocking(enumerate_input_devices)
+        .await
+        .map_err(|_| "Cannot list input devices.".to_string())?
+}
+
+pub fn enumerate_input_devices() -> Result<Vec<InputDevice>, String> {
     let host = cpal::default_host();
     let default_id = host
         .default_input_device()
@@ -72,7 +79,7 @@ mod tests {
     #[test]
     #[ignore = "requires a live audio host and microphone access"]
     fn discover_local_input_devices() {
-        let devices = list_input_devices().expect("enumerate input devices");
+        let devices = enumerate_input_devices().expect("enumerate input devices");
         for device in &devices {
             println!(
                 "{}: {} ({} formats)",

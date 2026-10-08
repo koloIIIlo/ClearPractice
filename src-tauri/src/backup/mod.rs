@@ -624,8 +624,25 @@ pub struct RestoreOutcome {
     pub rollback_folder: String,
 }
 
+/// Antivirus and search indexers briefly hold freshly written files, so an
+/// access-denied rename is retried for about three seconds before giving up.
 fn rename(from: &Path, to: &Path) -> Result<()> {
-    fs::rename(from, to).map_err(|e| format!("Restore could not move {} ({e}).", from.display()))
+    let mut attempt = 0;
+    loop {
+        match fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && attempt < 15 => {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            Err(e) => {
+                return Err(format!(
+                    "Restore could not move {} ({e}). Close any program or Explorer window using files in that folder, then try again.",
+                    from.display()
+                ))
+            }
+        }
+    }
 }
 
 /// Moves the current profile aside and the staged backup into place. If any

@@ -18,7 +18,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatClock } from "@/lib/format";
-import { useExercises, usePhrases, usePrompts, useInputDevices } from "@/lib/ipc/queries";
+import { useExercises, usePhrases, usePreferences, usePrompts, useInputDevices } from "@/lib/ipc/queries";
+import { playCue } from "@/lib/tone";
 import { useIpc } from "@/lib/ipc";
 import type { ExerciseDefinition, PhraseCard, PracticePrompt } from "@/lib/ipc/schemas";
 import { ExpressionPanel, expressionPrompt, ImitationPanel, RepeatFocus } from "./ExercisePanels";
@@ -70,8 +71,10 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
   const native = ipc.recordingMode === "native";
   const [sessionId] = useState(() => crypto.randomUUID());
   const devices = useInputDevices();
-  const [deviceId, setDeviceId] = useState("");
-  const selectedDevice = deviceId || devices.data?.find((device) => device.isDefault && device.available)?.id || devices.data?.find((device) => device.available)?.id || "";
+  const { preferences, update: updatePreferences } = usePreferences();
+  const preferred = devices.data?.find((device) => device.id === preferences.inputDeviceId && device.available)?.id;
+  const selectedDevice = preferred || devices.data?.find((device) => device.isDefault && device.available)?.id || devices.data?.find((device) => device.available)?.id || "";
+  const setDeviceId = (id: string) => updatePreferences({ inputDeviceId: devices.data?.find((d) => d.id === id)?.isDefault ? null : id });
   const navigate = useNavigate();
   const [useCountdown, setUseCountdown] = useState(false);
   const [outline, setOutline] = useState({ point: "", reason: "", example: "" });
@@ -100,6 +103,10 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
       interrupted: rec.error ?? "The take was interrupted.",
     };
     setAnnouncement(text[rec.phase] ?? "");
+    if (preferences.recordingSounds && native) {
+      if (rec.phase === "preparing") playCue("start");
+      if (rec.phase === "saved") playCue("stop");
+    }
     if (rec.phase === "saved" && lastTake) toast.success(`Take ${lastTake.ordinal} ${native ? "saved" : "simulated"}`);
   }, [rec.phase]);
 
@@ -113,9 +120,11 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
   // inside the studio (§14). Open dialogs keep their own keyboard handling.
   const primaryRef = useRef(primary);
   primaryRef.current = primary;
+  const shortcuts = preferences.recordingShortcuts;
   const canUsePrimary = rec.ready && rec.phase !== "preparing" && rec.phase !== "finalizing" && (rec.isCapturing || !!selectedDevice);
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (!shortcuts) return;
       if (!(e.ctrlKey || e.metaKey) || e.key !== "Enter" || e.repeat || e.defaultPrevented) return;
       if (document.querySelector("[role=alertdialog], [role=dialog]")) return;
       if (!canUsePrimary) return;
@@ -124,7 +133,7 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [canUsePrimary]);
+  }, [canUsePrimary, shortcuts]);
 
   const locked = rec.isCapturing || rec.phase === "countdown";
 
@@ -203,7 +212,7 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
           </SelectContent>
         </Select>
         {devices.error && <p role="alert" className="text-meta text-destructive">{devices.error.message}</p>}
-        <Button variant="ghost" disabled={locked || devices.isFetching} onClick={() => void devices.refetch()}>Refresh microphones</Button>
+        <Button variant="ghost" disabled={locked || devices.isFetching} onClick={() => void devices.refetch()}>{devices.isFetching ? "Looking for microphones…" : "Refresh microphones"}</Button>
       </div>
       {rec.error && <p role="alert" className="rounded-lg border p-3 text-destructive">{rec.error}</p>}
 
@@ -244,7 +253,7 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
           </Label>
         </div>
         <p className="text-meta text-muted-foreground">
-          Ctrl+Enter to record or stop. The timer is for information only, so there's no need to rush.
+          {shortcuts ? "Ctrl+Enter to record or stop. " : ""}The timer is for information only, so there's no need to rush.
         </p>
       </Panel>
 

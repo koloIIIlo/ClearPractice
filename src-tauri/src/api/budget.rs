@@ -168,14 +168,34 @@ pub struct BudgetOwner {
     state: Mutex<Ledger>,
     _lock: File,
 }
+/// The ledger has its own folder: the app holds its lock file open, and a
+/// restore moves `database/` aside. Keeping it apart also means a restore never
+/// rolls spending back (backups exclude it on purpose).
+const LEDGER_DIR: &str = "accounting";
+
+/// Ledgers written before 2026-10-09 lived in `database/`; move them once.
+fn move_legacy_ledger(root: &Path, path: &Path) -> Result<()> {
+    let legacy = root.join("database/api-usage-v1.json");
+    if path.exists() || fs::symlink_metadata(&legacy).is_err() {
+        return Ok(());
+    }
+    contained(root, &legacy)?;
+    fs::rename(&legacy, path).map_err(|_| "Cannot move API accounting to its new folder. New requests are disabled.")?;
+    let _ = fs::remove_file(root.join("database/api-usage-v1.lock"));
+    Ok(())
+}
+
 impl BudgetOwner {
     pub fn open(root: &Path) -> Result<Self> {
-        contained(root, &root.join("database"))?;
-        let path = root.join("database/api-usage-v1.json");
+        let dir = root.join(LEDGER_DIR);
+        fs::create_dir_all(&dir).map_err(|_| "Cannot create the API accounting folder.")?;
+        contained(root, &dir)?;
+        let path = dir.join("api-usage-v1.json");
+        move_legacy_ledger(root, &path)?;
         for file in [
             &path,
             &path.with_extension("json.part"),
-            &root.join("database/api-usage-v1.lock"),
+            &dir.join("api-usage-v1.lock"),
         ] {
             if fs::symlink_metadata(file).is_ok() {
                 contained(root, file)?;
@@ -189,7 +209,7 @@ impl BudgetOwner {
             options.share_mode(0);
         }
         let lock = options
-            .open(root.join("database/api-usage-v1.lock"))
+            .open(dir.join("api-usage-v1.lock"))
             .map_err(|_| {
                 "Another app instance owns API accounting, or its folder is unavailable."
             })?;
@@ -245,7 +265,7 @@ impl BudgetOwner {
     }
 
     fn save(&self, ledger: &Ledger) -> Result<()> {
-        contained(&self.root, &self.root.join("database"))?;
+        contained(&self.root, &self.root.join(LEDGER_DIR))?;
         let bytes = serde_json::to_vec(ledger).map_err(|_| "Cannot encode API accounting.")?;
         if bytes.len() as u64 > MAX_LEDGER {
             return Err("API accounting is full; new requests are disabled.".into());
@@ -560,7 +580,24 @@ mod tests {
         owner.release_unsent("unsent").unwrap();
         assert_eq!(owner.summary().unwrap().counted_micro_usd, 0);
         drop(owner);
-        fs::write(root.0.join("database/api-usage-v1.json"), b"broken").unwrap();
+        fs::write(root.0.join("accounting/api-usage-v1.json"), b"broken").unwrap();
         assert!(BudgetOwner::open(&root.0).is_err());
+    }
+
+    #[test]
+    fn a_ledger_from_the_database_folder_moves_to_its_own_folder_once() {
+        let root = TestRoot::new();
+        let owner = BudgetOwner::open(&root.0).unwrap();
+        owner.reserve("kept", Purpose::Coaching, &"a".repeat(64), Some(quote(100))).unwrap();
+        drop(owner);
+        fs::create_dir_all(root.0.join("database")).unwrap();
+        fs::rename(root.0.join("accounting/api-usage-v1.json"), root.0.join("database/api-usage-v1.json")).unwrap();
+        fs::write(root.0.join("database/api-usage-v1.lock"), b"").unwrap();
+        let owner = BudgetOwner::open(&root.0).unwrap();
+        assert!(owner.summary().is_ok());
+        assert!(fs::read_to_string(root.0.join("accounting/api-usage-v1.json")).unwrap().contains("kept"));
+        assert!(!root.0.join("database/api-usage-v1.json").exists());
+        assert!(!root.0.join("database/api-usage-v1.lock").exists());
+        assert!(root.0.join("accounting/api-usage-v1.json").is_file());
     }
 }

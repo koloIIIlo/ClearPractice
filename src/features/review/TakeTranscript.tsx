@@ -9,6 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
 import { CloudTranscribe } from "./ApiTranscribe";
+import { useLinkedPosition, type PlayerLink } from "./player-link";
+import { cn } from "@/lib/utils";
 import type { AttemptTranscript, TranscriptMeasures, TranscriptionEvent } from "@/lib/ipc/schemas";
 
 const PHASES: Record<string, string> = {
@@ -110,11 +112,74 @@ function FillerReview({ revisionId, measures, onChanged }: { revisionId: string;
   );
 }
 
+/** Spacing and line breaks alone don't count as a correction. */
+export function sameWords(a: string, b: string): boolean {
+  const norm = (t: string) => t.trim().split(/\s+/).join(" ");
+  return norm(a) === norm(b);
+}
+
+type Revision = NonNullable<AttemptTranscript["revision"]>;
+
+/**
+ * The transcript, one row per segment. With a player on the page, clicking a
+ * row plays from its (estimated) start, and the row being heard is highlighted.
+ */
+function Segments({ revision, link }: { revision: Revision; link?: PlayerLink }) {
+  const position = useLinkedPosition(link);
+  const playable = !!link && position !== null;
+  const current =
+    position === null ? -1 : revision.segments.findIndex((s) => s.startMs != null && s.endMs != null && position >= s.startMs && position < s.endMs);
+  return (
+    <ol className="space-y-0.5">
+      {revision.segments.map((segment, i) => {
+        if (!segment.text.trim()) return null;
+        const fillers = new Set(revision.measures.fillers.filter((f) => f.segment === i && f.decision !== "dismissed").map((f) => f.word));
+        const time = (
+          <span className="w-12 shrink-0 pt-0.5 text-right text-meta text-muted-foreground tabular-nums">
+            {segment.startMs != null ? formatClock(segment.startMs) : "–"}
+          </span>
+        );
+        return (
+          <li key={i}>
+            {playable && segment.startMs != null ? (
+              <button
+                type="button"
+                aria-current={i === current ? "true" : undefined}
+                aria-label={`Play from ${formatClock(segment.startMs)}: ${segment.text.trim()}`}
+                className={cn(
+                  "flex w-full gap-3 rounded-md px-1 py-0.5 text-left hover:bg-secondary focus-visible:outline-2 focus-visible:outline-ring",
+                  i === current && "bg-secondary",
+                )}
+                onClick={() => link!.seek(segment.startMs!, true)}
+              >
+                {time}
+                <SegmentText text={segment.text.trim()} fillers={fillers} />
+              </button>
+            ) : (
+              <div className="flex gap-3 px-1 py-0.5">
+                {time}
+                <SegmentText text={segment.text.trim()} fillers={fillers} />
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 /** "My corrections" (plan 3.9): saved as a child revision; the machine transcript is never edited. */
 function Corrections({ data, onSaved }: { data: AttemptTranscript; onSaved: () => void }) {
   const ipc = useIpc();
   const revision = data.revision!;
   const [draft, setDraft] = useState<string | null>(null);
+  // The text the editor opened with; saving it unchanged would only add a duplicate revision.
+  const [initial, setInitial] = useState("");
+  const open = (text: string) => {
+    setInitial(text);
+    setDraft(text);
+  };
+  const unchanged = draft !== null && sameWords(draft, initial);
   const save = useMutation({
     mutationFn: (text: string) => ipc.saveTranscriptCorrection(data.attemptId, revision.id, text),
     onSuccess: () => {
@@ -134,9 +199,11 @@ function Corrections({ data, onSaved }: { data: AttemptTranscript; onSaved: () =
       >
         <Label htmlFor={id}>My corrections</Label>
         <Textarea id={id} value={draft} rows={5} maxLength={64_000} disabled={save.isPending} onChange={(e) => setDraft(e.target.value)} />
-        <p className="text-meta text-muted-foreground">Fix words the model misheard. The original transcript and its measures stay as they are.</p>
+        <p className="text-meta text-muted-foreground">
+          {unchanged ? "Change a word to save a correction." : "Fix words the model misheard. The original transcript and its measures stay as they are."}
+        </p>
         <div className="flex gap-2">
-          <Button type="submit" disabled={save.isPending || !draft.trim()}>{save.isPending ? "Saving…" : "Save corrections"}</Button>
+          <Button type="submit" disabled={save.isPending || !draft.trim() || unchanged}>{save.isPending ? "Saving…" : "Save corrections"}</Button>
           <Button type="button" variant="ghost" disabled={save.isPending} onClick={() => setDraft(null)}>Cancel</Button>
         </div>
         {save.error && <p role="alert" className="text-meta text-destructive">{save.error.message}</p>}
@@ -146,12 +213,12 @@ function Corrections({ data, onSaved }: { data: AttemptTranscript; onSaved: () =
     <div className="space-y-1 rounded-md bg-secondary/50 p-2">
       <p className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground">
         <EvidenceLabel source="note" /> My corrections · {data.correction.wordCount} words, {data.correction.fillerCount} filler candidates
-        <Button variant="ghost" className="ml-auto" onClick={() => setDraft(data.correction!.text)}>Edit corrections</Button>
+        <Button variant="ghost" className="ml-auto" onClick={() => open(data.correction!.text)}>Edit corrections</Button>
       </p>
       <p>{data.correction.text}</p>
     </div>
   ) : (
-    <Button variant="outline" onClick={() => setDraft(revision.segments.map((s) => s.text.trim()).filter(Boolean).join(" "))}>
+    <Button variant="outline" onClick={() => open(revision.segments.map((s) => s.text.trim()).filter(Boolean).join(" "))}>
       Correct the transcript
     </Button>
   );
@@ -176,7 +243,7 @@ function JobMessage({ data }: { data: AttemptTranscript }) {
  */
 const API_PROVIDER_NAMES: Record<string, string> = { deepgram: "Deepgram", assemblyai: "AssemblyAI" };
 
-export function TakeTranscript({ attemptId }: { attemptId: string }) {
+export function TakeTranscript({ attemptId, link }: { attemptId: string; link?: PlayerLink }) {
   const ipc = useIpc();
   const qc = useQueryClient();
   const key = ["attempt-transcript", attemptId] as const;
@@ -291,21 +358,7 @@ export function TakeTranscript({ attemptId }: { attemptId: string }) {
 
       {revision && (
         <>
-          <ol className="space-y-1.5">
-            {revision.segments.map((segment, i) =>
-              segment.text.trim() ? (
-                <li key={i} className="flex gap-3">
-                  <span className="w-12 shrink-0 pt-0.5 text-right text-meta text-muted-foreground tabular-nums">
-                    {segment.startMs != null ? formatClock(segment.startMs) : "–"}
-                  </span>
-                  <SegmentText
-                    text={segment.text.trim()}
-                    fillers={new Set(revision.measures.fillers.filter((f) => f.segment === i && f.decision !== "dismissed").map((f) => f.word))}
-                  />
-                </li>
-              ) : null,
-            )}
-          </ol>
+          <Segments revision={revision} link={link} />
           <Measures m={revision.measures} />
           <FillerReview revisionId={revision.id} measures={revision.measures} onChanged={() => void qc.invalidateQueries({ queryKey: key })} />
           {data && <Corrections data={data} onSaved={() => void qc.invalidateQueries({ queryKey: key })} />}

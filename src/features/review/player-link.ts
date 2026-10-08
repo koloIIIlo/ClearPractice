@@ -10,13 +10,14 @@ export type PlayerLink = {
   getPositionMs: () => number | null;
   subscribe: (listener: () => void) => () => void;
   publish: (ms: number) => void;
-  attach: (seek: (ms: number) => void) => () => void;
-  seek: (ms: number) => void;
+  attach: (seek: (ms: number, play?: boolean) => void) => () => void;
+  /** Moves the playhead; `play` also starts playback from there. */
+  seek: (ms: number, play?: boolean) => void;
 };
 
 export function createPlayerLink(): PlayerLink {
   const listeners = new Set<() => void>();
-  let seekFn: ((ms: number) => void) | null = null;
+  let seekFn: ((ms: number, play?: boolean) => void) | null = null;
   let position: number | null = null;
   const notify = () => listeners.forEach((l) => l());
   return {
@@ -41,7 +42,7 @@ export function createPlayerLink(): PlayerLink {
         notify();
       };
     },
-    seek: (ms) => seekFn?.(ms),
+    seek: (ms, play) => (play ? seekFn?.(ms, true) : seekFn?.(ms)),
   };
 }
 

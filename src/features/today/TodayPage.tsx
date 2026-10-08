@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePreferences } from "@/lib/ipc/queries";
 import { Link, useNavigate } from "react-router";
 import { ArrowRight, Compass, MessagesSquare, Mic, RotateCcw } from "lucide-react";
 import { EmptyState, LoadingBlock, Page, Panel, QueryView, SectionTitle } from "@/components/page";
@@ -19,7 +20,10 @@ const LENGTHS: { value: SessionLength; label: string; hint: string }[] = [
 ];
 
 export function TodayPage() {
-  const [length, setLength] = useState<SessionLength>("standard");
+  const { preferences } = usePreferences();
+  const [chosen, setLength] = useState<SessionLength | null>(null);
+  // The default length comes from Settings → Practice until you pick one here.
+  const length = chosen ?? preferences.sessionLength;
   const plan = useTodayPlan(length);
 
   return (

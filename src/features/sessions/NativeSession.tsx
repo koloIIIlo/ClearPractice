@@ -86,7 +86,7 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
 /** Player and intonation share one position, so the pitch view follows playback (P.4). */
 function LinkedTake({ attemptId }: { attemptId: string }) {
   const [link] = useState(createPlayerLink);
-  return <><NativeTake assetId={attemptId} link={link} /><IntonationTrack attemptId={attemptId} link={link} /><TakeTranscript attemptId={attemptId} /></>;
+  return <><NativeTake assetId={attemptId} link={link} /><IntonationTrack attemptId={attemptId} link={link} /><TakeTranscript attemptId={attemptId} link={link} /></>;
 }
 function NativeTake({ assetId, link }: { assetId: string; link: PlayerLink }) {
   const ipc = useIpc();

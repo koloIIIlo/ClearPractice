@@ -66,6 +66,8 @@ export function createNativeClient(): IpcClient {
     listModelPacks: () => command("list_model_packs", S.ModelPack.array()),
     importModelPack: () => command("import_model_pack", S.ModelPack.array()),
     getTranscriptionSetup: () => command("get_transcription_setup", S.TranscriptionSetup),
+    getPreferences: () => command("get_preferences", S.Preferences),
+    setPreferences: (preferences) => command("set_preferences", S.Preferences, { preferences }),
     getTranscriptionPreference: () => command("get_transcription_preference", S.TranscriptionPreference),
     setTranscriptionPreference: (preference) => command("set_transcription_preference", S.TranscriptionPreference, { preference }),
     chooseTranscriptionSetup: () => command("choose_transcription_setup", S.TranscriptionSetup),

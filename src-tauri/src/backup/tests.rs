@@ -228,8 +228,12 @@ fn restore_into_an_empty_profile_matches_records_and_asset_checksums() {
     assert!(target.list_sessions(None, None, false).unwrap().is_empty());
     inspect(&empty.0, &archive, "stage-restore").unwrap();
     drop(target);
+    // The running app holds the API ledger's lock file open; a restore must not
+    // need it closed (it once lived in database/ and blocked the move on Windows).
+    let ledger = crate::api::budget::BudgetOwner::open(&empty.0).unwrap();
 
     let outcome = replace_profile(&empty.0, "stage-restore", recording::now_ms()).unwrap();
+    drop(ledger);
     let restored = DatabaseOwner::open(&empty.0).unwrap();
     finish_restore(&empty.0).unwrap();
     assert!(!empty.0.join(JOURNAL).exists());

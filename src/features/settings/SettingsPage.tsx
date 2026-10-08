@@ -10,7 +10,10 @@ import { Switch } from "@/components/ui/switch";
 import { useQuery } from "@tanstack/react-query";
 import { useIpc } from "@/lib/ipc";
 import { formatClock } from "@/lib/format";
-import { useInputDevices } from "@/lib/ipc/queries";
+import { useInputDevices, usePreferences } from "@/lib/ipc/queries";
+import type { Preferences } from "@/lib/ipc/schemas";
+import { Button } from "@/components/ui/button";
+import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BackupSettings } from "./BackupSettings";
 import { TranscriptionSetup } from "./TranscriptionSetup";
@@ -104,15 +107,16 @@ function SwitchRow({ id, label, hint, ...props }: { id: string; label: string; h
 
 function AudioSettings() {
   const devices = useInputDevices();
+  const { preferences, update } = usePreferences();
   const list = devices.data ?? [];
-  const [device, setDevice] = useState<string>("");
-  const selected = device || list.find((d) => d.isDefault)?.id || "";
+  const saved = list.find((d) => d.id === preferences.inputDeviceId && d.available)?.id;
+  const selected = saved || list.find((d) => d.isDefault)?.id || "";
 
   return (
     <Section title="Microphone" description="The microphone is on only during a test or a recording.">
       <div className="space-y-1">
         <Label htmlFor="mic">Input device</Label>
-        <Select value={selected} onValueChange={setDevice} disabled={devices.isPending}>
+        <Select value={selected} onValueChange={(id) => update({ inputDeviceId: list.find((d) => d.id === id)?.isDefault ? null : id })} disabled={devices.isPending}>
           <SelectTrigger id="mic" className="h-10 w-full">
             <SelectValue placeholder={devices.isPending ? "Looking for devices…" : "No microphone found"} />
           </SelectTrigger>
@@ -126,20 +130,28 @@ function AudioSettings() {
             ))}
           </SelectContent>
         </Select>
+        {preferences.inputDeviceId && !saved && devices.isSuccess && (
+          <p className="text-meta text-muted-foreground">The microphone you chose isn't connected, so the Windows default is used.</p>
+        )}
+        {devices.error && <p role="alert" className="text-meta text-destructive">{devices.error.message}</p>}
+        <Button variant="ghost" size="sm" disabled={devices.isFetching} onClick={() => void devices.refetch()}>
+          <RefreshCw aria-hidden className={devices.isFetching ? "animate-spin" : undefined} /> {devices.isFetching ? "Looking for microphones…" : "Refresh microphones"}
+        </Button>
       </div>
       <MicrophoneTest deviceId={selected || null} />
-      <SwitchRow id="rec-sounds" label="Recording sounds" hint="A short tone when recording starts and stops." defaultChecked />
+      <SwitchRow id="rec-sounds" label="Recording sounds" hint="A short tone when recording starts and stops." checked={preferences.recordingSounds} onCheckedChange={(on) => update({ recordingSounds: on })} />
     </Section>
   );
 }
 
 function PracticeSettings() {
+  const { preferences, update } = usePreferences();
   return (
     <>
       <Section title="Sessions">
         <div className="space-y-1">
           <Label htmlFor="default-length">Default session length</Label>
-          <Select defaultValue="standard">
+          <Select value={preferences.sessionLength} onValueChange={(v) => update({ sessionLength: v as Preferences["sessionLength"] })}>
             <SelectTrigger id="default-length" className="h-10 w-64">
               <SelectValue />
             </SelectTrigger>
@@ -150,7 +162,7 @@ function PracticeSettings() {
           </Select>
         </div>
         <SwitchRow id="reminders" label="Daily reminder" hint="Only while the app is open. No penalty for skipped days." />
-        <SwitchRow id="rec-shortcuts" label="Recording keyboard shortcuts" hint="Ctrl+Enter starts or stops a take in the studio." defaultChecked />
+        <SwitchRow id="rec-shortcuts" label="Recording keyboard shortcuts" hint="Ctrl+Enter starts or stops a take in the studio." checked={preferences.recordingShortcuts} onCheckedChange={(on) => update({ recordingShortcuts: on })} />
       </Section>
       <Section title="Languages" description="The interface language and the language you practise are set separately.">
         <div className="grid gap-4 sm:grid-cols-2">
