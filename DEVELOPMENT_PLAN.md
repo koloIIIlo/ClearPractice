@@ -22,7 +22,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 | Active milestone | M3 Review and transcription (in progress). E is done. M0 is done except the two checks that need the user's provider keys (0.22 live request, 0.23 benchmark). M1 is done except an empty/error-state pass (1.9). M2's code is done; its remaining items are desktop/hardware checks and the exit gate |
 | Last updated | 2026-10-08 |
 | Repository | Everything is committed on `main` and pushed to `origin` (github.com/koloIIIlo/ClearPractice); authored by Alex only |
-| Built, not yet checked in the desktop app | Studio timer / Ctrl+Enter / live waveform, waveform player (2.14), Trash (2.17), backup / check / replace / weekly / export (2.18–2.22), microphone test (2.12), discard interrupted take (2.5), close guard (2.10), local transcription with measures, filler review, corrections and search (M3), API transcription test panel (0.22) |
+| Built, not yet checked in the desktop app | Studio timer / Ctrl+Enter / live waveform, waveform player (2.14), Trash (2.17), backup / check / replace / weekly / export (2.18–2.22), microphone test (2.12), discard interrupted take (2.5), close guard (2.10), local transcription with measures, filler review, corrections and search (M3), model pack import (3.3), API transcription test panel (0.22) |
 | Blockers | None for coding. Desktop and hardware checks need the user at the laptop (or an agent that can drive the desktop app); 0.22/0.23 need the user's Deepgram/AssemblyAI keys and approval |
 
 **Next actions, in order**
@@ -369,7 +369,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 ## Notes & findings
 
 - 2026-10-08: Model pack registry (3.3): Rust models 3/3 incl. real base-pack import; Vitest settings + ipc 19/19.
-- 2026-10-08: Final checks before push: Rust 54 passed (8 hardware tests ignored by default; all 8 passed earlier tonight and the transcription one again after the voice-activity change), Vitest 47/47 in 17 files, production build. Double-checked this plan and the handout: removed six stale rows of the old status table that an earlier cleanup had left below the new one, and refreshed status and next actions.
+- 2026-10-08: Final checks before push: Rust 56 passed (9 hardware tests ignored by default; the 8 original ones passed earlier tonight, the transcription one again after the voice-activity change, and the new real model-pack import passed), Vitest 47/47 in 17 files, production build. Double-checked this plan and the handout: removed six stale rows of the old status table that an earlier cleanup had left below the new one, and refreshed status and next actions.
 - 2026-10-08: Voice-activity pauses (3.5): Rust analysis 4/4, CUDA hardware run shows a 1.4 s pause from the audio; Vitest review + ipc 17/17.
 - 2026-10-08: Junction attack test (2.6) passes on Windows with `mklink /J`.
 - 2026-10-08: Discard for interrupted takes (2.5): Rust recording 6/6, Vitest practice + ipc 15/15, crate builds.
