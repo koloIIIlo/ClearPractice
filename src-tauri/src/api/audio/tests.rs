@@ -50,7 +50,11 @@ fn approvals_are_single_use_bound_to_the_payload_and_never_reserve_by_themselves
     assert_eq!(preview.estimated_cost_micro_usd, 4_300, "one started minute");
     assert_eq!(preview.payload_sha256.len(), 64);
 
+    let audio = owner.preview_audio(&preview.request_id).unwrap();
+    let shown = audio.to_string_lossy();
+    assert!(shown.ends_with("audio.wav") && shown.contains(r"\cache\inference\take\") && !shown.starts_with(r"\\?\"), "{shown}");
     assert!(owner.consume(&preview.request_id, &"0".repeat(64)).is_err(), "wrong fingerprint");
+    assert!(owner.preview_audio(&preview.request_id).is_err(), "gone with the preview");
     assert!(owner.consume(&preview.request_id, &preview.payload_sha256).is_err(), "consumed by the failed attempt");
 
     let again = owner.preview(&root.0, &saved, AudioProvider::Assemblyai).unwrap();

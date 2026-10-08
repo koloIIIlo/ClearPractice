@@ -22,6 +22,7 @@ function setup(keys: { provider: "deepgram" | "assemblyai"; present: boolean }[]
     getTranscriptionApiKeys: async () => keys,
     previewApiTranscription: vi.fn(async () => preview),
     cancelApiTranscriptionPreview: vi.fn(async () => {}),
+    getApiPreviewAudioUrl: vi.fn(async () => "http://asset.localhost/prepared.wav"),
     requestApiTranscription: vi.fn(async () => ({
       requestId: "api-assemblyai-1", provider: "assemblyai" as const, model: "universal-3-5-pro", text: "Um, so.", wordCount: 2, fillerCount: 1,
       wordTimings: true, wordTimingsUnavailableReason: null, providerRequestId: "aai-1", audioDurationMs: 30_000, estimatedCostMicroUsd: 3_500,
@@ -46,6 +47,7 @@ it("offers the stored provider, labels a repeat as a paid retranscription and re
   await user.click(screen.getByRole("button", { name: "Preview request" }));
   expect(client.previewApiTranscription).toHaveBeenCalledWith("take-1", "assemblyai");
   expect(screen.getByText(/already transcribed with these settings.*Sending again is a new paid run/)).toBeInTheDocument();
+  expect(await screen.findByLabelText("Listen to exactly the audio that Send uploads")).toHaveAttribute("src", "http://asset.localhost/prepared.wav");
   await user.click(screen.getByRole("button", { name: "Retranscribe · may be billed" }));
   expect(client.requestApiTranscription).toHaveBeenCalledTimes(1);
   expect(await screen.findByText("Um, so.")).toBeInTheDocument();

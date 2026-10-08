@@ -193,6 +193,16 @@ impl AudioPreviewOwner {
         Ok(preview)
     }
 
+    /// The prepared WAV of an open preview, so the user can hear exactly what
+    /// would be sent (3.15). Gone once the preview is used, cancelled or expired.
+    pub fn preview_audio(&self, request_id: &str) -> Result<PathBuf> {
+        let pending = self.0.lock().map_err(|_| "Preview state is unavailable.")?;
+        let item = pending.get(request_id).filter(|i| i.created.elapsed() < PREVIEW_TTL).ok_or("This preview expired or was already used. Preview again.")?;
+        // Plain drive path for the asset protocol scope, not the `\\?\` form.
+        let text = item.audio_path.to_string_lossy();
+        Ok(PathBuf::from(text.strip_prefix(r"\\?\").filter(|rest| !rest.starts_with("UNC")).unwrap_or(&text)))
+    }
+
     pub fn cancel(&self, request_id: &str) {
         if let Ok(mut pending) = self.0.lock() {
             pending.remove(request_id);

@@ -161,6 +161,7 @@ export function createMockClient(): IpcClient {
     previewApiTranscription: async () => { throw new IpcError("desktop_required", "API transcription runs in the desktop app."); },
     cancelApiTranscriptionPreview: async () => {},
     cancelApiTranscription: async () => {},
+    getApiPreviewAudioUrl: async () => { throw new IpcError("desktop_required", "API transcription runs in the desktop app."); },
     requestApiTranscription: async () => { throw new IpcError("desktop_required", "API transcription runs in the desktop app."); },
     startMicTest: async () => { throw new IpcError("desktop_required", "The microphone test runs in the desktop app."); },
     getMicTestPlaybackUrl: async () => { throw new IpcError("desktop_required", "The microphone test runs in the desktop app."); },

@@ -202,6 +202,12 @@ async fn preview_api_transcription(
     .map_err(|_| "Preview failed.".to_string())?
 }
 
+/// Path of an open preview's prepared audio, for listening before Send (3.15).
+#[tauri::command]
+fn get_api_preview_audio_path(owner: State<'_, Arc<api::audio::AudioPreviewOwner>>, request_id: String) -> Result<String, String> {
+    owner.preview_audio(&request_id).map(|p| p.to_string_lossy().into_owned())
+}
+
 /// Stops waiting for an API transcription that is in flight (3.18).
 #[tauri::command]
 fn cancel_api_transcription(inflight: State<'_, Arc<InflightApi>>, request_id: String) {
@@ -1201,6 +1207,7 @@ pub fn run() {
             preview_api_transcription,
             cancel_api_transcription_preview,
             cancel_api_transcription,
+            get_api_preview_audio_path,
             request_api_transcription,
             start_mic_test,
             get_mic_test_playback_path,

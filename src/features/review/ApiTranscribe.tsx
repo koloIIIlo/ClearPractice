@@ -27,6 +27,7 @@ export function ApiRequestFlow({ attemptId, provider, hasKey, keyHint }: { attem
   const ipc = useIpc();
   const qc = useQueryClient();
   const usage = useQuery({ queryKey: ["api-usage"], queryFn: () => ipc.getApiUsageSummary(), retry: false });
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [preview, setPreview] = useState<AudioPreview | null>(null);
   const previewRef = useRef<AudioPreview | null>(null);
   const [result, setResult] = useState<AudioResult | null>(null);
@@ -49,6 +50,7 @@ export function ApiRequestFlow({ attemptId, provider, hasKey, keyHint }: { attem
       const next = await ipc.previewApiTranscription(attemptId, provider);
       previewRef.current = next;
       setPreview(next);
+      setAudioUrl(await ipc.getApiPreviewAudioUrl(next.requestId).catch(() => null));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not prepare the preview.");
     } finally {
@@ -83,6 +85,9 @@ export function ApiRequestFlow({ attemptId, provider, hasKey, keyHint }: { attem
             Sends this take as prepared 16 kHz mono WAV: {formatClock(preview.durationMs)}, {(preview.bytes / 1024).toFixed(0)} KB, SHA-256{" "}
             <code>{preview.audioSha256.slice(0, 12)}…</code>
           </p>
+          {audioUrl && (
+            <audio controls preload="none" src={audioUrl} className="h-10 w-full max-w-md" aria-label="Listen to exactly the audio that Send uploads" />
+          )}
           <p className="text-meta">
             Estimated charge: {money(preview.estimatedCostMicroUsd)} (list price checked {preview.priceDate}, billed per started minute).
             {usage.data && ` Remaining this month: ${money(usage.data.remainingMicroUsd)} of ${money(usage.data.stopMicroUsd)}.`}

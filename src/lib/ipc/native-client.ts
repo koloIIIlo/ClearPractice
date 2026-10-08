@@ -60,6 +60,7 @@ export function createNativeClient(): IpcClient {
     previewApiTranscription: (attemptId, provider) => command("preview_api_transcription", S.AudioPreview, { attemptId, provider }),
     cancelApiTranscriptionPreview: async (requestId) => { await command("cancel_api_transcription_preview", z.null(), { requestId }); },
     cancelApiTranscription: async (requestId) => { await command("cancel_api_transcription", z.null(), { requestId }); },
+    getApiPreviewAudioUrl: async (requestId) => convertFileSrc(await command("get_api_preview_audio_path", z.string(), { requestId })),
     requestApiTranscription: (requestId, payloadSha256) => command("request_api_transcription", S.AudioResult, { requestId, payloadSha256 }),
     startMicTest: (deviceId) => command("start_mic_test", S.RecordingStatus, { deviceId }),
     getMicTestPlaybackUrl: async (attemptId) => convertFileSrc(await command("get_mic_test_playback_path", S.Id, { attemptId })),
