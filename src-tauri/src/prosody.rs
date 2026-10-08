@@ -312,6 +312,23 @@ mod tests {
         assert!((0.2..0.9).contains(&voiced), "speech is partly voiced");
         assert!((70.0..300.0).contains(&c.median_f0_hz.unwrap()));
         assert_eq!(c.unavailable_reason, None, "clean speech is neither clipped nor noisy");
+        // P.1: how often YIN and McLeod agree on real speech (same frames, same gating).
+        let hop = 160;
+        let window = 640;
+        let (mut both, mut agree, mut only_yin, mut only_mpm, mut frames) = (0, 0, 0, 0, 0);
+        let mut start = 0;
+        while start + window <= samples.len() {
+            let frame = &samples[start..start + window];
+            frames += 1;
+            match (yin(frame, RATE), mpm(frame, RATE)) {
+                (Some(a), Some(b)) => { both += 1; if (a / b).log2().abs() * 12.0 <= 1.0 { agree += 1; } }
+                (Some(_), None) => only_yin += 1,
+                (None, Some(_)) => only_mpm += 1,
+                _ => {}
+            }
+            start += hop;
+        }
+        println!("P1 REAL: {frames} frames; both voiced {both}, agree within 1 st {agree} ({:.1}%); only YIN {only_yin}; only MPM {only_mpm}", agree as f64 * 100.0 / both.max(1) as f64);
     }
 
     #[test]
@@ -381,5 +398,98 @@ mod tests {
         let mut wrong = bytes.clone();
         wrong[0] = b'X';
         assert!(decode_frames(&wrong).is_err(), "not a track");
+    }
+
+    /// McLeod pitch method (McLeod & Wyvill, 2005), test-only reference for P.1:
+    /// normalised square difference, key maxima between zero crossings, first key
+    /// maximum within 0.9 of the highest, parabolic interpolation, clarity ≥ 0.6.
+    fn mpm(frame: &[f32], sample_rate: u32) -> Option<f64> {
+        let rate = f64::from(sample_rate);
+        let min_lag = (rate / MAX_F0).floor() as usize;
+        let max_lag = ((rate / MIN_F0).ceil() as usize).min(frame.len() - 1);
+        let nsdf: Vec<f64> = (0..=max_lag)
+            .map(|lag| {
+                let (mut r, mut m) = (0.0f64, 0.0f64);
+                for j in 0..frame.len() - lag {
+                    let (a, b) = (f64::from(frame[j]), f64::from(frame[j + lag]));
+                    r += a * b;
+                    m += a * a + b * b;
+                }
+                if m > 0.0 { 2.0 * r / m } else { 0.0 }
+            })
+            .collect();
+        let mut peaks = Vec::new();
+        let mut lag = 1;
+        while lag < nsdf.len() && nsdf[lag] > 0.0 { lag += 1; } // skip the zero-lag lobe
+        while lag < nsdf.len() - 1 {
+            if nsdf[lag] > 0.0 {
+                let mut best = lag;
+                while lag < nsdf.len() - 1 && nsdf[lag] > 0.0 {
+                    if nsdf[lag] > nsdf[best] { best = lag; }
+                    lag += 1;
+                }
+                if best >= min_lag && best > 0 && best < nsdf.len() - 1 { peaks.push(best); }
+            }
+            lag += 1;
+        }
+        let highest = peaks.iter().map(|&p| nsdf[p]).fold(0.0, f64::max);
+        let pick = *peaks.iter().find(|&&p| nsdf[p] >= 0.9 * highest)?;
+        if nsdf[pick] < 0.6 { return None; }
+        let (a, b, c) = (nsdf[pick - 1], nsdf[pick], nsdf[pick + 1]);
+        let denominator = a - 2.0 * b + c;
+        let shift = if denominator.abs() > f64::EPSILON { 0.5 * (a - c) / denominator } else { 0.0 };
+        Some(rate / (pick as f64 + shift))
+    }
+
+    /// Voiced-frame recall and gross errors (> 1 semitone off) against a known glide.
+    fn score(tracker: fn(&[f32], u32) -> Option<f64>, samples: &[f32], truth: impl Fn(f64) -> f64) -> (f64, f64) {
+        let hop = (RATE as usize) * HOP_MS as usize / 1000;
+        let window = (RATE as usize) * WINDOW_MS as usize / 1000;
+        let (mut frames, mut found, mut gross) = (0usize, 0usize, 0usize);
+        let mut start = 0;
+        while start + window <= samples.len() {
+            frames += 1;
+            if let Some(f) = tracker(&samples[start..start + window], RATE) {
+                found += 1;
+                let centre = (start + window / 2) as f64 / f64::from(RATE);
+                if (f / truth(centre)).log2().abs() * 12.0 > 1.0 { gross += 1; }
+            }
+            start += hop;
+        }
+        (found as f64 / frames as f64, gross as f64 / found.max(1) as f64)
+    }
+
+    /// P.1 comparison on harder input: white noise at falling SNRs and a weak
+    /// microphone (−46 dBFS voice over a −60 dBFS floor), on low, mid and high
+    /// voices gliding by half an octave. Prints the table recorded under D-17.
+    #[test]
+    fn yin_and_mcleod_compared_on_noisy_and_weak_voices() {
+        let mut seed = 11u32;
+        println!("P1 | voice | condition | YIN recall | YIN gross | MPM recall | MPM gross");
+        let mut yin_worst_gross = 0.0f64;
+        let mut yin_clean_recall = 1.0f64;
+        for (name, low) in [("low", 90.0), ("mid", 140.0), ("high", 230.0)] {
+            let truth = move |t: f64| low * 1.5f64.powf(t);
+            let clean = voice(truth, 1.0);
+            let signal_rms = (clean.iter().map(|s| f64::from(*s).powi(2)).sum::<f64>() / clean.len() as f64).sqrt();
+            for (condition, scale, snr_db) in [("clean", 1.0f32, None), ("20 dB", 1.0, Some(20.0)), ("10 dB", 1.0, Some(10.0)), ("5 dB", 1.0, Some(5.0)), ("weak mic", 0.02, Some(14.0))] {
+                let noise_rms = snr_db.map_or(0.0, |snr: f64| signal_rms * f64::from(scale) / 10f64.powf(snr / 20.0));
+                let amplitude = (noise_rms * 12f64.sqrt()) as f32; // uniform noise: rms = a / √12
+                let input: Vec<f32> = clean.iter().zip(noise(amplitude, 1.0, &mut seed)).map(|(v, n)| v * scale + n).collect();
+                let (yr, yg) = score(yin, &input, truth);
+                let (mr, mg) = score(mpm, &input, truth);
+                println!("P1 | {name} {low} Hz | {condition} | {:.0}% | {:.1}% | {:.0}% | {:.1}%", yr * 100.0, yg * 100.0, mr * 100.0, mg * 100.0);
+                if snr_db.is_none_or(|s| s >= 10.0) { yin_worst_gross = yin_worst_gross.max(yg); }
+                if snr_db.is_none() { yin_clean_recall = yin_clean_recall.min(yr); }
+            }
+        }
+        // False voicing: pure noise should give no pitch at all.
+        let hiss = noise(0.2, 1.0, &mut seed);
+        let (yf, _) = score(yin, &hiss, |_| 100.0);
+        let (mf, _) = score(mpm, &hiss, |_| 100.0);
+        println!("P1 | none | white noise only | {:.0}% voiced | - | {:.0}% voiced | -", yf * 100.0, mf * 100.0);
+        assert!(yf < 0.1, "YIN does not invent pitch in noise");
+        assert!(yin_clean_recall > 0.9, "clean voices are tracked");
+        assert!(yin_worst_gross < 0.05, "YIN gross errors stay under 5% down to 10 dB SNR and on a weak mic");
     }
 }
