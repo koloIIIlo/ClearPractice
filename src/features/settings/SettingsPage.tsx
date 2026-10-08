@@ -7,6 +7,9 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { useQuery } from "@tanstack/react-query";
+import { useIpc } from "@/lib/ipc";
+import { formatClock } from "@/lib/format";
 import { useInputDevices } from "@/lib/ipc/queries";
 import { cn } from "@/lib/utils";
 import { BackupSettings } from "./BackupSettings";
@@ -303,15 +306,27 @@ function CoachingSettings() {
   );
 }
 
+/** Real totals from the saved recordings; nothing is shown as zero when unknown. */
+function RecordingTotals() {
+  const ipc = useIpc();
+  const native = ipc.recordingMode === "native";
+  const takes = useQuery({ queryKey: ["recordings"], queryFn: () => ipc.listRecordings(), enabled: native });
+  if (!native) return <>Available in the desktop app</>;
+  if (takes.isPending) return <>Counting…</>;
+  if (takes.error || !takes.data) return <>Unavailable: {takes.error?.message ?? "the recording library could not be read"}</>;
+  const total = takes.data.reduce((sum, t) => sum + t.durationMs, 0);
+  return <>{takes.data.length} saved {takes.data.length === 1 ? "take" : "takes"} · {formatClock(total)} of audio (Trash excluded)</>;
+}
+
 function DataSettings() {
   return (
     <>
       <Section title="Storage" description="Recordings, transcripts, and notes are stored in your Windows user profile.">
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-body">
           <dt className="text-muted-foreground">Data folder</dt>
-          <dd>Set up in milestone 2</dd>
+          <dd><code>%LOCALAPPDATA%\com.clearpractice.app</code></dd>
           <dt className="text-muted-foreground">Recordings</dt>
-          <dd>None yet</dd>
+          <dd><RecordingTotals /></dd>
         </dl>
       </Section>
       <Section

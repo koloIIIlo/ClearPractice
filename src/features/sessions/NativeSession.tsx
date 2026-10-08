@@ -32,7 +32,7 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
     <PageHeader title={session.title} description={`${formatLongDay(session.localDate)} · ${session.attemptCount} saved takes · ${formatClock(session.durationMs)}`} />
     {session.prompt && <Panel><p>{session.prompt}</p></Panel>}
     {session.conditionsUnavailableReason && <p className="text-meta text-muted-foreground">Task conditions unavailable: {session.conditionsUnavailableReason}</p>}
-    <p className="text-meta text-muted-foreground">Listen, transcribe a take on this computer, and keep your own notes. Analysis and feedback are being connected next.</p>
+    <p className="text-meta text-muted-foreground">Listen, transcribe a take on this computer, review fillers and pauses, and keep your own notes. Coaching feedback is still being developed.</p>
     {attempts.length === 0 && <p role="status">This take is unavailable.</p>}
     {attempts.map((a) => <Panel key={a.id} className="space-y-3">
       <h2 className="font-semibold">Take {a.ordinal} · {formatClock(a.durationMs)} <span className="text-meta font-normal text-muted-foreground">Measured duration</span></h2>
