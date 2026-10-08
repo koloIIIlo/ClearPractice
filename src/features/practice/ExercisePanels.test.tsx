@@ -61,11 +61,12 @@ it("uses a saved expression in three sentences and saves them to the session not
   expect(details.notes).toContain(`Sentences with “${phrase.expression}”:\n1. First sentence.\n2. Third sentence.`);
 });
 
-it("lets the user choose one feature to imitate, states that clips are not bundled yet, and stores it after the first take (4.8)", async () => {
+it("lets the user choose one feature to imitate and stores it after the first take (4.8)", async () => {
   const user = userEvent.setup();
   const client = { ...createMockClient(), setSessionFocus: vi.fn(async () => {}) };
   const view = wrap(client, <ImitationPanel sessionId="s-2" hasTake={false} locked={false} native />);
-  expect(screen.getByRole("note")).toHaveTextContent("Reference clips are not bundled yet");
+  expect(screen.getByRole("note")).toHaveTextContent("record your repetition with the clip stopped");
+  expect(await screen.findByText(/No clips yet/)).toBeInTheDocument();
   await user.click(screen.getByRole("radio", { name: "Phrase rhythm" }));
   expect(client.setSessionFocus).not.toHaveBeenCalled(); // no session before the first take
   view.rerender(

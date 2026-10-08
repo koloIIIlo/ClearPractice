@@ -31,6 +31,8 @@ import type {
   RestoreOutcome,
   ExportSummary,
   TranscriptionPreference,
+  ReferenceClip,
+  ClipStaged,
   TranscriptionSetup,
   ModelPack,
   IntonationContour,
@@ -90,6 +92,14 @@ export interface IpcClient {
   restoreSession(sessionId: string): Promise<void>;
   deleteSessionsPermanently(sessionIds: string[]): Promise<PurgeOutcome>;
   emptyTrash(): Promise<PurgeOutcome>;
+  /** Reference clips (4.4a): pick a local audio file (null if cancelled), preview it, keep a 3–30 s section. */
+  chooseClipFile(): Promise<ClipStaged | null>;
+  getClipStagingUrl(stagingId: string): Promise<string>;
+  discardClipStaging(stagingId: string): Promise<void>;
+  saveClip(details: { stagingId: string; startMs: number; endMs: number; title: string; source: string; transcript: string | null }): Promise<ReferenceClip>;
+  listClips(): Promise<ReferenceClip[]>;
+  getClipPlaybackUrl(clipId: string): Promise<string>;
+  deleteClip(clipId: string): Promise<void>;
   /** Moves one saved take to Trash; its session and other takes stay (2.23). */
   moveTakeToTrash(attemptId: string): Promise<void>;
   restoreTake(attemptId: string): Promise<void>;

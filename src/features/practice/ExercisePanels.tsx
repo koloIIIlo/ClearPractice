@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ReferenceClips } from "./ReferenceClips";
 import { useIpc } from "@/lib/ipc";
 import type { PhraseCard, PracticePrompt } from "@/lib/ipc/schemas";
 
@@ -178,9 +179,9 @@ export function ExpressionPanel({ phrase, phrases, sessionId, hasTake, locked, n
 export const IMITATION_FEATURES = ["Emphasis: which word carries the stress", "Phrase rhythm", "Clear endings: where the voice falls"] as const;
 
 /**
- * Listen and imitate (4.8). Bundled reference clips (4.4) and the contour
- * overlay (P.5) are not ready, so this states that plainly and still lets the
- * user choose the one feature to listen for, stored as the session focus.
+ * Listen and imitate (4.8): pick a bundled or imported clip (4.4a), choose the
+ * one feature to listen for (stored as the session focus), then record. The
+ * contour overlay (P.5) comes later; comparison is by ear.
  */
 export function ImitationPanel({ sessionId, hasTake, locked, native }: { sessionId: string; hasTake: boolean; locked: boolean; native: boolean }) {
   const ipc = useIpc();
@@ -202,9 +203,10 @@ export function ImitationPanel({ sessionId, hasTake, locked, native }: { session
           </label>
         ))}
       </fieldset>
+      <ReferenceClips locked={locked} native={native} />
       <p role="note" className="rounded-lg border border-dashed px-3 py-2 text-meta text-muted-foreground">
-        Reference clips are not bundled yet. Until they are, use a short clip you have the right to use (about 10–20 seconds), play it in another
-        player, then record your repetition here without the clip playing. Compare the two by listening, not by looking at waveforms.
+        Listen to the clip once or twice, then record your repetition with the clip stopped, so only your voice is recorded. Compare the two by
+        listening, not by looking at waveforms.
       </p>
       {feature && <p className="text-meta" aria-live="polite">Listening for: {feature}.{hasTake ? "" : " It is saved with the session after your first take."}</p>}
     </Panel>

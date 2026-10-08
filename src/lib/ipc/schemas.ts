@@ -141,6 +141,22 @@ export const TrashItem = z.object({
 });
 export type TrashItem = z.infer<typeof TrashItem>;
 
+// ── Reference clips (4.4, 4.4a) ──────────────────────────────────────────────
+export const ReferenceClip = z.object({
+  id: Id,
+  origin: z.enum(["user", "bundled"]),
+  title: z.string(),
+  source: z.string(),
+  transcript: z.string().nullable(),
+  durationMs: z.number().int().positive(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  createdAtMs: z.number().int().nonnegative(),
+});
+export type ReferenceClip = z.infer<typeof ReferenceClip>;
+/** A chosen file, decoded whole for preview before a section is kept. */
+export const ClipStaged = z.object({ stagingId: Id, fileName: z.string(), durationMs: z.number().int().positive() });
+export type ClipStaged = z.infer<typeof ClipStaged>;
+
 /** A single take in Trash whose session is still in use (2.23). */
 export const TrashTake = z.object({
   id: Id,

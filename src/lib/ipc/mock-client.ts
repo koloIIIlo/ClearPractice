@@ -130,6 +130,13 @@ export function createMockClient(): IpcClient {
       sessionIds.forEach((id) => trash.delete(id));
       return { filesPending: false };
     },
+    chooseClipFile: async () => { throw new IpcError("desktop_required", "Clips can be imported in the desktop app."); },
+    getClipStagingUrl: async () => { throw new IpcError("desktop_required", "Clips can be imported in the desktop app."); },
+    discardClipStaging: async () => {},
+    saveClip: async () => { throw new IpcError("desktop_required", "Clips can be imported in the desktop app."); },
+    listClips: async () => [],
+    getClipPlaybackUrl: async () => { throw new IpcError("desktop_required", "Clips play in the desktop app."); },
+    deleteClip: async () => { throw new IpcError("desktop_required", "Clips can be deleted in the desktop app."); },
     moveTakeToTrash: async () => { throw new IpcError("desktop_required", "Takes can be moved to Trash in the desktop app."); },
     restoreTake: async () => { throw new IpcError("desktop_required", "Takes can be restored in the desktop app."); },
     deleteTakesPermanently: async () => { throw new IpcError("desktop_required", "Takes can be deleted in the desktop app."); },
