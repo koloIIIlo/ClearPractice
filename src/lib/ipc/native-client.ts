@@ -125,6 +125,7 @@ export function createNativeClient(): IpcClient {
     listRecordings: () => command("list_recordings", S.SavedRecording.array()),
     listRecoverableRecordings: () => command("list_recoverable_recordings", S.RecoverableRecording.array()),
     recoverRecording: (attemptId) => command("recover_recording", S.SavedRecording, { attemptId }),
+    discardRecoverableRecording: async (attemptId) => { await command("discard_recoverable_recording", z.null(), { attemptId }); },
     getRecordingPlaybackUrl: async (assetId) => convertFileSrc(await command("get_recording_playback_path", S.Id, { assetId })),
     getRecordingWaveform: (assetId) => command("get_recording_waveform", S.WaveformPeaks, { assetId }),
   };

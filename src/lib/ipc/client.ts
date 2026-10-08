@@ -135,6 +135,8 @@ export interface IpcClient {
   listRecordings(): Promise<SavedRecording[]>;
   listRecoverableRecordings(): Promise<RecoverableRecording[]>;
   recoverRecording(attemptId: string): Promise<SavedRecording>;
+  /** Permanently removes an interrupted take's unrecovered chunks. */
+  discardRecoverableRecording(attemptId: string): Promise<void>;
   getRecordingPlaybackUrl(assetId: string): Promise<string>;
   getRecordingWaveform(assetId: string): Promise<WaveformPeaks>;
   getApiKeyStatus(): Promise<CredentialStatus>;

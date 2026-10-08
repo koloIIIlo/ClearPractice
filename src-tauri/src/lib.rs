@@ -392,6 +392,27 @@ async fn recover_recording(
 }
 
 #[tauri::command]
+async fn discard_recoverable_recording(
+    service: State<'_, Arc<CaptureService>>,
+    storage: State<'_, Arc<SessionStorage>>,
+    attempt_id: String,
+) -> Result<(), String> {
+    let service = service.inner().clone();
+    let storage = storage.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        storage.with(|_| {
+            let active = service.status()?.filter(|s| matches!(s.phase.as_str(), "preparing" | "recording" | "finalizing"));
+            if active.is_some_and(|a| a.attempt_id == attempt_id) {
+                return Err("This take is still recording.".into());
+            }
+            storage::recording::discard_recoverable(&service.root, &attempt_id)
+        })
+    })
+    .await
+    .map_err(|_| "Recording storage failed.".to_string())?
+}
+
+#[tauri::command]
 async fn get_recording_playback_path(
     storage: State<'_, Arc<SessionStorage>>,
     asset_id: String,
@@ -1051,6 +1072,7 @@ pub fn run() {
             list_recordings,
             list_recoverable_recordings,
             recover_recording,
+            discard_recoverable_recording,
             get_recording_playback_path,
             get_recording_waveform,
             list_trash,

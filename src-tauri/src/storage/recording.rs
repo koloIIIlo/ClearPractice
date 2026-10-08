@@ -416,6 +416,21 @@ pub fn list_recoverable(root: &Path) -> Result<Vec<RecoverableRecording>> {
     Ok(list)
 }
 
+/// Permanently removes the chunks of an interrupted take the user chose not to
+/// recover (plan 2.5). Saved takes are refused: they belong to Trash.
+pub fn discard_recoverable(root: &Path, id: &str) -> Result<()> {
+    validate_id(id)?;
+    if read_saved(root, id).ok().flatten().is_some() || root.join("recordings").join(id).join("saved.json").exists() {
+        return Err("This take was saved. Move its session to Trash instead.".into());
+    }
+    let dir = root.join("recovery").join(id);
+    if fs::symlink_metadata(&dir).is_err() {
+        return Ok(());
+    }
+    crate::audio::prepare::contained(root, &dir)?;
+    fs::remove_dir_all(&dir).map_err(io_error)
+}
+
 pub fn playback_path(root: &Path, id: &str) -> Result<PathBuf> {
     let saved = read_saved(root, id)?.ok_or("Saved recording not found.")?;
     let path = root.join("recordings").join(id).join("audio.wav");
@@ -565,6 +580,30 @@ pub mod tests {
         let saved = finalize(&root.0, "crash", true).unwrap();
         assert!(saved.recovered);
         assert_eq!(saved.duration_ms, 2000);
+    }
+
+    #[test]
+    fn discarding_removes_only_unsaved_interrupted_takes() {
+        let root = TestRoot::new();
+        let mut writer = ChunkWriter::create(&root.0, &manifest("lost")).unwrap();
+        for _ in 0..48_000 {
+            writer.push(7).unwrap();
+        }
+        writer.flush().unwrap();
+        drop(writer);
+        assert_eq!(list_recoverable(&root.0).unwrap().len(), 1);
+        discard_recoverable(&root.0, "lost").unwrap();
+        assert!(list_recoverable(&root.0).unwrap().is_empty());
+        assert!(discard_recoverable(&root.0, "lost").is_ok(), "idempotent");
+        assert!(discard_recoverable(&root.0, "../x").is_err());
+
+        let mut writer = ChunkWriter::create(&root.0, &manifest("kept")).unwrap();
+        writer.push(1).unwrap();
+        writer.flush().unwrap();
+        drop(writer);
+        finalize(&root.0, "kept", false).unwrap();
+        assert!(discard_recoverable(&root.0, "kept").is_err(), "saved takes go through Trash");
+        assert!(root.0.join("recovery/kept").exists());
     }
 
     #[test]

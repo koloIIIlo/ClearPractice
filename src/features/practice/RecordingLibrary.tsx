@@ -1,6 +1,17 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Panel } from "@/components/page";
 import { useIpc } from "@/lib/ipc";
 import { formatClock, UI_LOCALE } from "@/lib/format";
@@ -47,6 +58,10 @@ export function RecordingLibrary() {
   const isNative = ipc.recordingMode === "native";
   const saved = useQuery({ queryKey: ["recordings"], queryFn: () => ipc.listRecordings(), enabled: isNative });
   const interrupted = useQuery({ queryKey: ["recording-recovery"], queryFn: () => ipc.listRecoverableRecordings(), enabled: isNative });
+  const discard = useMutation({
+    mutationFn: (id: string) => ipc.discardRecoverableRecording(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["recording-recovery"] }),
+  });
   const recovery = useMutation({
     mutationFn: (id: string) => ipc.recoverRecording(id),
     onSuccess: async () => {
@@ -83,12 +98,32 @@ export function RecordingLibrary() {
             <div key={take.attemptId} className="space-y-1">
               <p className="text-meta">{take.title || "Untitled take"} · {take.durationMs === null ? "Duration unavailable" : formatClock(take.durationMs)}</p>
               {take.unavailableReason && <p className="text-meta text-muted-foreground">{take.unavailableReason}</p>}
-              <Button variant="outline" disabled={recovery.isPending || !!take.unavailableReason} onClick={() => recovery.mutate(take.attemptId)}>
-                {recovery.isPending && recovery.variables === take.attemptId ? "Recovering…" : "Recover take"}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" disabled={recovery.isPending || discard.isPending || !!take.unavailableReason} onClick={() => recovery.mutate(take.attemptId)}>
+                  {recovery.isPending && recovery.variables === take.attemptId ? "Recovering…" : "Recover take"}
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="ghost" disabled={recovery.isPending || discard.isPending}>Discard…</Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Discard this interrupted take?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {take.durationMs === null ? "Its" : `About ${formatClock(take.durationMs)} of`} unrecovered audio will be deleted from this
+                        computer. This cannot be undone. Saved takes and sessions are not affected.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Keep it</AlertDialogCancel>
+                      <AlertDialogAction variant="destructive" onClick={() => discard.mutate(take.attemptId)}>Discard permanently</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
             </div>
           ))}
-          {recovery.error && <p role="alert" className="text-destructive">{recovery.error.message}</p>}
+          {(recovery.error ?? discard.error) && <p role="alert" className="text-destructive">{(recovery.error ?? discard.error)!.message}</p>}
         </section>
       )}
       {saved.data?.length === 0 && <p className="text-muted-foreground">Your first saved take will appear here. It remains available after closing the app.</p>}
