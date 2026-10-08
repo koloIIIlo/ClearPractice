@@ -253,7 +253,7 @@ The API tasks below add an estimated 3–5 days. Implement the shared budget fou
 **Exit gate M3 — local review**
 - [~] Worker crash leaves the audio saved and the next recording works. Hardware test `hardware_worker_crash_keeps_the_audio_and_the_next_run_works` (CUDA, public sample): whisper-cli killed mid-run from outside → "Whisper could not finish. The recording is preserved…", job failed with that reason, no partial transcript, audio byte-identical and still verified; then two fresh transcriptions (another take and the same take) complete. Remaining: record a live take right after a crash in the desktop app
 - [x] Editing a transcript keeps raw text and old metrics tied to their original revision (storage test `corrections_are_child_revisions_and_leave_the_original_untouched`; measures and filler decisions are keyed to the machine revision)
-- [ ] Timing is verified after resampling / VAD, including gaps and the final segment
+- [x] Timing is verified after resampling / VAD, including gaps and the final segment. Hardware test `hardware_timing_survives_resampling_including_gaps_and_the_final_segment` (CUDA, public sample saved at 16 kHz and upsampled to 48 kHz): every one of the 8 known clip starts has a segment start within 0–179 ms in both runs, every clip is covered, segments stay in order and inside the take, the waveform pause (50.83–52.25 s) is identical in both, and the final segment reaches the last clip. The test found that Whisper's padded final segment (ending just past the audio) lost its timing; ends up to 1 s past the recording are now clamped (`END_OVERRUN_TOLERANCE_MS`), larger overruns or a start past the end stay untimed with the reason
 
 **API transcription enablement gate (separate from the local milestone)**
 - [ ] API transcription enablement gate: consented live request and provider contract tests pass; audio preview, credential binding, shared budget, cache, failures, untimed results, and restore behavior are verified. Keep API mode unavailable until this gate passes
@@ -369,6 +369,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: M3 gate, timing after resampling (hardware, 33 s): passes after clamping the padded final segment (previously the last 7 s of the public sample had no timing); Whisper unit test updated; Rust 68 passed / 12 ignored, both transcription hardware tests pass.
 - 2026-10-08: M3 gate, worker crash (hardware, 54 s): passes; see the gate item.
 - 2026-10-08: End-of-session full checks: Rust 68 passed / 10 hardware tests ignored, no warnings; Vitest 69/69 in 21 files; typecheck clean; production build OK. Plan and handout re-checked (one status table, no control bytes).
 - 2026-10-08: Empty/error-state pass (1.9): new screen-state test, 10 cases; fixed the blank Exercises list. Full Vitest 69/69 in 21 files; typecheck clean.

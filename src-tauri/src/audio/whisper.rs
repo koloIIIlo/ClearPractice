@@ -18,6 +18,8 @@ use std::{
 
 type Result<T> = std::result::Result<T, String>;
 const MAX_JSON: u64 = 8 * 1024 * 1024;
+/// How far past the recording the final segment may end and still be clamped.
+const END_OVERRUN_TOLERANCE_MS: u64 = 1_000;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -202,11 +204,16 @@ fn segments(bytes: &[u8], duration_ms: u64) -> Result<(String, Vec<Segment>)> {
             return Err("Whisper returned invalid segments.".into());
         }
         previous = segment.offsets.from;
-        let valid = segment.offsets.to <= duration_ms;
+        // Whisper pads its last window, so the final segment often ends a little
+        // past the audio. Clamp a small overrun to the end of the recording
+        // instead of dropping the segment's timing; a start past the end, or a
+        // large overrun, still leaves the segment untimed with the reason.
+        let valid = segment.offsets.from < duration_ms
+            && segment.offsets.to <= duration_ms + END_OVERRUN_TOLERANCE_MS;
         result.push(Segment {
             text: segment.text,
             start_ms: valid.then_some(segment.offsets.from),
-            end_ms: valid.then_some(segment.offsets.to),
+            end_ms: valid.then_some(segment.offsets.to.min(duration_ms)),
             timing_source: "Estimated".into(),
             timing_unavailable_reason: (!valid)
                 .then(|| "Worker timing exceeds the recording duration.".into()),
@@ -598,12 +605,18 @@ mod tests {
 
     #[test]
     fn validates_output_without_inventing_alignment() {
-        let raw = br#"{"result":{"language":"en"},"transcription":[{"text":" hello","offsets":{"from":0,"to":2000}},{"text":" world","offsets":{"from":2000,"to":4000}}]}"#;
+        // A final segment ending slightly past the audio (Whisper pads its last
+        // window) is clamped, not dropped; a large overrun or a start at the end
+        // stays untimed with the reason.
+        let raw = br#"{"result":{"language":"en"},"transcription":[{"text":" hello","offsets":{"from":0,"to":2000}},{"text":" world","offsets":{"from":2000,"to":3400}}]}"#;
         let (_, rows) = segments(raw, 3000).unwrap();
         assert_eq!(rows[0].start_ms, Some(0));
         assert_eq!(rows[0].timing_source, "Estimated");
-        assert_eq!(rows[1].end_ms, None);
-        assert!(rows[1].timing_unavailable_reason.is_some());
+        assert_eq!((rows[1].start_ms, rows[1].end_ms), (Some(2000), Some(3000)));
+        assert!(rows[1].timing_unavailable_reason.is_none());
+        let raw = br#"{"result":{"language":"en"},"transcription":[{"text":" far","offsets":{"from":2000,"to":4500}},{"text":" after","offsets":{"from":3000,"to":3100}}]}"#;
+        let (_, rows) = segments(raw, 3000).unwrap();
+        assert!(rows.iter().all(|r| r.end_ms.is_none() && r.timing_unavailable_reason.is_some()));
         for bad in [br#"{}"#.as_slice(), br#"{"result":{"language":"en"},"transcription":[]}"#,
             br#"{"result":{"language":"en"},"transcription":[{"text":"hello","offsets":{"from":10,"to":1}}]}"#] {
             assert!(segments(bad, 3000).is_err());

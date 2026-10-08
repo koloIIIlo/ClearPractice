@@ -281,4 +281,99 @@ mod tests {
             assert!(view["revision"]["text"].as_str().unwrap().split_whitespace().count() > 50, "{id}");
         }
     }
+
+    /// M3 exit gate: timing survives resampling and VAD. The public sample is
+    /// saved once at its own 16 kHz and once upsampled to 48 kHz (so the app's
+    /// resampler runs); segment times, voice pauses and the final segment must
+    /// agree between the two and fall inside the known clip boundaries.
+    /// `cargo test --lib timing_survives -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn hardware_timing_survives_resampling_including_gaps_and_the_final_segment() {
+        use crate::audio::whisper::WhisperWorker;
+        use crate::storage::recording::{self, tests::TestRoot, CaptureManifest, ChunkWriter};
+        let bench = Path::new(env!("CARGO_MANIFEST_DIR")).join("../bench");
+        let wav = std::fs::read(bench.join("samples/public-62s.wav")).unwrap();
+        let samples: Vec<i16> = wav[44..].chunks_exact(2).map(|p| i16::from_le_bytes([p[0], p[1]])).collect();
+        let reference: serde_json::Value = serde_json::from_slice(&std::fs::read(bench.join("samples/public-62s-reference.json")).unwrap()).unwrap();
+        let clips: Vec<(f64, f64)> = reference["clips"].as_array().unwrap().iter().map(|c| (c["startMs"].as_f64().unwrap(), c["endMs"].as_f64().unwrap())).collect();
+        let duration = reference["durationMs"].as_f64().unwrap();
+
+        let root = TestRoot::new();
+        for (id, rate) in [("native", 16_000u32), ("upsampled", 48_000)] {
+            let manifest = CaptureManifest {
+                version: 1, attempt_id: id.into(), idempotency_key: id.into(), title: id.into(),
+                device_id: "fixture".into(), device_name: "Fixture".into(), sample_rate: rate, source_channels: 1,
+                source_format: "i16".into(), created_at_ms: recording::now_ms(),
+            };
+            let mut writer = ChunkWriter::create(&root.0, &manifest).unwrap();
+            if rate == 16_000 {
+                samples.iter().for_each(|s| writer.push(*s).unwrap());
+            } else {
+                // Linear interpolation ×3: same sound, so any timing shift comes from the pipeline.
+                for (i, s) in samples.iter().enumerate() {
+                    let next = f32::from(*samples.get(i + 1).unwrap_or(s));
+                    for k in 0..3 {
+                        let t = k as f32 / 3.0;
+                        writer.push((f32::from(*s) * (1.0 - t) + next * t).round() as i16).unwrap();
+                    }
+                }
+            }
+            writer.flush().unwrap();
+            drop(writer);
+            recording::finalize(&root.0, id, false).unwrap();
+        }
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        import_config(&owner, &bench.join("runtime.local/config-selected.json")).unwrap();
+        let config = load_config(&owner).unwrap();
+        let worker = WhisperWorker::new(root.0.clone());
+        let mut views = Vec::new();
+        for id in ["native", "upsampled"] {
+            let run = run_id(id, recording::now_ms());
+            owner.start_job(&format!("job-{id}"), id, recording::now_ms()).unwrap();
+            let transcript = worker.transcribe(&config, id, &run, &AtomicBool::new(false), |_| {}).unwrap();
+            owner.save_local_transcript(&format!("job-{id}"), id, &transcript, recording::now_ms()).unwrap();
+            views.push(owner.attempt_transcript_with_voice(id).unwrap());
+        }
+        let starts = |v: &serde_json::Value| -> Vec<(f64, f64)> {
+            v["revision"]["segments"].as_array().unwrap().iter()
+                .filter_map(|s| Some((s["startMs"].as_f64()?, s["endMs"].as_f64()?))).collect()
+        };
+        for v in &views {
+            let untimed = v["revision"]["segments"].as_array().unwrap().iter().filter(|s| s["startMs"].is_null()).count();
+            assert_eq!(untimed, 0, "the padded final segment is clamped, not left untimed");
+        }
+        let (native, upsampled) = (starts(&views[0]), starts(&views[1]));
+        println!("SEGMENTS native {} / upsampled {}", native.len(), upsampled.len());
+        for segments in [&native, &upsampled] {
+            assert!(segments.windows(2).all(|w| w[1].0 >= w[0].0), "segment starts are in order");
+            assert!(segments.iter().all(|(a, b)| a <= b && *b <= duration + 50.0), "inside the take");
+            // Every clip is covered by some segment (no region lost to VAD/resampling)…
+            for (i, (a, b)) in clips.iter().enumerate() {
+                assert!(segments.iter().any(|(s, e)| *s < *b && *e > *a), "clip {i} has no transcript segment");
+            }
+            // …and the final segment reaches into the final clip.
+            let (_, last_end) = segments.last().unwrap();
+            assert!(*last_end >= clips.last().unwrap().0, "final segment ends at {last_end} ms, before the last clip");
+        }
+        // Against ground truth: every clip start (where new speech begins) has a
+        // segment starting within 250 ms of it, at 16 kHz and after resampling.
+        // (Whisper may split long clips differently; that is not a timing shift.)
+        for (name, segments) in [("native", &native), ("upsampled", &upsampled)] {
+            for (i, (clip_start, _)) in clips.iter().enumerate() {
+                let nearest = segments.iter().map(|(s, _)| (s - clip_start).abs()).fold(f64::MAX, f64::min);
+                println!("CLIP {name} {i}: nearest segment start {nearest:.0} ms away");
+                assert!(nearest <= 250.0, "{name}: clip {i} starts at {clip_start} ms but the nearest segment start is {nearest} ms away");
+            }
+        }
+        // Gaps: voice pauses from each take's own waveform agree within 100 ms.
+        let pauses = |v: &serde_json::Value| -> Vec<(f64, f64)> {
+            v["revision"]["measures"]["voice"]["pauses"].as_array().unwrap().iter()
+                .map(|p| (p["startMs"].as_f64().unwrap(), p["startMs"].as_f64().unwrap() + p["durationMs"].as_f64().unwrap())).collect()
+        };
+        let (pn, pu) = (pauses(&views[0]), pauses(&views[1]));
+        println!("PAUSES native {pn:?}\nPAUSES upsampled {pu:?}");
+        assert_eq!(pn.len(), pu.len(), "same pauses found");
+        assert!(pn.iter().zip(&pu).all(|(a, b)| (a.0 - b.0).abs() <= 100.0 && (a.1 - b.1).abs() <= 100.0));
+    }
 }
