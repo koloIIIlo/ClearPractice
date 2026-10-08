@@ -156,6 +156,14 @@ export type ReferenceClip = z.infer<typeof ReferenceClip>;
 /** A chosen file, decoded whole for preview before a section is kept. */
 export const ClipStaged = z.object({ stagingId: Id, fileName: z.string(), durationMs: z.number().int().positive() });
 export type ClipStaged = z.infer<typeof ClipStaged>;
+/** A proposed clip from a long recording (4.4c): whole sentences, 8–20 s. */
+export const ClipCandidate = z.object({ startMs: z.number().int().nonnegative(), endMs: z.number().int().positive(), text: z.string(), title: z.string() });
+export type ClipCandidate = z.infer<typeof ClipCandidate>;
+export const LinkToolStatus = z.object({ available: z.boolean(), path: z.string().nullable() });
+export type LinkToolStatus = z.infer<typeof LinkToolStatus>;
+/** Audio fetched from a YouTube link with the user's yt-dlp (4.4d), staged like an imported file. */
+export const LinkAudio = z.object({ staged: ClipStaged, title: z.string(), uploader: z.string(), url: z.string(), source: z.string() });
+export type LinkAudio = z.infer<typeof LinkAudio>;
 
 /** A single take in Trash whose session is still in use (2.23). */
 export const TrashTake = z.object({

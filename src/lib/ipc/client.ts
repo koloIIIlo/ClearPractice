@@ -33,6 +33,9 @@ import type {
   TranscriptionPreference,
   ReferenceClip,
   ClipStaged,
+  ClipCandidate,
+  LinkToolStatus,
+  LinkAudio,
   TranscriptionSetup,
   ModelPack,
   IntonationContour,
@@ -100,6 +103,15 @@ export interface IpcClient {
   listClips(): Promise<ReferenceClip[]>;
   getClipPlaybackUrl(clipId: string): Promise<string>;
   deleteClip(clipId: string): Promise<void>;
+  /** Transcribes a staged long recording locally and proposes whole-sentence clips (4.4c). */
+  splitClipSource(stagingId: string): Promise<ClipCandidate[]>;
+  onClipSplitProgress(listener: (percent: number) => void): Promise<() => void>;
+  /** Stops a running split or link download. */
+  cancelClipWork(): Promise<void>;
+  saveClipSections(stagingId: string, sections: { startMs: number; endMs: number; title: string; source: string; transcript: string | null }[]): Promise<ReferenceClip[]>;
+  getLinkToolStatus(): Promise<LinkToolStatus>;
+  chooseLinkTool(): Promise<LinkToolStatus>;
+  fetchLinkAudio(url: string): Promise<LinkAudio>;
   /** Moves one saved take to Trash; its session and other takes stay (2.23). */
   moveTakeToTrash(attemptId: string): Promise<void>;
   restoreTake(attemptId: string): Promise<void>;
