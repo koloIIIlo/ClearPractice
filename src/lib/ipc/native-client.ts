@@ -35,6 +35,26 @@ export function createNativeClient(): IpcClient {
     discardRestorePreview: async (stagingId) => { await command("discard_restore_preview", z.null(), { stagingId }); },
     restoreBackup: (stagingId) => command("restore_backup", S.RestoreOutcome, { stagingId }),
     exportSession: (sessionId) => command("export_session", S.ExportSummary.nullable(), { sessionId }),
+    getTranscriptionSetup: () => command("get_transcription_setup", S.TranscriptionSetup),
+    chooseTranscriptionSetup: () => command("choose_transcription_setup", S.TranscriptionSetup),
+    getAttemptTranscript: (attemptId) => command("get_attempt_transcript", S.AttemptTranscript, { attemptId }),
+    transcribeAttempt: (attemptId) => command("transcribe_attempt", S.Id, { attemptId }),
+    cancelTranscription: () => command("cancel_transcription", S.Id.nullable()),
+    onTranscriptionEvent: async (listener) => {
+      const removers: (() => void)[] = [];
+      try {
+        for (const event of ["transcription_progress", "transcription_finished"]) {
+          removers.push(await listen(event, ({ payload }) => {
+            const parsed = S.TranscriptionEvent.safeParse(payload);
+            if (parsed.success) listener(parsed.data);
+          }));
+        }
+      } catch (error) {
+        removers.forEach((remove) => remove());
+        throw error;
+      }
+      return () => removers.forEach((remove) => remove());
+    },
     updateSession: async (sessionId, details) => { await command("update_session", S.Id.nullable(), { sessionId, ...details }); },
     getSavedRecording: (assetId) => command("get_saved_recording", S.SavedRecording, { assetId }),
     getAttemptReview: async () => { throw new IpcError("analysis_pending", "Transcription and analysis are not connected to saved sessions yet."); },

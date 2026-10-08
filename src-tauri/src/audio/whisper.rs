@@ -57,7 +57,7 @@ fn valid_hash(hash: &str) -> bool {
 }
 
 impl WorkerConfig {
-    fn verify(&self) -> Result<()> {
+    pub(crate) fn verify(&self) -> Result<()> {
         if self.version != 1
             || self.runtime_version != "1.9.1"
             || !(1..=4).contains(&self.threads)

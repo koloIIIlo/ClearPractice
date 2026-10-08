@@ -14,7 +14,7 @@ use std::{
 };
 
 type Result<T> = std::result::Result<T, String>;
-const VERSION: i64 = 2;
+const VERSION: i64 = 3;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
@@ -135,7 +135,10 @@ impl DatabaseOwner {
             if version < 1 {
                 migrate(&mut connection, include_str!("schema-v1.sql"))?;
             }
-            migrate(&mut connection, include_str!("schema-v2.sql"))?;
+            if version < 2 {
+                migrate(&mut connection, include_str!("schema-v2.sql"))?;
+            }
+            migrate(&mut connection, include_str!("schema-v3.sql"))?;
         }
         connection
             .pragma_update(None, "journal_mode", "WAL")
@@ -279,6 +282,7 @@ impl DatabaseOwner {
             .lock()
             .map_err(|_| "Session storage owner is unavailable.")?;
         conn.execute("UPDATE attempts SET capture_state='interrupted' WHERE capture_state IN ('preparing','recording','finalizing')",[]).map_err(db_error)?;
+        conn.execute("UPDATE jobs SET state='interrupted',error_message='ClearPractice closed before this transcription finished. The recording is unchanged; transcribe it again.' WHERE state IN ('queued','running')",[]).map_err(db_error)?;
         conn.execute("UPDATE sessions SET status='interrupted' WHERE id IN (SELECT s.session_id FROM session_steps s JOIN attempts a ON a.step_id=s.id WHERE a.capture_state='interrupted')",[]).map_err(db_error)?;
         let ids: Vec<String> = {
             let mut stmt = conn
@@ -608,6 +612,9 @@ impl DatabaseOwner {
                 }
                 tx.execute(&format!("INSERT OR IGNORE INTO purged_assets(id,purged_at_ms) SELECT id,?2 FROM ({takes})"),params![id,now]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM task_conditions WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
+                tx.execute(&format!("DELETE FROM transcript_segments WHERE revision_id IN (SELECT id FROM transcript_revisions WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
+                tx.execute(&format!("DELETE FROM transcript_revisions WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
+                tx.execute(&format!("DELETE FROM jobs WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
                 tx.execute("DELETE FROM attempts WHERE step_id IN (SELECT id FROM session_steps WHERE session_id=?1)",[id]).map_err(db_error)?;
                 tx.execute("DELETE FROM audio_assets WHERE id IN (SELECT id FROM purged_assets) AND id NOT IN (SELECT asset_id FROM attempts WHERE asset_id IS NOT NULL)",[]).map_err(db_error)?;
                 tx.execute("DELETE FROM session_steps WHERE session_id=?1", [id])
@@ -675,6 +682,94 @@ impl DatabaseOwner {
             }
         }
         failed.map_or(Ok(()), Err)
+    }
+
+    /// Records a running transcription job for a saved take that is not in Trash.
+    pub fn start_job(&self, job_id: &str, attempt_id: &str, now_ms: u64) -> Result<()> {
+        recording::validate_id(job_id)?;
+        recording::validate_id(attempt_id)?;
+        let now = i64::try_from(now_ms).map_err(|_| "Invalid date.")?;
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let usable: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id JOIN audio_assets aa ON aa.id=a.asset_id WHERE a.id=?1 AND a.capture_state='saved' AND s.deleted_at_ms IS NULL AND aa.unavailable_reason IS NULL)",[attempt_id],|r|r.get(0)).map_err(db_error)?;
+        if !usable {
+            return Err("This take is unavailable for transcription.".into());
+        }
+        conn.execute("INSERT INTO jobs(id,kind,state,attempts,attempt_id,created_at_ms) VALUES (?1,'transcribe','running',1,?2,?3)",params![job_id,attempt_id,now]).map_err(db_error)?;
+        Ok(())
+    }
+
+    pub fn finish_job(&self, job_id: &str, state: &str, error: Option<&str>, now_ms: u64) -> Result<()> {
+        if !["completed", "failed", "canceled"].contains(&state) {
+            return Err("Invalid job state.".into());
+        }
+        let now = i64::try_from(now_ms).map_err(|_| "Invalid date.")?;
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        conn.execute("UPDATE jobs SET state=?1,error_message=?2,finished_at_ms=?3 WHERE id=?4 AND state='running'",params![state,error,now,job_id]).map_err(db_error)?;
+        Ok(())
+    }
+
+    /// Saves a verified local result as a new immutable revision and completes its job.
+    pub fn save_local_transcript(
+        &self,
+        job_id: &str,
+        attempt_id: &str,
+        transcript: &crate::audio::whisper::Transcript,
+        now_ms: u64,
+    ) -> Result<()> {
+        recording::validate_id(&transcript.run_id)?;
+        if transcript.asset_id != attempt_id {
+            return Err("The transcript belongs to a different take.".into());
+        }
+        let now = i64::try_from(now_ms).map_err(|_| "Invalid date.")?;
+        let mut conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let tx = conn.transaction().map_err(db_error)?;
+        let text: String = transcript
+            .segments
+            .iter()
+            .map(|s| s.text.trim())
+            .filter(|t| !t.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        tx.execute("INSERT INTO transcript_revisions(id,attempt_id,source,run_id,provider,model_id,model_sha256,backend,prompt,source_sha256,language,text,worker_elapsed_ms,created_at_ms) VALUES (?1,?2,'local',?1,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+            params![transcript.run_id,attempt_id,transcript.provider,transcript.model_id,transcript.model_sha256,serde_json::to_value(transcript.backend).ok().and_then(|v|v.as_str().map(String::from)),transcript.prompt,transcript.source_sha256,transcript.language,text,i64::try_from(transcript.elapsed_ms).ok(),now]).map_err(db_error)?;
+        for (position, segment) in transcript.segments.iter().enumerate() {
+            tx.execute("INSERT INTO transcript_segments(revision_id,position,text,start_ms,end_ms,timing_source,timing_unavailable_reason) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                params![transcript.run_id,position as i64,segment.text,segment.start_ms.and_then(|v|i64::try_from(v).ok()),segment.end_ms.and_then(|v|i64::try_from(v).ok()),segment.timing_source,segment.timing_unavailable_reason]).map_err(db_error)?;
+        }
+        tx.execute("UPDATE jobs SET state='completed',finished_at_ms=?1,input_revision=?2 WHERE id=?3",params![now,transcript.run_id,job_id]).map_err(db_error)?;
+        tx.commit().map_err(db_error)
+    }
+
+    /// The newest transcript revision of a take plus its newest job, either may be null.
+    pub fn attempt_transcript(&self, attempt_id: &str) -> Result<Value> {
+        recording::validate_id(attempt_id)?;
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let job = conn.query_row("SELECT id,state,error_message,created_at_ms,finished_at_ms FROM jobs WHERE attempt_id=?1 ORDER BY created_at_ms DESC,id DESC LIMIT 1",[attempt_id],
+            |r|Ok(json!({"id":r.get::<_,String>(0)?,"state":r.get::<_,String>(1)?,"errorMessage":r.get::<_,Option<String>>(2)?,"createdAt":r.get::<_,Option<i64>>(3)?.map(iso),"finishedAt":r.get::<_,Option<i64>>(4)?.map(iso)}))).optional().map_err(db_error)?;
+        let revision = conn.query_row("SELECT id,source,provider,model_id,backend,prompt,language,text,worker_elapsed_ms,created_at_ms FROM transcript_revisions WHERE attempt_id=?1 ORDER BY created_at_ms DESC,id DESC LIMIT 1",[attempt_id],
+            |r|Ok(json!({"id":r.get::<_,String>(0)?,"source":r.get::<_,String>(1)?,"provider":r.get::<_,Option<String>>(2)?,"modelId":r.get::<_,Option<String>>(3)?,"backend":r.get::<_,Option<String>>(4)?,"prompt":r.get::<_,Option<String>>(5)?,"language":r.get::<_,Option<String>>(6)?,"text":r.get::<_,String>(7)?,"workerElapsedMs":r.get::<_,Option<i64>>(8)?,"createdAt":iso(r.get(9)?)}))).optional().map_err(db_error)?;
+        let revision = match revision {
+            Some(mut revision) => {
+                let mut stmt = conn.prepare("SELECT text,start_ms,end_ms,timing_source,timing_unavailable_reason FROM transcript_segments WHERE revision_id=?1 ORDER BY position").map_err(db_error)?;
+                let rows = stmt.query_map([revision["id"].as_str().unwrap_or("")],|r|Ok(json!({"text":r.get::<_,String>(0)?,"startMs":r.get::<_,Option<i64>>(1)?,"endMs":r.get::<_,Option<i64>>(2)?,"timingSource":r.get::<_,String>(3)?,"timingUnavailableReason":r.get::<_,Option<String>>(4)?}))).map_err(db_error)?;
+                revision["segments"] = Value::Array(rows.collect::<rusqlite::Result<_>>().map_err(db_error)?);
+                revision
+            }
+            None => Value::Null,
+        };
+        Ok(json!({"attemptId":attempt_id,"revision":revision,"job":job.unwrap_or(Value::Null)}))
     }
 
     pub fn root(&self) -> &Path {
@@ -795,6 +890,17 @@ fn remove_take_files(root: &Path, id: &str) -> Result<()> {
             fs::remove_dir_all(&path).map_err(io_error)?;
         } else {
             fs::remove_file(&path).map_err(io_error)?;
+        }
+    }
+    // Transcription runs are named `<attempt>--<time>` (see transcribe::run_id).
+    let runs = cache.join("whisper");
+    if let Ok(entries) = fs::read_dir(&runs) {
+        let prefix = format!("{id}--");
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with(&prefix) {
+                contained(root, &entry.path())?;
+                fs::remove_dir_all(entry.path()).map_err(io_error)?;
+            }
         }
     }
     Ok(())
@@ -1242,7 +1348,7 @@ mod tests {
             .unwrap();
         {
             let conn = owner.connection.lock().unwrap();
-            conn.execute_batch("DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+            conn.execute_batch("DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
         }
         drop(owner);
         let upgraded = DatabaseOwner::open(&root.0).unwrap();
@@ -1252,7 +1358,8 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v2-")));
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v3-")));
+        assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
     }
     #[cfg(windows)]
     #[test]

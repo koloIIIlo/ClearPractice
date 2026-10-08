@@ -30,6 +30,9 @@ import type {
   RestorePreview,
   RestoreOutcome,
   ExportSummary,
+  TranscriptionSetup,
+  AttemptTranscript,
+  TranscriptionEvent,
   RecoverableRecording,
   RecordingStatus,
   CredentialStatus,
@@ -84,6 +87,15 @@ export interface IpcClient {
   restoreBackup(stagingId: string): Promise<RestoreOutcome>;
   /** Opens the native Save dialog and writes a readable session ZIP; null when cancelled. */
   exportSession(sessionId: string): Promise<ExportSummary | null>;
+  getTranscriptionSetup(): Promise<TranscriptionSetup>;
+  /** Opens the native file picker and verifies the Whisper runtime and model before storing the setup. */
+  chooseTranscriptionSetup(): Promise<TranscriptionSetup>;
+  getAttemptTranscript(attemptId: string): Promise<AttemptTranscript>;
+  /** Starts a background local transcription; resolves with its job ID. */
+  transcribeAttempt(attemptId: string): Promise<string>;
+  /** Cancels the running transcription; resolves with its attempt ID, or null when none was running. */
+  cancelTranscription(): Promise<string | null>;
+  onTranscriptionEvent(listener: (event: TranscriptionEvent) => void): Promise<() => void>;
   getSavedRecording(assetId: string): Promise<SavedRecording>;
   getAttemptReview(attemptId: string): Promise<AttemptReview>;
 

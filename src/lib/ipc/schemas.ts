@@ -202,6 +202,63 @@ export const ExportSummary = z.object({
 export type ExportSummary = z.infer<typeof ExportSummary>;
 export type RestoreOutcome = z.infer<typeof RestoreOutcome>;
 
+// ── Local transcription in the app (plan 3.1–3.4, 3.8) ──────────────────────
+export const TranscriptionSetup = z.object({
+  configured: z.boolean(),
+  modelId: z.string().nullable(),
+  backend: z.enum(["cpu", "cuda"]).nullable(),
+  prompt: z.string().nullable(),
+  unavailableReason: z.string().nullable(),
+});
+export type TranscriptionSetup = z.infer<typeof TranscriptionSetup>;
+
+export const SavedSegment = z.object({
+  text: z.string(),
+  startMs: z.number().int().nonnegative().nullable(),
+  endMs: z.number().int().nonnegative().nullable(),
+  timingSource: z.enum(["Measured", "Estimated"]),
+  timingUnavailableReason: z.string().nullable(),
+});
+export type SavedSegment = z.infer<typeof SavedSegment>;
+
+export const TranscriptJob = z.object({
+  id: Id,
+  state: z.enum(["running", "completed", "failed", "canceled", "interrupted"]),
+  errorMessage: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  finishedAt: z.string().nullable(),
+});
+export type TranscriptJob = z.infer<typeof TranscriptJob>;
+
+export const AttemptTranscript = z.object({
+  attemptId: Id,
+  revision: z
+    .object({
+      id: Id,
+      source: z.enum(["local", "api", "user"]),
+      provider: z.string().nullable(),
+      modelId: z.string().nullable(),
+      backend: z.string().nullable(),
+      prompt: z.string().nullable(),
+      language: z.string().nullable(),
+      text: z.string(),
+      workerElapsedMs: z.number().int().nonnegative().nullable(),
+      createdAt: z.string(),
+      segments: z.array(SavedSegment),
+    })
+    .nullable(),
+  job: TranscriptJob.nullable(),
+});
+export type AttemptTranscript = z.infer<typeof AttemptTranscript>;
+
+export const TranscriptionEvent = z.object({
+  jobId: Id,
+  attemptId: Id,
+  phase: z.string(),
+  percent: z.number().int().min(0).max(100).nullable(),
+});
+export type TranscriptionEvent = z.infer<typeof TranscriptionEvent>;
+
 export const Attempt = z.object({
   id: Id,
   ordinal: z.number().int().positive(),

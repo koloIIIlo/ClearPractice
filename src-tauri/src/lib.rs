@@ -5,11 +5,18 @@ pub mod backup;
 mod audio_devices;
 pub mod credentials;
 pub mod storage;
+pub mod transcribe;
 
 use audio::capture::{CaptureService, RecordingStatus, StartRequest};
 use std::sync::Arc;
 use storage::recording::{RecoverableRecording, SavedRecording};
 use tauri::{Emitter, Manager, State};
+
+/// The Whisper worker plus the single running transcription job.
+struct Transcription {
+    worker: audio::whisper::WhisperWorker,
+    active: transcribe::ActiveJob,
+}
 
 struct ApiAccounting(Result<api::budget::BudgetOwner, String>, std::path::PathBuf);
 /// The session database owner. Restore swaps it under the write lock; every other
@@ -177,9 +184,12 @@ async fn remove_api_key() -> Result<credentials::CredentialStatus, String> {
 async fn start_recording(
     service: State<'_, Arc<CaptureService>>,
     storage: State<'_, Arc<SessionStorage>>,
+    transcription: State<'_, Arc<Transcription>>,
     context: Option<storage::database::PracticeContext>,
     request: StartRequest,
 ) -> Result<RecordingStatus, String> {
+    // Recording takes priority: a running transcription is cancelled and can be retried.
+    transcription.active.cancel();
     let service = service.inner().clone();
     let storage = storage.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -563,6 +573,121 @@ async fn export_session(
     .map_err(|_| "Export failed.".to_string())?
 }
 
+#[tauri::command]
+async fn get_transcription_setup(
+    storage: State<'_, Arc<SessionStorage>>,
+) -> Result<transcribe::SetupStatus, String> {
+    with_storage(&storage, transcribe::status)
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
+/// Picks a worker setup file natively, verifies the runtime and model, then stores it.
+#[tauri::command]
+async fn choose_transcription_setup(
+    app: tauri::AppHandle,
+    storage: State<'_, Arc<SessionStorage>>,
+) -> Result<transcribe::SetupStatus, String> {
+    use tauri_plugin_dialog::DialogExt;
+    with_storage(&storage, move |owner| {
+        let picked = app
+            .dialog()
+            .file()
+            .set_title("Choose a verified Whisper setup file")
+            .add_filter("Whisper setup", &["json"])
+            .blocking_pick_file();
+        match picked.and_then(|p| p.into_path().ok()) {
+            Some(path) => transcribe::import_config(owner, &path),
+            None => transcribe::status(owner),
+        }
+    })
+    .await
+    .map_err(|_| "Transcription setup failed.".to_string())?
+}
+
+#[tauri::command]
+async fn get_attempt_transcript(
+    storage: State<'_, Arc<SessionStorage>>,
+    attempt_id: String,
+) -> Result<serde_json::Value, String> {
+    with_storage(&storage, move |owner| owner.attempt_transcript(&attempt_id))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptionEvent {
+    job_id: String,
+    attempt_id: String,
+    phase: String,
+    percent: Option<u8>,
+}
+
+/// Starts a local transcription of one saved take in the background and returns
+/// its job ID. Progress arrives as `transcription_progress` events; the job's
+/// final state is stored before `transcription_finished` is sent.
+#[tauri::command]
+async fn transcribe_attempt(
+    app: tauri::AppHandle,
+    service: State<'_, Arc<CaptureService>>,
+    storage: State<'_, Arc<SessionStorage>>,
+    transcription: State<'_, Arc<Transcription>>,
+    attempt_id: String,
+) -> Result<String, String> {
+    if service.is_active() {
+        return Err("Finish the recording first. Recording always takes priority.".into());
+    }
+    storage::recording::validate_id(&attempt_id)?;
+    let storage = storage.inner().clone();
+    let transcription = transcription.inner().clone();
+    let config = storage.with(transcribe::load_config)?;
+    let started = storage::recording::now_ms();
+    let run_id = transcribe::run_id(&attempt_id, started);
+    let job_id = format!("job-{run_id}");
+    let cancel = transcription.active.begin(&job_id, &attempt_id)?;
+    if let Err(error) = storage.with(|owner| owner.start_job(&job_id, &attempt_id, started)) {
+        transcription.active.end(&job_id);
+        return Err(error);
+    }
+    let returned = job_id.clone();
+    std::thread::Builder::new()
+        .name("clearpractice-transcription".into())
+        .spawn(move || {
+            let event = |phase: &str, percent: Option<u8>| TranscriptionEvent {
+                job_id: job_id.clone(),
+                attempt_id: attempt_id.clone(),
+                phase: phase.into(),
+                percent,
+            };
+            let result = transcription.worker.transcribe(&config, &attempt_id, &run_id, &cancel, |p| {
+                let _ = app.emit("transcription_progress", event(&p.phase, p.percent));
+            });
+            let now = storage::recording::now_ms();
+            let saved = match result {
+                Ok(transcript) => storage.with(|owner| owner.save_local_transcript(&job_id, &attempt_id, &transcript, now)),
+                Err(error) => {
+                    let state = if cancel.load(std::sync::atomic::Ordering::Acquire) { "canceled" } else { "failed" };
+                    storage.with(|owner| owner.finish_job(&job_id, state, Some(&error), now))
+                }
+            };
+            if let Err(error) = saved {
+                let _ = storage.with(|owner| owner.finish_job(&job_id, "failed", Some(&error), now));
+            }
+            transcription.active.end(&job_id);
+            let _ = app.emit("transcription_finished", event("finished", None));
+        })
+        .map_err(|_| {
+            "Cannot start the transcription worker.".to_string()
+        })?;
+    Ok(returned)
+}
+
+#[tauri::command]
+fn cancel_transcription(transcription: State<'_, Arc<Transcription>>) -> Option<String> {
+    transcription.active.cancel()
+}
+
 /// Picks a backup file natively and validates it into a staging folder. The
 /// current profile is not changed; `None` means the picker was cancelled.
 #[tauri::command]
@@ -594,10 +719,14 @@ async fn preview_restore(
 async fn restore_backup(
     service: State<'_, Arc<CaptureService>>,
     storage: State<'_, Arc<SessionStorage>>,
+    transcription: State<'_, Arc<Transcription>>,
     staging_id: String,
 ) -> Result<backup::RestoreOutcome, String> {
     if service.is_active() {
         return Err("Stop the recording before restoring a backup.".into());
+    }
+    if transcription.active.is_active() {
+        return Err("Wait for the transcription to finish, or cancel it, before restoring a backup.".into());
     }
     let root = service.root.clone();
     let service = service.inner().clone();
@@ -686,6 +815,10 @@ pub fn run() {
                 root.clone(),
             )));
             app.manage(Arc::new(api::coaching::PreviewOwner::default()));
+            app.manage(Arc::new(Transcription {
+                worker: audio::whisper::WhisperWorker::new(root.clone()),
+                active: transcribe::ActiveJob::default(),
+            }));
             let handle = app.handle().clone();
             app.manage(Arc::new(CaptureService::new(
                 root,
@@ -748,6 +881,11 @@ pub fn run() {
             restore_backup,
             set_auto_backup,
             export_session,
+            get_transcription_setup,
+            choose_transcription_setup,
+            get_attempt_transcript,
+            transcribe_attempt,
+            cancel_transcription,
             close_after_recording
         ])
         .run(tauri::generate_context!())

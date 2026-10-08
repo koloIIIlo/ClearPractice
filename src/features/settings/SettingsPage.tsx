@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { useInputDevices } from "@/lib/ipc/queries";
 import { cn } from "@/lib/utils";
 import { BackupSettings } from "./BackupSettings";
+import { TranscriptionSetup } from "./TranscriptionSetup";
 import { ApiCredentialSettings } from "./ApiCredentialSettings";
 import { ApiBudgetStatus } from "./ApiBudgetStatus";
 import { CoachingSpike } from "./CoachingSpike";
@@ -209,27 +210,7 @@ function TranscriptionSettings() {
   return (
     <>
       <Section title="Local Whisper" description="Speech is transcribed on this computer. Audio is never uploaded.">
-        <div className="rounded-lg border">
-          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-            <div>
-              <p className="font-medium">large-v3-turbo-q5_0</p>
-              <p className="text-meta text-muted-foreground">English practice · 547 MiB · selected with CUDA and a filler prompt</p>
-            </div>
-            <span className="text-meta text-muted-foreground">App import pending</span>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3">
-            <div>
-              <p className="font-medium">base</p>
-              <p className="text-meta text-muted-foreground">141 MiB · explicit smaller CPU alternative</p>
-            </div>
-            <span className="text-meta text-muted-foreground">App import pending</span>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" disabled>Import pack</Button>
-          <Button variant="outline" disabled>Run benchmark</Button>
-        </div>
-        <Later milestone={3}>Model packs are checksum-verified before use.</Later>
+        <TranscriptionSetup />
       </Section>
       <Section title="Acceleration" description="CUDA was selected after benchmarking the original laptop. Recheck hardware on another computer.">
         <RadioGroup defaultValue="cuda" disabled className="gap-2">

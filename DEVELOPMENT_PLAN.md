@@ -27,7 +27,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 
 **Next actions, in order**
 1. One desktop pass after rebuilding (`npm run tauri dev`) over the "Built, not yet checked" list above, then the manual M2 exit gate.
-2. M3 local transcription in the app: job queue, transcript storage, Transcribe on a saved take, transcript view (3.1–3.4, 3.8, 3.11).
+2. M3: transcript seeking, filler candidates and measures (3.6–3.8), transcript corrections (3.9), search (3.13). The Transcribe flow itself is built; check it in the desktop app (Settings → Transcription → choose `bench/runtime.local/config-selected.json`, then Transcribe on a take).
 3. Remaining M2: recovery presentation (2.5), recording failure and close-guard checks (2.8–2.10), microphone test (2.12), API usage ledger in backups.
 4. M1 manual keyboard pass and compact-navigation check.
 
@@ -232,18 +232,18 @@ These API transcription items add an estimated 1–2 days to feasibility if cred
 
 The API tasks below add an estimated 3–5 days. Implement the shared budget foundation here, before exposing audio uploads; M5 extends it for full coaching. Complete local review independently if the API gate is waiting for credentials.
 
-- [ ] 3.1 Job queue (jobs table): one transcription job across Local/API at a time; recording has priority; cancel. Paid jobs never resume or dispatch automatically after restart/reconnection
+- [~] 3.1 Job queue (jobs table): one transcription job across Local/API at a time; recording has priority; cancel. Paid jobs never resume or dispatch automatically after restart/reconnection. Local: `transcribe::ActiveJob` allows one job; `start_recording` cancels a running transcription; restore is refused while one runs; jobs left running are marked interrupted at start, never resumed. API jobs follow with 3.14
 - [ ] 3.2 Whisper worker protocol: JSON request, structured progress, result, schema version
 - [ ] 3.3 Model pack registry: ID, checksum, size, license, language; verified import; atomic install
-- [ ] 3.4 Schema: transcript_revisions, transcript_segments, analysis_runs, metric_values, annotations
+- [~] 3.4 Schema: transcript_revisions, transcript_segments, analysis_runs, metric_values, annotations. Schema v3 adds transcript_revisions (immutable, parent link for 3.9), transcript_segments and job columns (take, times, error); v1→v3 upgrade tested. analysis_runs/metric_values/annotations still to come
 - [ ] 3.5 VAD + timeline mapping (never measure pauses from trimmed audio)
 - [ ] 3.6 Metrics with definition versions: duration, analysis interval, estimated pace (≥15 s speech, ≥20 words), pauses (≥700 ms threshold, stored), repeated wording
 - [ ] 3.7 Candidate filler lexicon (contextual) → annotations; Hear it / Confirm / Dismiss; manual insertion. Use the D-16 transcription strategy; anything it inserts is still only a candidate until reviewed
-- [ ] 3.8 Transcript component: segment seek only with verified timings, views As transcribed / My corrections / Suggested wording. Untimed API text remains editable alongside whole-take playback; no invented alignment
+- [~] 3.8 Transcript component (TakeTranscript built for native takes: As transcribed view, per-segment Estimated start times, filler note; seeking from a segment, My corrections and Suggested wording views remain): segment seek only with verified timings, views As transcribed / My corrections / Suggested wording. Untimed API text remains editable alongside whole-take playback; no invented alignment
 - [ ] 3.9 Transcript revisions: edits create a child revision; dependent metrics are invalidated; Reanalyze
 - [ ] 3.10 Evidence labels: Measured / Estimated / Your note / AI suggestion
-- [ ] 3.11 Failure paths: Retry transcription, Change model, Add notes; audio is never lost
-- [ ] 3.12 Settings → Transcription: independent Local / API / Off selector; local packs/backend/Benchmark; API provider/model/key status and clearly billable test. Local is default; Off preserves playback, notes, and existing transcripts
+- [~] 3.11 Failure paths: Retry transcription, Change model, Add notes; audio is never lost. Failed, cancelled and interrupted jobs show their reason with a Transcribe button; the recording and notes are untouched. Change model = Settings setup file for now
+- [~] 3.12 Settings → Transcription: (local setup panel built: native picker for the verified setup file; runtime and model hashes verified before it is stored). Remaining: independent Local / API / Off selector; local packs/backend/Benchmark; API provider/model/key status and clearly billable test. Local is default; Off preserves playback, notes, and existing transcripts
 - [ ] 3.13 FTS5 index for transcripts, notes, prompts, phrases; wire it to the command palette
 
 **Optional API transcription**
@@ -373,6 +373,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Local transcription in the app (M3 slice). Real hardware run (`cargo test --lib transcribe -- --ignored`): the 62 s public sample imported as a saved take, transcribed by CUDA turbo with the filler prompt, saved as an SQLite revision in 33 s including two model-hash checks; fillers kept ("uh, uh, uh", "um"); permanent delete removed `cache/whisper/<take>--<ms>`. Rust transcribe/storage/backup 21/21; Vitest transcript/session/settings/ipc 21/21; production build passes; command names and argument keys cross-checked against the Rust handlers. Desktop UI not driven (no desktop-automation tool in this session).
 - 2026-10-08: Session export (2.22); Rust backup 7/7, crate builds without warnings, sessions/settings/ipc Vitest 18/18. All M2 build items except 2.5–2.12 recording/recovery polish are now implemented.
 - 2026-10-08: Weekly automatic backup (2.21); Rust backup 6/6, crate builds without warnings, settings + ipc Vitest 14/14.
 - 2026-10-08: User's desktop pass: recording works; reported a frozen 0:00 timer, Ctrl+Enter not starting, and a static level meter. Cause of the timer/meter: under React StrictMode both effect mounts registered the same `apply` function; a client keyed by function identity (the mock's Set, reproduced in the browser) lost the live registration on the first mount's cleanup. Each mount now registers its own wrapper and the mock wraps per registration; the timer also can no longer rewind when the start reply arrives after level events. Ctrl+Enter is now a window listener (skipped while a dialog is open), not a handler that needed focus inside the studio. The static bar meter became a scrolling, mirrored live waveform (last ~8 s at 10 events/s, −50…0 dB scale). Verified in the browser preview (Ctrl+Enter from BODY, timer 0:24, waveform scrolling, stop saves) and a new StrictMode regression test; full Vitest 37/37 before the last one-line change, practice tests 5/5 after. Not re-checked in the desktop app; if the native timer still freezes, inspect Tauri event delivery next.
