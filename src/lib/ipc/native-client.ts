@@ -30,6 +30,7 @@ export function createNativeClient(): IpcClient {
     getBackupStatus: () => command("get_backup_status", S.BackupStatus),
     chooseBackupDestination: () => command("choose_backup_destination", S.BackupStatus),
     createBackup: () => command("create_backup", S.BackupSummary),
+    setAutoBackup: (enabled, keep) => command("set_auto_backup", S.BackupStatus, { enabled, keep }),
     previewRestore: () => command("preview_restore", S.RestorePreview.nullable()),
     discardRestorePreview: async (stagingId) => { await command("discard_restore_preview", z.null(), { stagingId }); },
     restoreBackup: (stagingId) => command("restore_backup", S.RestoreOutcome, { stagingId }),

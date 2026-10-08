@@ -136,7 +136,8 @@ export function createMockClient(): IpcClient {
     setTrashRetention: async (days) => {
       retentionDays = S.TrashRetentionDays.parse(days);
     },
-    getBackupStatus: () => respond(S.BackupStatus, { destination: null, destinationAvailable: false, backups: [] }),
+    getBackupStatus: () => respond(S.BackupStatus, { destination: null, destinationAvailable: false, backups: [], autoEnabled: true, keep: 4, nextDueAtMs: null }),
+    setAutoBackup: async () => { throw new IpcError("desktop_required", "Backups are available in the desktop app."); },
     chooseBackupDestination: async () => { throw new IpcError("desktop_required", "Backups are available in the desktop app."); },
     createBackup: async () => { throw new IpcError("desktop_required", "Backups are available in the desktop app."); },
     previewRestore: async () => { throw new IpcError("desktop_required", "Restore is available in the desktop app."); },

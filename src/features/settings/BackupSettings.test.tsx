@@ -9,8 +9,8 @@ import { BackupSettings } from "./BackupSettings";
 
 it("chooses a folder natively, reports verified and failed backups, checks a backup, and restores only after confirmation", async () => {
   const user = userEvent.setup();
-  let status: BackupStatus = { destination: null, destinationAvailable: false, backups: [] };
-  const chosen: BackupStatus = { destination: "E:\\Backups", destinationAvailable: true, backups: [] };
+  let status: BackupStatus = { destination: null, destinationAvailable: false, backups: [], autoEnabled: true, keep: 4, nextDueAtMs: null };
+  const chosen: BackupStatus = { destination: "E:\\Backups", destinationAvailable: true, backups: [], autoEnabled: true, keep: 4, nextDueAtMs: 0 };
   const client: IpcClient = {
     ...createMockClient(),
     recordingMode: "native",
@@ -25,6 +25,7 @@ it("chooses a folder natively, reports verified and failed backups, checks a bac
       sessions: 2, trashedSessions: 1, recordings: 3, audioBytes: 2048, unavailableRecordings: 0,
     })),
     discardRestorePreview: vi.fn(async () => {}),
+    setAutoBackup: vi.fn(async (autoEnabled: boolean, keep: BackupStatus["keep"]) => (status = { ...status, autoEnabled, keep, nextDueAtMs: autoEnabled ? 0 : null })),
     restoreBackup: vi.fn(async () => ({ rollbackFolder: "restore-rollback/before-restore-2026-10-08-120000" })),
   };
   render(<QueryClientProvider client={new QueryClient()}><IpcContext.Provider value={client}><BackupSettings /></IpcContext.Provider></QueryClientProvider>);
@@ -33,6 +34,11 @@ it("chooses a folder natively, reports verified and failed backups, checks a bac
   expect(screen.getByRole("button", { name: "Create backup" })).toBeDisabled();
   await user.click(screen.getByRole("button", { name: /Choose folder/ }));
   expect(await screen.findByText("E:\\Backups")).toBeInTheDocument();
+  expect(screen.getByText(/Due now: runs within a few minutes/)).toBeInTheDocument();
+  await user.click(screen.getByRole("switch", { name: /Weekly automatic backup/ }));
+  expect(client.setAutoBackup).toHaveBeenCalledWith(false, 4);
+  expect(screen.queryByText(/Next automatic backup/)).not.toBeInTheDocument();
+  await user.click(screen.getByRole("switch", { name: /Weekly automatic backup/ }));
 
   await user.click(screen.getByRole("button", { name: "Create backup" }));
   expect(await screen.findByRole("status")).toHaveTextContent("Backup saved and verified: 3 recordings, 5.0 MB. 1 recording was already unavailable and could not be included.");

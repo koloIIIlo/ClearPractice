@@ -25,6 +25,7 @@ import type {
   TrashRetentionDays,
   PurgeOutcome,
   BackupStatus,
+  BackupKeep,
   BackupSummary,
   RestorePreview,
   RestoreOutcome,
@@ -74,6 +75,7 @@ export interface IpcClient {
   /** Opens the native folder picker; cancelling keeps the current folder. */
   chooseBackupDestination(): Promise<BackupStatus>;
   createBackup(): Promise<BackupSummary>;
+  setAutoBackup(enabled: boolean, keep: BackupKeep): Promise<BackupStatus>;
   /** Opens the native file picker and validates the backup into staging; null when cancelled. */
   previewRestore(): Promise<RestorePreview | null>;
   discardRestorePreview(stagingId: string): Promise<void>;

@@ -421,6 +421,10 @@ struct BackupStatus {
     destination: Option<String>,
     destination_available: bool,
     backups: Vec<serde_json::Value>,
+    auto_enabled: bool,
+    keep: u32,
+    /// Milliseconds since the epoch; 0 means "as soon as possible".
+    next_due_at_ms: Option<u64>,
 }
 
 fn backup_status(owner: &storage::database::DatabaseOwner) -> Result<BackupStatus, String> {
@@ -431,6 +435,9 @@ fn backup_status(owner: &storage::database::DatabaseOwner) -> Result<BackupStatu
             .is_some_and(|d| std::path::Path::new(d).is_dir()),
         destination,
         backups: owner.backups()?,
+        auto_enabled: backup::auto_enabled(owner)?,
+        keep: backup::keep_count(owner)?,
+        next_due_at_ms: backup::next_due_ms(owner)?,
     })
 }
 
@@ -480,6 +487,49 @@ async fn create_backup(
     })
     .await
     .map_err(|_| "Backup failed.".to_string())?
+}
+
+#[tauri::command]
+async fn set_auto_backup(
+    storage: State<'_, Arc<SessionStorage>>,
+    enabled: bool,
+    keep: u32,
+) -> Result<BackupStatus, String> {
+    with_storage(&storage, move |owner| {
+        if !backup::KEEP_CHOICES.contains(&keep) {
+            return Err("Choose to keep 2, 4, 8 or 12 backups.".into());
+        }
+        owner.set_setting(backup::AUTO_KEY, if enabled { "on" } else { "off" })?;
+        owner.set_setting(backup::KEEP_KEY, &keep.to_string())?;
+        backup_status(owner)
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
+/// Checks for a due weekly backup shortly after launch (the catch-up) and then
+/// every half hour while the app is open. Never runs during a recording.
+fn spawn_auto_backup(app: tauri::AppHandle, storage: Arc<SessionStorage>, capture: Arc<CaptureService>) {
+    let _ = std::thread::Builder::new()
+        .name("clearpractice-auto-backup".into())
+        .spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(90));
+            loop {
+                if !capture.is_active() {
+                    match storage.with(|owner| backup::run_if_due(owner, storage::recording::now_ms())) {
+                        Ok(Some(summary)) => {
+                            let _ = app.emit("backup_completed", &summary);
+                        }
+                        Ok(None) => {}
+                        // Failures are recorded in backup_records and shown in Settings.
+                        Err(_) => {
+                            let _ = app.emit("backup_failed", ());
+                        }
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_secs(30 * 60));
+            }
+        });
 }
 
 /// Picks a backup file natively and validates it into a staging folder. The
@@ -617,6 +667,11 @@ pub fn run() {
                     let _ = handle.emit(event, status);
                 }),
             )));
+            spawn_auto_backup(
+                app.handle().clone(),
+                app.state::<Arc<SessionStorage>>().inner().clone(),
+                app.state::<Arc<CaptureService>>().inner().clone(),
+            );
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -660,6 +715,7 @@ pub fn run() {
             preview_restore,
             discard_restore_preview,
             restore_backup,
+            set_auto_backup,
             close_after_recording
         ])
         .run(tauri::generate_context!())

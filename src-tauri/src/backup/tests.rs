@@ -255,3 +255,44 @@ fn interrupted_or_failed_restore_puts_the_previous_profile_back() {
     );
     assert!(roll_back(&source.0).is_ok(), "no journal is a no-op");
 }
+
+#[test]
+fn weekly_backup_catches_up_skips_when_not_due_and_keeps_only_the_newest() {
+    let (_root, owner) = profile_with_two_takes();
+    let destination = TestRoot::new();
+    let folder = destination.0.join("backups");
+    fs::create_dir(&folder).unwrap();
+    let day = 24 * 60 * 60 * 1000;
+    let start = recording::now_ms();
+
+    // No folder chosen yet: nothing is due.
+    assert!(next_due_ms(&owner).unwrap().is_none());
+    owner.set_setting(DESTINATION_KEY, &folder.to_string_lossy()).unwrap();
+    owner.set_setting(KEEP_KEY, "2").unwrap();
+    fs::write(folder.join("holiday-photos.zip"), b"not ours").unwrap();
+
+    // Never backed up: runs at once (the launch catch-up), then waits a week.
+    assert!(run_if_due(&owner, start).unwrap().is_some());
+    assert!(run_if_due(&owner, start + day).unwrap().is_none());
+    assert_eq!(next_due_ms(&owner).unwrap(), Some(start + 7 * day));
+    assert!(run_if_due(&owner, start + 7 * day).unwrap().is_some());
+    let third = run_if_due(&owner, start + 14 * day).unwrap().unwrap();
+
+    let mut names: Vec<_> = fs::read_dir(&folder)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names.len(), 3, "two newest backups plus the unrelated file: {names:?}");
+    assert!(names.contains(&"holiday-photos.zip".to_string()));
+    assert!(names.contains(&third.file_name));
+
+    // Turned off, or the drive is missing: nothing runs and nothing is deleted.
+    owner.set_setting(AUTO_KEY, "off").unwrap();
+    assert!(run_if_due(&owner, start + 30 * day).unwrap().is_none());
+    owner.set_setting(AUTO_KEY, "on").unwrap();
+    owner.set_setting(DESTINATION_KEY, &folder.join("unplugged").to_string_lossy()).unwrap();
+    assert!(run_if_due(&owner, start + 30 * day).unwrap().is_none());
+    assert_eq!(fs::read_dir(&folder).unwrap().count(), 3);
+    assert!(!is_backup_name("ClearPractice-backup-../x.zip"));
+}

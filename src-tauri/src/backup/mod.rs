@@ -475,6 +475,92 @@ fn check_database(staging: &Path, manifest: &Manifest, staging_id: &str) -> Resu
     })
 }
 
+// ── Weekly automatic backup (plan 2.21) ──────────────────────────────────────
+
+pub const AUTO_KEY: &str = "backup_auto";
+pub const KEEP_KEY: &str = "backup_keep";
+pub const KEEP_CHOICES: [u32; 4] = [2, 4, 8, 12];
+const WEEK_MS: u64 = 7 * 24 * 60 * 60 * 1000;
+
+pub fn auto_enabled(owner: &DatabaseOwner) -> Result<bool> {
+    Ok(owner.setting(AUTO_KEY)?.as_deref() != Some("off"))
+}
+
+pub fn keep_count(owner: &DatabaseOwner) -> Result<u32> {
+    // An unreadable value keeps more copies, never fewer.
+    Ok(owner
+        .setting(KEEP_KEY)?
+        .and_then(|v| v.parse().ok())
+        .filter(|n| KEEP_CHOICES.contains(n))
+        .unwrap_or(4))
+}
+
+/// When the next automatic backup is due: a week after the last verified one,
+/// or immediately when there is none. `None` when automatic backup is off or no
+/// folder is chosen.
+pub fn next_due_ms(owner: &DatabaseOwner) -> Result<Option<u64>> {
+    if !auto_enabled(owner)? || owner.setting(DESTINATION_KEY)?.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(owner.last_verified_backup_ms()?.map_or(0, |last| last + WEEK_MS)))
+}
+
+/// Runs a due automatic backup, then prunes old verified backups. Returns
+/// `Ok(None)` when nothing was due or the folder is unavailable (retried later).
+pub fn run_if_due(owner: &DatabaseOwner, now_ms: u64) -> Result<Option<BackupSummary>> {
+    let Some(due) = next_due_ms(owner)? else {
+        return Ok(None);
+    };
+    if now_ms < due {
+        return Ok(None);
+    }
+    let destination = PathBuf::from(owner.setting(DESTINATION_KEY)?.unwrap_or_default());
+    if !destination.is_dir() {
+        return Ok(None);
+    }
+    let summary = create(owner, &destination, now_ms)?;
+    prune(owner, &destination, keep_count(owner)?)?;
+    Ok(Some(summary))
+}
+
+/// Deletes the oldest verified backups beyond `keep`. Only files this app
+/// recorded as verified and that still match its naming are ever removed, and
+/// the newest verified backup is always kept.
+pub fn prune(owner: &DatabaseOwner, destination: &Path, keep: u32) -> Result<Vec<String>> {
+    let keep = keep.max(1) as usize;
+    let mut files: Vec<String> = owner
+        .verified_backup_files()?
+        .into_iter()
+        .filter(|name| is_backup_name(name) && destination.join(name).is_file())
+        .collect();
+    files.sort();
+    files.dedup();
+    files.reverse(); // Names embed the local timestamp, so newest first.
+    let mut removed = Vec::new();
+    for name in files.into_iter().skip(keep) {
+        let path = destination.join(&name);
+        if fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_file()) {
+            fs::remove_file(&path).map_err(io_error)?;
+            removed.push(name);
+        }
+    }
+    Ok(removed)
+}
+
+fn is_backup_name(name: &str) -> bool {
+    let Some(stamp) = name
+        .strip_prefix("ClearPractice-backup-")
+        .and_then(|rest| rest.strip_suffix(".zip"))
+    else {
+        return false;
+    };
+    stamp.len() == 17
+        && stamp.bytes().enumerate().all(|(i, b)| match i {
+            4 | 7 | 10 => b == b'-',
+            _ => b.is_ascii_digit(),
+        })
+}
+
 // ── Replace current profile (plan 2.20) ──────────────────────────────────────
 //
 // The caller closes the database first. A synced journal is written before

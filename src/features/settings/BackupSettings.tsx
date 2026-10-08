@@ -12,9 +12,12 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { UI_LOCALE } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
-import type { BackupSummary, RestorePreview } from "@/lib/ipc/schemas";
+import { BACKUP_KEEP_CHOICES, BackupKeep, type BackupSummary, type RestorePreview } from "@/lib/ipc/schemas";
 import { formatBytes } from "@/features/sessions/TrashPage";
 
 const statusKey = ["backup-status"] as const;
@@ -33,7 +36,8 @@ function savedMessage(summary: BackupSummary) {
 export function BackupSettings() {
   const ipc = useIpc();
   const qc = useQueryClient();
-  const status = useQuery({ queryKey: statusKey, queryFn: () => ipc.getBackupStatus() });
+  // Automatic backups run in the background, so keep this view current while it is open.
+  const status = useQuery({ queryKey: statusKey, queryFn: () => ipc.getBackupStatus(), refetchInterval: 60_000 });
   const native = ipc.recordingMode === "native";
   const choose = useMutation({
     mutationFn: () => ipc.chooseBackupDestination(),
@@ -42,6 +46,10 @@ export function BackupSettings() {
   const create = useMutation({
     mutationFn: () => ipc.createBackup(),
     onSettled: () => qc.invalidateQueries({ queryKey: statusKey }),
+  });
+  const auto = useMutation({
+    mutationFn: ({ enabled, keep }: { enabled: boolean; keep: BackupKeep }) => ipc.setAutoBackup(enabled, keep),
+    onSuccess: (next) => qc.setQueryData(statusKey, next),
   });
   const check = useMutation({ mutationFn: () => ipc.previewRestore() });
   const restore = useMutation({
@@ -60,7 +68,7 @@ export function BackupSettings() {
   const data = status.data;
   const lastGood = data?.backups.find((b) => b.status === "verified");
   const recentFailure = data?.backups[0]?.status === "failed" ? data.backups[0] : null;
-  const busy = choose.isPending || create.isPending || check.isPending || restore.isPending;
+  const busy = choose.isPending || create.isPending || check.isPending || restore.isPending || auto.isPending;
 
   return (
     <div className="space-y-4">
@@ -76,7 +84,43 @@ export function BackupSettings() {
         </dd>
         <dt className="text-muted-foreground">Last successful backup</dt>
         <dd>{lastGood ? `${when(lastGood.createdAt)} · ${lastGood.fileName}` : "Never"}</dd>
+        {data?.nextDueAtMs != null && (
+          <>
+            <dt className="text-muted-foreground">Next automatic backup</dt>
+            <dd>{data.nextDueAtMs <= Date.now() ? "Due now: runs within a few minutes while ClearPractice is open" : when(data.nextDueAtMs)}</dd>
+          </>
+        )}
       </dl>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div className="flex items-center gap-2">
+          <Switch
+            id="auto-backup"
+            checked={data?.autoEnabled ?? true}
+            disabled={!native || !data || busy}
+            onCheckedChange={(enabled) => data && auto.mutate({ enabled, keep: data.keep })}
+          />
+          <Label htmlFor="auto-backup" className="font-normal">Weekly automatic backup while the app is open</Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <span id="backup-keep-label" className="text-meta text-muted-foreground">Keep</span>
+          <Select
+            value={String(data?.keep ?? 4)}
+            disabled={!native || !data || busy}
+            onValueChange={(v) => data && auto.mutate({ enabled: data.autoEnabled, keep: BackupKeep.parse(Number(v)) })}
+          >
+            <SelectTrigger className="h-10 w-36" aria-labelledby="backup-keep-label">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {BACKUP_KEEP_CHOICES.map((n) => <SelectItem key={n} value={String(n)}>{n} backups</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <p className="text-meta text-muted-foreground">
+        Older automatic and manual backups beyond this number are deleted only after a new backup has been verified. Other files in
+        the folder are never touched.
+      </p>
       {recentFailure && (
         <p className="text-meta text-muted-foreground">
           The most recent attempt on {when(recentFailure.createdAt)} did not complete; no partial file was kept.
@@ -107,8 +151,8 @@ export function BackupSettings() {
             Backup restored. The data you had before is kept in the app data folder under {restore.data.rollbackFolder}.
           </p>
         )}
-        {(create.error ?? choose.error ?? check.error ?? restore.error) && (
-          <p role="alert" className="text-meta text-destructive">{(create.error ?? choose.error ?? check.error ?? restore.error)!.message}</p>
+        {(create.error ?? choose.error ?? check.error ?? restore.error ?? auto.error) && (
+          <p role="alert" className="text-meta text-destructive">{(create.error ?? choose.error ?? check.error ?? restore.error ?? auto.error)!.message}</p>
         )}
         {check.data && (
           <div className="space-y-2 rounded-lg border p-3">

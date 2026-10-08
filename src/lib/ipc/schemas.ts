@@ -153,10 +153,17 @@ export const BackupRecord = z.object({
 });
 export type BackupRecord = z.infer<typeof BackupRecord>;
 
+export const BACKUP_KEEP_CHOICES = [2, 4, 8, 12] as const;
+export const BackupKeep = z.union([z.literal(2), z.literal(4), z.literal(8), z.literal(12)]);
+export type BackupKeep = z.infer<typeof BackupKeep>;
+
 export const BackupStatus = z.object({
   destination: z.string().nullable(), // display only; never sent back to the native core
   destinationAvailable: z.boolean(),
   backups: z.array(BackupRecord),
+  autoEnabled: z.boolean(),
+  keep: BackupKeep,
+  nextDueAtMs: z.number().int().nonnegative().nullable(), // 0 = as soon as possible; null = off or no folder
 });
 export type BackupStatus = z.infer<typeof BackupStatus>;
 

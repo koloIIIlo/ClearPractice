@@ -728,6 +728,33 @@ impl DatabaseOwner {
         Ok(())
     }
 
+    pub fn last_verified_backup_ms(&self) -> Result<Option<u64>> {
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let last: Option<i64> = conn
+            .query_row(
+                "SELECT MAX(created_at_ms) FROM backup_records WHERE validation_status='verified'",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(db_error)?;
+        Ok(last.and_then(|ms| u64::try_from(ms).ok()))
+    }
+
+    pub fn verified_backup_files(&self) -> Result<Vec<String>> {
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let mut stmt = conn
+            .prepare("SELECT destination FROM backup_records WHERE validation_status='verified'")
+            .map_err(db_error)?;
+        let rows = stmt.query_map([], |r| r.get(0)).map_err(db_error)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(db_error)
+    }
+
     /// Most recent backup attempts first, successful or not.
     pub fn backups(&self) -> Result<Vec<Value>> {
         let conn = self
