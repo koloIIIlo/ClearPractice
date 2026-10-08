@@ -251,7 +251,7 @@ The API tasks below add an estimated 3–5 days. Implement the shared budget fou
 - [~] 3.19 Verify filler review and available metrics against API transcripts with and without timing. Compute pauses/pitch/energy from local audio; disable per-word stress labels and timed candidate replay when alignment is absent. An optional local alignment job must be explicit and verified. Verified on synthetic API results (storage test `api_transcripts_are_their_own_revision_with_run_raw_response_and_purge`): filler candidates and Filler / Not a filler decisions work on timed and untimed API revisions, each revision keeping its own decisions; without timings pace is withheld with a reason; pauses come from the take's own audio (peak-energy-v1) and pitch from the local contour, never from the provider. Timed candidate replay and per-word stress labels are not built, so nothing claims alignment. Remaining: repeat with a live provider response (0.22)
 
 **Exit gate M3 — local review**
-- [ ] Worker crash leaves the audio saved and the next recording works
+- [~] Worker crash leaves the audio saved and the next recording works. Hardware test `hardware_worker_crash_keeps_the_audio_and_the_next_run_works` (CUDA, public sample): whisper-cli killed mid-run from outside → "Whisper could not finish. The recording is preserved…", job failed with that reason, no partial transcript, audio byte-identical and still verified; then two fresh transcriptions (another take and the same take) complete. Remaining: record a live take right after a crash in the desktop app
 - [x] Editing a transcript keeps raw text and old metrics tied to their original revision (storage test `corrections_are_child_revisions_and_leave_the_original_untouched`; measures and filler decisions are keyed to the machine revision)
 - [ ] Timing is verified after resampling / VAD, including gaps and the final segment
 
@@ -369,6 +369,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: M3 gate, worker crash (hardware, 54 s): passes; see the gate item.
 - 2026-10-08: End-of-session full checks: Rust 68 passed / 10 hardware tests ignored, no warnings; Vitest 69/69 in 21 files; typecheck clean; production build OK. Plan and handout re-checked (one status table, no control bytes).
 - 2026-10-08: Empty/error-state pass (1.9): new screen-state test, 10 cases; fixed the blank Exercises list. Full Vitest 69/69 in 21 files; typecheck clean.
 - 2026-10-08: Playable API preview audio (3.15): Rust api 13/13 (path only while the preview is open, plain drive form for the asset scope); Vitest ApiTranscribe + settings 6/6; typecheck clean.

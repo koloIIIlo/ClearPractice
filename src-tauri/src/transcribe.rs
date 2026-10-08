@@ -208,4 +208,77 @@ mod tests {
         assert!(!root.0.join("cache/whisper").join(&run).exists());
         assert!(owner.attempt_transcript("public").unwrap()["revision"].is_null());
     }
+
+    /// M3 exit gate: a worker that dies mid-run (killed from outside, like a
+    /// crash) leaves the recording byte-identical, the job failed with a reason,
+    /// and the next transcription works. Only this test's own whisper-cli.exe is
+    /// stopped, matched by the temporary folder in its command line.
+    /// `cargo test --lib worker_crash -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn hardware_worker_crash_keeps_the_audio_and_the_next_run_works() {
+        use crate::audio::whisper::WhisperWorker;
+        use crate::storage::recording::{self, tests::TestRoot, CaptureManifest, ChunkWriter};
+        let bench = Path::new(env!("CARGO_MANIFEST_DIR")).join("../bench");
+        let wav = std::fs::read(bench.join("samples/public-62s.wav")).unwrap();
+        let root = TestRoot::new();
+        for id in ["crash", "after"] {
+            let manifest = CaptureManifest {
+                version: 1, attempt_id: id.into(), idempotency_key: id.into(), title: id.into(),
+                device_id: "fixture".into(), device_name: "Fixture".into(), sample_rate: 16_000, source_channels: 1,
+                source_format: "i16".into(), created_at_ms: recording::now_ms(),
+            };
+            let mut writer = ChunkWriter::create(&root.0, &manifest).unwrap();
+            for pair in wav[44..].chunks_exact(2) {
+                writer.push(i16::from_le_bytes([pair[0], pair[1]])).unwrap();
+            }
+            writer.flush().unwrap();
+            drop(writer);
+            recording::finalize(&root.0, id, false).unwrap();
+        }
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        import_config(&owner, &bench.join("runtime.local/config-selected.json")).unwrap();
+        let config = load_config(&owner).unwrap();
+        let before = recording::hash_file(&root.0.join("recordings/crash/audio.wav")).unwrap();
+
+        // Kill the worker as soon as it reports progress.
+        let marker = root.0.file_name().unwrap().to_string_lossy().into_owned();
+        let killed = Arc::new(AtomicBool::new(false));
+        let worker = WhisperWorker::new(root.0.clone());
+        let run = run_id("crash", recording::now_ms());
+        owner.start_job("job-crash", "crash", recording::now_ms()).unwrap();
+        let flag = killed.clone();
+        let result = worker.transcribe(&config, "crash", &run, &AtomicBool::new(false), |p| {
+            let mid_run = p.phase == "running" && p.percent.is_some_and(|v| v > 0 && v < 95);
+            if mid_run && !flag.swap(true, Ordering::SeqCst) {
+                let script = format!("Get-CimInstance Win32_Process -Filter \"Name='whisper-cli.exe'\" | Where-Object {{ $_.CommandLine -like '*{marker}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}");
+                let status = std::process::Command::new("powershell").args(["-NoProfile", "-Command", &script]).status().unwrap();
+                assert!(status.success());
+            }
+        });
+        assert!(killed.load(Ordering::SeqCst), "the worker reported progress before it was stopped");
+        let error = result.expect_err("a killed worker must not produce a transcript");
+        println!("CRASH: {error}");
+        assert!(error.contains("preserved"), "{error}");
+        owner.finish_job("job-crash", "failed", Some(&error), recording::now_ms()).unwrap();
+
+        let view = owner.attempt_transcript("crash").unwrap();
+        assert_eq!(view["job"]["state"], "failed");
+        assert!(view["job"]["errorMessage"].as_str().unwrap().contains("preserved"));
+        assert!(view["revision"].is_null(), "no partial transcript is saved");
+        assert_eq!(recording::hash_file(&root.0.join("recordings/crash/audio.wav")).unwrap(), before, "audio byte-identical");
+        owner.checked_recording("crash").unwrap();
+
+        // The next run works, on the other take and on the same one.
+        for id in ["after", "crash"] {
+            let run = run_id(id, recording::now_ms());
+            let job = format!("job-{id}-ok");
+            owner.start_job(&job, id, recording::now_ms()).unwrap();
+            let transcript = worker.transcribe(&config, id, &run, &AtomicBool::new(false), |_| {}).unwrap();
+            owner.save_local_transcript(&job, id, &transcript, recording::now_ms()).unwrap();
+            let view = owner.attempt_transcript(id).unwrap();
+            assert_eq!(view["job"]["state"], "completed", "{id}");
+            assert!(view["revision"]["text"].as_str().unwrap().split_whitespace().count() > 50, "{id}");
+        }
+    }
 }
