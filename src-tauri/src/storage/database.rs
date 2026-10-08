@@ -14,7 +14,7 @@ use std::{
 };
 
 type Result<T> = std::result::Result<T, String>;
-const VERSION: i64 = 6;
+const VERSION: i64 = 7;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
@@ -149,8 +149,12 @@ impl DatabaseOwner {
             if version < 5 {
                 migrate(&mut connection, include_str!("schema-v5.sql"))?;
             }
-            migrate(&mut connection, include_str!("schema-v6.sql"))?;
+            if version < 6 {
+                migrate(&mut connection, include_str!("schema-v6.sql"))?;
+            }
+            migrate(&mut connection, include_str!("schema-v7.sql"))?;
         }
+        backfill_measures(&connection)?;
         connection
             .pragma_update(None, "journal_mode", "WAL")
             .map_err(db_error)?;
@@ -683,6 +687,8 @@ impl DatabaseOwner {
                 tx.execute(&format!("INSERT OR IGNORE INTO purged_assets(id,purged_at_ms) SELECT id,?2 FROM ({takes})"),params![id,now]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM task_conditions WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM api_runs WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
+                tx.execute(&format!("DELETE FROM metric_values WHERE run_id IN (SELECT id FROM analysis_runs WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
+                tx.execute(&format!("DELETE FROM analysis_runs WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM annotations WHERE revision_id IN (SELECT id FROM transcript_revisions WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM transcript_segments WHERE revision_id IN (SELECT id FROM transcript_revisions WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
                 tx.execute(&format!("DELETE FROM transcript_revisions WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
@@ -818,6 +824,7 @@ impl DatabaseOwner {
             tx.execute("INSERT INTO transcript_segments(revision_id,position,text,start_ms,end_ms,timing_source,timing_unavailable_reason) VALUES (?1,?2,?3,?4,?5,?6,?7)",
                 params![transcript.run_id,position as i64,segment.text,segment.start_ms.and_then(|v|i64::try_from(v).ok()),segment.end_ms.and_then(|v|i64::try_from(v).ok()),segment.timing_source,segment.timing_unavailable_reason]).map_err(db_error)?;
         }
+        record_measures(&tx, attempt_id, &transcript.run_id, now)?;
         tx.execute("UPDATE jobs SET state='completed',finished_at_ms=?1,input_revision=?2 WHERE id=?3",params![now,transcript.run_id,job_id]).map_err(db_error)?;
         tx.commit().map_err(db_error)
     }
@@ -880,6 +887,7 @@ impl DatabaseOwner {
             params![result.run_id, result.asset_id, provider, result.model_id, result.request_id.value, result.prepared_sha256, result.source_sha256,
                 result.settings.to_string(), raw.to_string(), serde_json::to_string(result).map_err(|e| e.to_string())?, result.words.value.is_some(),
                 result.usage.audio_duration_ms.value.and_then(|v| i64::try_from(v).ok()), result.usage.estimated_cost_micro_usd.value.and_then(|v| i64::try_from(v).ok()), now]).map_err(db_error)?;
+        record_measures(&tx, &result.asset_id, &result.run_id, now)?;
         tx.commit().map_err(db_error)
     }
 
@@ -958,7 +966,11 @@ impl DatabaseOwner {
         }
         let id = format!("{parent_id}--edit-{now_ms}");
         recording::validate_id(&id)?;
-        conn.execute("INSERT INTO transcript_revisions(id,attempt_id,parent_id,source,text,created_at_ms) VALUES (?1,?2,?3,'user',?4,?5)",params![id,attempt_id,parent_id,text.trim(),now]).map_err(db_error)?;
+        let mut conn = conn;
+        let tx = conn.transaction().map_err(db_error)?;
+        tx.execute("INSERT INTO transcript_revisions(id,attempt_id,parent_id,source,text,created_at_ms) VALUES (?1,?2,?3,'user',?4,?5)",params![id,attempt_id,parent_id,text.trim(),now]).map_err(db_error)?;
+        record_measures(&tx, attempt_id, &id, now)?;
+        tx.commit().map_err(db_error)?;
         Ok(id)
     }
 
@@ -1200,6 +1212,67 @@ impl DatabaseOwner {
             .map_err(|_| "Session storage owner is unavailable.")?;
         snapshot(&conn, &self.root, id)
     }
+}
+
+/// Stores the transcript measures of one revision as an analysis run with one
+/// value (or reason) per metric (3.4). Corrections have no segments and are
+/// measured as one untimed segment, like the transcript view does. Idempotent.
+fn record_measures(conn: &Connection, attempt_id: &str, revision_id: &str, now_ms: i64) -> Result<()> {
+    use crate::analysis::{self, SegmentInput};
+    let version = i64::from(analysis::DEFINITION_VERSION);
+    let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM analysis_runs WHERE revision_id=?1 AND kind='transcript-measures' AND definition_version=?2)", params![revision_id, version], |r| r.get(0)).map_err(db_error)?;
+    if exists {
+        return Ok(());
+    }
+    let segments: Vec<(String, Option<i64>, Option<i64>)> = {
+        let mut stmt = conn.prepare("SELECT text,start_ms,end_ms FROM transcript_segments WHERE revision_id=?1 ORDER BY position").map_err(db_error)?;
+        let rows = stmt.query_map([revision_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(db_error)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(db_error)?
+    };
+    let text: String = conn.query_row("SELECT text FROM transcript_revisions WHERE id=?1", [revision_id], |r| r.get(0)).map_err(db_error)?;
+    let inputs: Vec<SegmentInput> = if segments.is_empty() {
+        vec![SegmentInput { text: &text, start_ms: None, end_ms: None }]
+    } else {
+        segments.iter().map(|(t, s, e)| SegmentInput { text: t, start_ms: s.and_then(|v| u64::try_from(v).ok()), end_ms: e.and_then(|v| u64::try_from(v).ok()) }).collect()
+    };
+    let m = analysis::measure(&inputs);
+    let run_id = format!("{revision_id}--measures-v{version}");
+    let settings = json!({"pauseThresholdMs": m.pause_threshold_ms, "fillerLexicon": "unambiguous-v1"}).to_string();
+    conn.execute("INSERT INTO analysis_runs(id,attempt_id,revision_id,kind,definition_version,settings,created_at_ms) VALUES (?1,?2,?3,'transcript-measures',?4,?5,?6)",
+        params![run_id, attempt_id, revision_id, version, settings, now_ms]).map_err(db_error)?;
+    let untimed = "No segment timings were available.";
+    let count = |n: usize| Some(n as f64);
+    let pauses_reason = m.pauses_unavailable_reason.as_deref();
+    let values: [(&str, Option<f64>, &str, Option<&str>); 6] = [
+        ("word_count", count(m.word_count), "words", None),
+        ("filler_candidates", count(m.fillers.len()), "words", None),
+        ("repeated_words", count(m.repeated_words.len()), "words", None),
+        ("speech_span_ms", m.speech_span_ms.map(|v| v as f64), "ms", Some(untimed)),
+        ("pace_wpm", m.pace_wpm, "words/min", m.pace_unavailable_reason.as_deref()),
+        ("pauses_over_threshold", pauses_reason.is_none().then(|| m.pauses.len() as f64), "pauses", pauses_reason),
+    ];
+    for (metric, value, unit, reason) in values {
+        let reason = if value.is_some() { None } else { Some(reason.unwrap_or("Not available for this transcript.")) };
+        conn.execute("INSERT INTO metric_values(run_id,metric,value,unit,source,unavailable_reason) VALUES (?1,?2,?3,?4,?5,?6)",
+            params![run_id, metric, value, unit, m.source, reason]).map_err(db_error)?;
+    }
+    Ok(())
+}
+
+/// Gives every stored revision its measures for the current definition version
+/// (after an upgrade, or when the definitions change).
+fn backfill_measures(conn: &Connection) -> Result<()> {
+    let version = i64::from(crate::analysis::DEFINITION_VERSION);
+    let missing: Vec<(String, String)> = {
+        let mut stmt = conn.prepare("SELECT r.id,r.attempt_id FROM transcript_revisions r WHERE NOT EXISTS (SELECT 1 FROM analysis_runs a WHERE a.revision_id=r.id AND a.kind='transcript-measures' AND a.definition_version=?1)").map_err(db_error)?;
+        let rows = stmt.query_map([version], |r| Ok((r.get(0)?, r.get(1)?))).map_err(db_error)?;
+        rows.collect::<rusqlite::Result<_>>().map_err(db_error)?
+    };
+    let now = i64::try_from(recording::now_ms()).map_err(|_| "Invalid date.")?;
+    for (revision, attempt) in missing {
+        record_measures(conn, &attempt, &revision, now)?;
+    }
+    Ok(())
 }
 
 /// Removes one take's audio, receipt, recovery chunks and derived caches. Links
@@ -1689,7 +1762,7 @@ mod tests {
             .unwrap();
         {
             let conn = owner.connection.lock().unwrap();
-            conn.execute_batch("DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+            conn.execute_batch("DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
         }
         drop(owner);
         let upgraded = DatabaseOwner::open(&root.0).unwrap();
@@ -1699,7 +1772,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v6-")));
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v7-")));
         assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
     }
     fn api_result(take: &SavedRecording, run: &str, words: Option<Vec<(&str, u64, u64)>>) -> crate::audio::transcription::TranscriptionResult {
@@ -1746,6 +1819,26 @@ mod tests {
         assert!(previous(&"d".repeat(64), json!({"filler_words": true})).is_some(), "same audio and settings: already transcribed");
         assert!(previous(&"d".repeat(64), json!({"filler_words": false})).is_none(), "other settings are a different request");
         assert!(previous(&"f".repeat(64), json!({"filler_words": true})).is_none(), "other audio is a different request");
+        // Measures are stored per revision and definition version (3.4).
+        let metric = |run: &str, name: &str| -> (Option<f64>, Option<String>) {
+            owner.connection.lock().unwrap().query_row("SELECT value,unavailable_reason FROM metric_values WHERE run_id=?1 AND metric=?2", params![run, name], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+        };
+        assert_eq!(metric("api-deepgram-1--measures-v1", "word_count"), (Some(5.0), None), "fillers are not counted as words");
+        assert_eq!(metric("api-deepgram-1--measures-v1", "filler_candidates"), (Some(1.0), None));
+        assert_eq!(metric("api-deepgram-1--measures-v1", "speech_span_ms"), (Some(900.0), None));
+        let (pace, why) = metric("api-deepgram-1--measures-v1", "pace_wpm");
+        assert!(pace.is_none() && why.is_some(), "pace needs 15 s of speech: a reason, never 0");
+        let correction = owner.save_transcript_correction("take", "api-deepgram-1", "So I think it works.", 6).unwrap();
+        assert_eq!(metric(&format!("{correction}--measures-v1"), "filler_candidates"), (Some(0.0), None));
+        let (span, why) = metric(&format!("{correction}--measures-v1"), "speech_span_ms");
+        assert!(span.is_none() && why.is_some(), "corrections are untimed");
+        // Missing runs (an upgrade, or new definitions) are backfilled on open.
+        owner.connection.lock().unwrap().execute_batch("DELETE FROM metric_values; DELETE FROM analysis_runs;").unwrap();
+        drop(owner);
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        let runs: i64 = owner.connection.lock().unwrap().query_row("SELECT COUNT(*) FROM analysis_runs", [], |r| r.get(0)).unwrap();
+        assert_eq!(runs, 2, "both revisions measured again");
+
         // Untimed: one segment with the reason, and a later run is a separate revision.
         owner.save_api_transcript(&api_result(&take, "api-deepgram-2", None), &json!({}), 7).unwrap();
         let view = owner.attempt_transcript("take").unwrap();
@@ -1753,7 +1846,7 @@ mod tests {
         assert!(view["revision"]["segments"][0]["startMs"].is_null());
         assert!(view["revision"]["segments"][0]["timingUnavailableReason"].as_str().unwrap().contains("no usable word timings"));
         let revisions: i64 = owner.connection.lock().unwrap().query_row("SELECT COUNT(*) FROM transcript_revisions WHERE attempt_id='take'", [], |r| r.get(0)).unwrap();
-        assert_eq!(revisions, 2);
+        assert_eq!(revisions, 3, "two API runs and the correction");
 
         // A result for different audio than the saved take is refused.
         let mut other = api_result(&take, "api-deepgram-3", None);
@@ -1764,6 +1857,8 @@ mod tests {
         owner.delete_permanently(&["take".into()]).unwrap();
         let runs: i64 = owner.connection.lock().unwrap().query_row("SELECT COUNT(*) FROM api_runs", [], |r| r.get(0)).unwrap();
         assert_eq!(runs, 0, "API runs and raw responses are purged with the take");
+        let metrics: i64 = owner.connection.lock().unwrap().query_row("SELECT (SELECT COUNT(*) FROM analysis_runs)+(SELECT COUNT(*) FROM metric_values)", [], |r| r.get(0)).unwrap();
+        assert_eq!(metrics, 0, "stored measures are purged with the take");
     }
     #[test]
     fn corrections_are_child_revisions_and_leave_the_original_untouched() {
