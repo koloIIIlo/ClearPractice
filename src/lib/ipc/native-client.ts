@@ -16,8 +16,9 @@ async function command<T>(name: string, schema: { parse(value: unknown): T }, ar
 
 /** Native history and recording; curriculum/analysis previews remain separate. */
 export function createNativeClient(): IpcClient {
+  const preview = createMockClient();
   return {
-    ...createMockClient(),
+    ...preview,
     recordingMode: "native",
     listSessions: (filter) => command("list_sessions", S.SessionSummary.array(), { filter: filter ?? null }),
     getSession: (sessionId) => command("get_session", S.SessionDetail, { sessionId }),
@@ -37,6 +38,14 @@ export function createNativeClient(): IpcClient {
     exportSession: (sessionId) => command("export_session", S.ExportSummary.nullable(), { sessionId }),
     getTranscriptionSetup: () => command("get_transcription_setup", S.TranscriptionSetup),
     chooseTranscriptionSetup: () => command("choose_transcription_setup", S.TranscriptionSetup),
+    // Sessions come from SQLite; prompts, guides and phrases are still sample curriculum (M4).
+    searchContent: async (query) => {
+      const [sessions, curriculum] = await Promise.all([
+        command("search_content", S.SearchHit.array(), { query }),
+        preview.searchContent(query),
+      ]);
+      return [...sessions, ...curriculum.filter((hit) => hit.kind !== "session")];
+    },
     getAttemptTranscript: (attemptId) => command("get_attempt_transcript", S.AttemptTranscript, { attemptId }),
     saveTranscriptCorrection: (attemptId, parentRevisionId, text) => command("save_transcript_correction", S.Id, { attemptId, parentRevisionId, text }),
     transcribeAttempt: (attemptId) => command("transcribe_attempt", S.Id, { attemptId }),

@@ -88,6 +88,8 @@ impl PracticeContext {
 pub struct DatabaseOwner {
     root: PathBuf,
     connection: Mutex<Connection>,
+    /// `total_changes()` when the temporary search index was last rebuilt.
+    search_built_at: Mutex<Option<u64>>,
 }
 impl DatabaseOwner {
     pub fn open(root: &Path) -> Result<Self> {
@@ -149,6 +151,7 @@ impl DatabaseOwner {
         let owner = Self {
             root: root.into(),
             connection: Mutex::new(connection),
+            search_built_at: Mutex::new(None),
         };
         owner.reconcile()?;
         Ok(owner)
@@ -816,6 +819,77 @@ impl DatabaseOwner {
         Ok(json!({"attemptId":attempt_id,"revision":revision,"correction":correction,"job":job.unwrap_or(Value::Null)}))
     }
 
+    /// Full-text search over titles, notes, tags, prompts, transcripts and your
+    /// corrections (plan 3.13). The FTS5 index lives in a TEMP table rebuilt only
+    /// when this connection has written since the last search; only sessions
+    /// shown in history are indexed, so Trash never appears in results.
+    pub fn search(&self, query: &str) -> Result<Vec<Value>> {
+        if query.len() > 512 {
+            return Err("Search text is too long.".into());
+        }
+        let terms: Vec<String> = query
+            .split(|c: char| !c.is_alphanumeric() && c != '\'')
+            .filter(|t| !t.is_empty())
+            .take(8)
+            .map(|t| format!("\"{}\"*", t.replace('"', "")))
+            .collect();
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| "Session storage owner is unavailable.")?;
+        let mut built = self
+            .search_built_at
+            .lock()
+            .map_err(|_| "Search is unavailable.")?;
+        if *built != Some(conn.total_changes()) {
+            let visible = "s.deleted_at_ms IS NULL AND EXISTS(SELECT 1 FROM session_steps st2 JOIN attempts a2 ON a2.step_id=st2.id WHERE st2.session_id=s.id AND a2.asset_id IS NOT NULL)";
+            conn.execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS temp.search_index USING fts5(session_id UNINDEXED, field UNINDEXED, body, tokenize='unicode61 remove_diacritics 2');
+                 DELETE FROM temp.search_index;
+                 INSERT INTO temp.search_index(session_id,field,body) SELECT s.id,'title',s.title FROM sessions s WHERE {visible};
+                 INSERT INTO temp.search_index(session_id,field,body) SELECT s.id,'note',s.notes FROM sessions s WHERE s.notes<>'' AND {visible};
+                 INSERT INTO temp.search_index(session_id,field,body) SELECT s.id,'tags',s.tags FROM sessions s WHERE s.tags<>'[]' AND {visible};
+                 INSERT INTO temp.search_index(session_id,field,body) SELECT s.id,'prompt',s.prompt_snapshot FROM sessions s WHERE s.prompt_snapshot IS NOT NULL AND {visible};
+                 INSERT INTO temp.search_index(session_id,field,body) SELECT s.id,CASE tr.source WHEN 'user' THEN 'correction' ELSE 'transcript' END,tr.text
+                   FROM transcript_revisions tr JOIN attempts a ON a.id=tr.attempt_id JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id WHERE {visible};"
+            ))
+            .map_err(db_error)?;
+            *built = Some(conn.total_changes());
+        }
+        let mut stmt = conn
+            .prepare("SELECT i.session_id,i.field,snippet(search_index,2,'','','…',12),s.title FROM temp.search_index i JOIN sessions s ON s.id=i.session_id WHERE search_index MATCH ?1 ORDER BY bm25(search_index) LIMIT 200")
+            .map_err(db_error)?;
+        let rows = stmt
+            .query_map([terms.join(" ")], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))
+            })
+            .map_err(db_error)?;
+        let mut seen = std::collections::HashSet::new();
+        let mut hits = Vec::new();
+        for row in rows {
+            let (id, field, snippet, title) = row.map_err(db_error)?;
+            if !seen.insert(id.clone()) {
+                continue; // One hit per session, its best-ranked field.
+            }
+            let excerpt = match field.as_str() {
+                "title" => None,
+                "note" => Some(format!("Your note: {snippet}")),
+                "transcript" => Some(format!("Transcript: {snippet}")),
+                "correction" => Some(format!("Your correction: {snippet}")),
+                "prompt" => Some(format!("Prompt: {snippet}")),
+                _ => Some(format!("Tags: {}", snippet.replace(['[', ']', '"'], ""))),
+            };
+            hits.push(json!({"kind":"session","id":id,"title":title,"excerpt":excerpt,"href":format!("/sessions/{id}")}));
+            if hits.len() == 20 {
+                break;
+            }
+        }
+        Ok(hits)
+    }
+
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -1433,6 +1507,38 @@ mod tests {
         owner.move_to_trash("take", 10).unwrap();
         owner.delete_permanently(&["take".into()]).unwrap();
         assert!(owner.attempt_transcript("take").unwrap()["revision"].is_null());
+    }
+    #[test]
+    fn search_finds_titles_notes_and_transcripts_follows_edits_and_skips_trash() {
+        let root = TestRoot::new();
+        saved(&root.0, "indexes");
+        saved(&root.0, "habits");
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        owner.update_session("indexes", "Explaining database indexes", "Slow on the second point", &["work".into()], false).unwrap();
+        owner.update_session("habits", "A habit to change", "", &[], false).unwrap();
+        let transcript = crate::audio::whisper::Transcript {
+            version: 1, run_id: "habits--1".into(), asset_id: "habits".into(), provider: "whisper.cpp".into(),
+            model_id: "base".into(), model_sha256: "a".repeat(64), runtime_version: "1.9.1".into(),
+            backend: crate::audio::whisper::Backend::Cpu, threads: 4, prompt: None, source_sha256: "b".repeat(64),
+            prepared_sha256: "c".repeat(64), language: "en".into(), raw_text: String::new(),
+            segments: vec![crate::audio::whisper::Segment { text: " I check my phone, uh, every morning.".into(), start_ms: Some(0), end_ms: Some(900), timing_source: "Estimated".into(), timing_unavailable_reason: None }],
+            elapsed_ms: 10, peak_ram_bytes: None, peak_ram_unavailable_reason: None, created_at_ms: 1,
+        };
+        owner.start_job("job-1", "habits", 1).unwrap();
+        owner.save_local_transcript("job-1", "habits", &transcript, 2).unwrap();
+
+        let ids = |q: &str| owner.search(q).unwrap().iter().map(|h| h["id"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+        assert_eq!(ids("index"), ["indexes"], "prefix match on the title");
+        assert_eq!(owner.search("second").unwrap()[0]["excerpt"], "Your note: Slow on the second point");
+        assert_eq!(ids("phone morn"), ["habits"], "all terms, from the transcript");
+        assert!(owner.search("phone").unwrap()[0]["excerpt"].as_str().unwrap().starts_with("Transcript:"));
+        assert!(ids("\"\" *").is_empty() && ids("").is_empty());
+        assert!(ids("NEAR(\"x\") OR").is_empty(), "query syntax is treated as text");
+
+        owner.save_transcript_correction("habits", "habits--1", "I check my tablet every morning.", 3).unwrap();
+        assert_eq!(ids("tablet"), ["habits"], "edits are indexed on the next search");
+        owner.move_to_trash("habits", 4).unwrap();
+        assert!(ids("tablet").is_empty(), "Trash is not searchable");
     }
     #[cfg(windows)]
     #[test]

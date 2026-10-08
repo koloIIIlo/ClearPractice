@@ -617,6 +617,16 @@ async fn get_attempt_transcript(
 }
 
 #[tauri::command]
+async fn search_content(
+    storage: State<'_, Arc<SessionStorage>>,
+    query: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    with_storage(&storage, move |owner| owner.search(&query))
+        .await
+        .map_err(|_| "Search failed.".to_string())?
+}
+
+#[tauri::command]
 async fn save_transcript_correction(
     storage: State<'_, Arc<SessionStorage>>,
     attempt_id: String,
@@ -900,6 +910,7 @@ pub fn run() {
             choose_transcription_setup,
             get_attempt_transcript,
             save_transcript_correction,
+            search_content,
             transcribe_attempt,
             cancel_transcription,
             close_after_recording

@@ -244,7 +244,7 @@ The API tasks below add an estimated 3–5 days. Implement the shared budget fou
 - [ ] 3.10 Evidence labels: Measured / Estimated / Your note / AI suggestion
 - [~] 3.11 Failure paths: Retry transcription, Change model, Add notes; audio is never lost. Failed, cancelled and interrupted jobs show their reason with a Transcribe button; the recording and notes are untouched. Change model = Settings setup file for now
 - [~] 3.12 Settings → Transcription: (local setup panel built: native picker for the verified setup file; runtime and model hashes verified before it is stored). Remaining: independent Local / API / Off selector; local packs/backend/Benchmark; API provider/model/key status and clearly billable test. Local is default; Off preserves playback, notes, and existing transcripts
-- [ ] 3.13 FTS5 index for transcripts, notes, prompts, phrases; wire it to the command palette
+- [~] 3.13 FTS5 index for transcripts, notes, prompts, phrases; wire it to the command palette. Native `search_content`: TEMP FTS5 index (unicode61, diacritics removed) over titles, notes, tags, prompt snapshots, transcripts and corrections of visible sessions only (never Trash), rebuilt only when `total_changes()` moved; all-terms prefix matching with query syntax neutralised; one best hit per session with a labelled excerpt. Ctrl+K in the desktop app now shows real sessions (it previously searched sample sessions). Phrases/prompts/guides join when M4 makes them real
 
 **Optional API transcription**
 - [ ] 3.14 Integrate the D-21 adapter (Deepgram or AssemblyAI, whichever wins 0.23) behind `TranscriptionProvider` and the typed IPC client; capability-check model parameters, enforce the verified upload limit, and stream the prepared file from Rust. No frontend paths, audio byte arrays, or browser-side API requests
@@ -373,6 +373,7 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ## Notes & findings
 
+- 2026-10-08: Native search (3.13): fixed a desktop bug where Ctrl+K listed sample sessions. Rust storage 15/15 incl. search (prefix, multi-term, note/transcript excerpts, edits re-indexed, Trash excluded, query syntax as text); Vitest ipc 9/9.
 - 2026-10-08: Transcript corrections (3.9 start): Rust storage 1 new test (25/25 in storage/analysis/transcribe/backup), Vitest transcript + ipc 11/11.
 - 2026-10-08: Transcript measures v1 (3.6/3.7 start). On the real public-sample transcript: 13 filler candidates (M0 reference: 14 UH/UM), pace 171.5 wpm over 54 s of timed speech, one untimed final segment (Whisper's end exceeded the recording) left out instead of hiding all measures, no ≥700 ms pauses (clips are concatenated without silence). Rust analysis 3/3 + hardware run; Vitest transcript 3/3.
 - 2026-10-08: Local transcription in the app (M3 slice). Real hardware run (`cargo test --lib transcribe -- --ignored`): the 62 s public sample imported as a saved take, transcribed by CUDA turbo with the filler prompt, saved as an SQLite revision in 33 s including two model-hash checks; fillers kept ("uh, uh, uh", "um"); permanent delete removed `cache/whisper/<take>--<ms>`. Rust transcribe/storage/backup 21/21; Vitest transcript/session/settings/ipc 21/21; production build passes; command names and argument keys cross-checked against the Rust handlers. Desktop UI not driven (no desktop-automation tool in this session).
