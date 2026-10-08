@@ -197,7 +197,7 @@ fn restore_into_an_empty_profile_matches_records_and_asset_checksums() {
     let take = source.0.join("recordings/take-a/audio.wav");
     let staged = crate::clips::stage(&source.0, &take).unwrap();
     let details = crate::clips::ClipDetails { title: "My clip", source: "My own recording", transcript: None };
-    let clip = crate::clips::commit(&source.0, &staged.staging_id, 0, 900, &details, "user").err();
+    let clip = crate::clips::commit(&source.0, &staged.staging_id, 0, 900, &details, "user", false).err();
     assert!(clip.is_some(), "a 1 s take is too short for a 3 s clip");
     let long = source.0.join("long.wav");
     let one_second = fs::read(&take).unwrap();
@@ -207,7 +207,7 @@ fn restore_into_an_empty_profile_matches_records_and_asset_checksums() {
     wav.extend_from_slice(&data);
     fs::write(&long, wav).unwrap();
     let staged = crate::clips::stage(&source.0, &long).unwrap();
-    let clip = crate::clips::commit(&source.0, &staged.staging_id, 0, 4_000, &details, "user").unwrap();
+    let clip = crate::clips::commit(&source.0, &staged.staging_id, 0, 4_000, &details, "user", false).unwrap();
     owner.insert_clip(&clip).unwrap();
     let destination = TestRoot::new();
     let folder = destination.0.join("backups");

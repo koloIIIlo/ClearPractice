@@ -186,7 +186,7 @@ impl ClipDetails<'_> {
 }
 
 /// Keeps `start_ms..end_ms` of a staged file as a new clip and removes the staging copy.
-pub fn commit(root: &Path, staging_id: &str, start_ms: u64, end_ms: u64, details: &ClipDetails, origin: &str) -> Result<Clip> {
+pub fn commit(root: &Path, staging_id: &str, start_ms: u64, end_ms: u64, details: &ClipDetails, origin: &str, keep_staging: bool) -> Result<Clip> {
     details.validate()?;
     if end_ms <= start_ms || end_ms - start_ms < MIN_CLIP_MS || end_ms - start_ms > MAX_CLIP_MS {
         return Err("Keep a section between 3 and 30 seconds long.".into());
@@ -200,13 +200,23 @@ pub fn commit(root: &Path, staging_id: &str, start_ms: u64, end_ms: u64, details
         return Err("That section is outside the file. Choose times within its length.".into());
     }
     let now = recording::now_ms();
-    let id = format!("clip-{now}");
+    // Several clips can be cut from one file within the same millisecond.
+    let mut n = 0u32;
+    let id = loop {
+        let candidate = if n == 0 { format!("clip-{now}") } else { format!("clip-{now}-{n}") };
+        if !clip_path(root, &candidate)?.parent().is_some_and(Path::exists) {
+            break candidate;
+        }
+        n += 1;
+    };
     let path = clip_path(root, &id)?;
     let clip_dir = path.parent().ok_or("Cannot store the clip.")?;
     fs::create_dir_all(clip_dir).map_err(|_| "Cannot store the clip.")?;
     contained(root, clip_dir)?;
     write_wav(&path, &samples[from..to], rate)?;
-    discard_staging(root, staging_id);
+    if !keep_staging {
+        discard_staging(root, staging_id);
+    }
     Ok(Clip {
         id,
         origin: origin.into(),
@@ -328,10 +338,10 @@ mod tests {
         assert_eq!(staged.file_name, "talk.wav");
         assert_eq!(staged.duration_ms, 40_000);
         let details = ClipDetails { title: "Opening", source: "My recording", transcript: Some(" Hello there. ") };
-        assert!(commit(&root.0, &staged.staging_id, 0, 2_000, &details, "user").is_err(), "too short");
-        assert!(commit(&root.0, &staged.staging_id, 0, 31_000, &details, "user").is_err(), "too long");
-        assert!(commit(&root.0, &staged.staging_id, 1_000, 11_000, &ClipDetails { title: " ", ..details }, "user").is_err(), "needs a title");
-        let clip = commit(&root.0, &staged.staging_id, 5_000, 17_500, &details, "user").unwrap();
+        assert!(commit(&root.0, &staged.staging_id, 0, 2_000, &details, "user", false).is_err(), "too short");
+        assert!(commit(&root.0, &staged.staging_id, 0, 31_000, &details, "user", false).is_err(), "too long");
+        assert!(commit(&root.0, &staged.staging_id, 1_000, 11_000, &ClipDetails { title: " ", ..details }, "user", false).is_err(), "needs a title");
+        let clip = commit(&root.0, &staged.staging_id, 5_000, 17_500, &details, "user", false).unwrap();
         assert_eq!(clip.duration_ms, 12_500);
         assert_eq!(clip.transcript.as_deref(), Some("Hello there."));
         let (samples, rate) = read_wav(&clip_path(&root.0, &clip.id).unwrap()).unwrap();

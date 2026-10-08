@@ -32,7 +32,7 @@ pub struct PreparedAudio {
     pub trimmed_delay_frames: usize,
 }
 
-fn expected_frames(frames: u64, rate: u32) -> u64 {
+pub(crate) fn expected_frames(frames: u64, rate: u32) -> u64 {
     (frames * u64::from(RATE) + u64::from(rate) / 2) / u64::from(rate)
 }
 
@@ -229,7 +229,7 @@ pub fn prepared_path(root: &Path, audio: &PreparedAudio) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn convert(
+pub(crate) fn convert(
     input: &mut impl Read,
     output: &mut impl Write,
     rate: u32,

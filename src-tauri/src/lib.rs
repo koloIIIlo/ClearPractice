@@ -8,6 +8,8 @@ pub mod credentials;
 pub mod mic_test;
 pub mod models;
 pub mod clips;
+pub mod clipsplit;
+pub mod linkaudio;
 pub mod prosody;
 pub mod storage;
 pub mod transcribe;
@@ -636,7 +638,7 @@ async fn save_clip(
 ) -> Result<clips::Clip, String> {
     with_storage(&storage, move |owner| {
         let details = clips::ClipDetails { title: &title, source: &source, transcript: transcript.as_deref() };
-        let clip = clips::commit(owner.root(), &staging_id, start_ms, end_ms, &details, "user")?;
+        let clip = clips::commit(owner.root(), &staging_id, start_ms, end_ms, &details, "user", false)?;
         if let Err(error) = owner.insert_clip(&clip) {
             let _ = clips::remove_files(owner.root(), &clip.id);
             return Err(error);
@@ -645,6 +647,147 @@ async fn save_clip(
     })
     .await
     .map_err(|_| "Session storage failed.".to_string())?
+}
+
+/// Stop flags for the long-running clip work (split transcription, link download).
+#[derive(Default)]
+struct ClipWork {
+    split: std::sync::Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
+    fetch: std::sync::Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>,
+}
+
+/// Transcribes a staged long recording locally and proposes clips (4.4c).
+#[tauri::command]
+async fn split_clip_source(
+    app: tauri::AppHandle,
+    storage: State<'_, Arc<SessionStorage>>,
+    transcription: State<'_, Arc<Transcription>>,
+    work: State<'_, Arc<ClipWork>>,
+    staging_id: String,
+) -> Result<Vec<clipsplit::Candidate>, String> {
+    if transcription.active.is_active() {
+        return Err("A take is being transcribed. Try again when it finishes.".into());
+    }
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    if let Ok(mut slot) = work.split.lock() {
+        *slot = Some(cancel.clone());
+    }
+    let result = with_storage(&storage, move |owner| {
+        let config = transcribe::load_config(owner)?;
+        let segments = clipsplit::transcribe_local(&config, owner.root(), &staging_id, &cancel, |percent| {
+            let _ = app.emit("clip_split_progress", percent);
+        })?;
+        let candidates = clipsplit::propose(&segments);
+        if candidates.is_empty() {
+            return Err("No clips of 8–20 seconds with whole sentences were found. You can still keep a section by hand.".into());
+        }
+        Ok(candidates)
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?;
+    if let Ok(mut slot) = work.split.lock() {
+        *slot = None;
+    }
+    result
+}
+
+#[tauri::command]
+fn cancel_clip_work(work: State<'_, Arc<ClipWork>>) {
+    for slot in [&work.split, &work.fetch] {
+        if let Some(flag) = slot.lock().ok().and_then(|s| s.clone()) {
+            flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SectionToSave {
+    start_ms: u64,
+    end_ms: u64,
+    title: String,
+    source: String,
+    transcript: Option<String>,
+}
+
+/// Saves several sections of one staged file as clips, then drops the staging copy.
+#[tauri::command]
+async fn save_clip_sections(storage: State<'_, Arc<SessionStorage>>, staging_id: String, sections: Vec<SectionToSave>) -> Result<Vec<clips::Clip>, String> {
+    if sections.is_empty() || sections.len() > clipsplit::MAX_CANDIDATES {
+        return Err("Choose between 1 and 40 clips to keep.".into());
+    }
+    with_storage(&storage, move |owner| {
+        let mut saved = Vec::new();
+        for section in &sections {
+            let details = clips::ClipDetails { title: &section.title, source: &section.source, transcript: section.transcript.as_deref() };
+            let clip = clips::commit(owner.root(), &staging_id, section.start_ms, section.end_ms, &details, "user", true)?;
+            if let Err(error) = owner.insert_clip(&clip) {
+                let _ = clips::remove_files(owner.root(), &clip.id);
+                return Err(error);
+            }
+            saved.push(clip);
+        }
+        clips::discard_staging(owner.root(), &staging_id);
+        Ok(saved)
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LinkToolStatus {
+    available: bool,
+    path: Option<String>,
+}
+
+fn link_tool(owner: &storage::database::DatabaseOwner) -> Result<LinkToolStatus, String> {
+    let path = linkaudio::find_ytdlp(owner.setting(linkaudio::SETTING_KEY)?.as_deref());
+    Ok(LinkToolStatus { available: path.is_some(), path: path.map(|p| p.to_string_lossy().into_owned()) })
+}
+
+#[tauri::command]
+async fn get_link_tool_status(storage: State<'_, Arc<SessionStorage>>) -> Result<LinkToolStatus, String> {
+    with_storage(&storage, link_tool).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+/// Lets the user point the app at their yt-dlp executable.
+#[tauri::command]
+async fn choose_link_tool(app: tauri::AppHandle, storage: State<'_, Arc<SessionStorage>>) -> Result<LinkToolStatus, String> {
+    use tauri_plugin_dialog::DialogExt;
+    with_storage(&storage, move |owner| {
+        let picked = app.dialog().file().set_title("Choose yt-dlp").add_filter("yt-dlp", &["exe"]).blocking_pick_file();
+        if let Some(path) = picked.and_then(|p| p.into_path().ok()) {
+            let name = path.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+            if !name.starts_with("yt-dlp") {
+                return Err("Choose the yt-dlp program (yt-dlp.exe).".into());
+            }
+            owner.set_setting(linkaudio::SETTING_KEY, &path.to_string_lossy())?;
+        }
+        link_tool(owner)
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
+/// Downloads the audio of a YouTube link with the user's yt-dlp and stages it (4.4d).
+#[tauri::command]
+async fn fetch_link_audio(storage: State<'_, Arc<SessionStorage>>, work: State<'_, Arc<ClipWork>>, url: String) -> Result<linkaudio::LinkAudio, String> {
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    if let Ok(mut slot) = work.fetch.lock() {
+        *slot = Some(cancel.clone());
+    }
+    let result = with_storage(&storage, move |owner| {
+        let tool = linkaudio::find_ytdlp(owner.setting(linkaudio::SETTING_KEY)?.as_deref())
+            .ok_or("yt-dlp was not found. Install it (winget install yt-dlp.yt-dlp) or choose yt-dlp.exe.")?;
+        linkaudio::fetch(owner.root(), &tool, &url, &cancel)
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?;
+    if let Ok(mut slot) = work.fetch.lock() {
+        *slot = None;
+    }
+    result
 }
 
 #[tauri::command]
@@ -1270,6 +1413,7 @@ pub fn run() {
             app.manage(Arc::new(api::coaching::PreviewOwner::default()));
             app.manage(Arc::new(api::audio::AudioPreviewOwner::default()));
             app.manage(Arc::new(InflightApi::default()));
+            app.manage(Arc::new(ClipWork::default()));
             let mic_events = app.handle().clone();
             app.manage(Arc::new(mic_test::MicTest::new(
                 &root,
@@ -1343,6 +1487,12 @@ pub fn run() {
             get_clip_staging_path,
             discard_clip_staging,
             save_clip,
+            split_clip_source,
+            cancel_clip_work,
+            save_clip_sections,
+            get_link_tool_status,
+            choose_link_tool,
+            fetch_link_audio,
             list_clips,
             get_clip_playback_path,
             delete_clip,

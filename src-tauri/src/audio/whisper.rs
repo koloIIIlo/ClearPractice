@@ -187,7 +187,7 @@ struct RawOffsets {
     to: u64,
 }
 
-fn segments(bytes: &[u8], duration_ms: u64) -> Result<(String, Vec<Segment>)> {
+pub(crate) fn segments(bytes: &[u8], duration_ms: u64) -> Result<(String, Vec<Segment>)> {
     let raw: RawOutput = serde_json::from_slice(bytes)
         .map_err(|_| "Whisper returned invalid JSON; retry transcription.")?;
     if raw.result.language != "en" || raw.transcription.len() > 20_000 {
@@ -228,7 +228,7 @@ fn segments(bytes: &[u8], duration_ms: u64) -> Result<(String, Vec<Segment>)> {
     Ok((raw.result.language, result))
 }
 
-fn progress(line: &[u8]) -> Option<u8> {
+pub(crate) fn progress(line: &[u8]) -> Option<u8> {
     let line = std::str::from_utf8(line).ok()?;
     let value = line
         .strip_prefix("whisper_print_progress_callback: progress =")?
