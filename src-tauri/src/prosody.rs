@@ -28,6 +28,8 @@ pub struct Contour {
     pub median_f0_hz: Option<f32>,
     /// 5th–95th percentile pitch range in semitones; `None` with too little voicing.
     pub range_semitones: Option<f32>,
+    /// Spread of loudness over voiced frames: 5th–95th percentile in dB (P.3).
+    pub loudness_range_db: Option<f32>,
     pub unavailable_reason: Option<String>,
 }
 
@@ -90,7 +92,7 @@ pub fn contour(samples: &[f32], sample_rate: u32) -> Contour {
     let mut f0 = Vec::new();
     let mut rms = Vec::new();
     if hop == 0 || window == 0 {
-        return Contour { algorithm: "yin-v1", source: "Estimated", hop_ms: HOP_MS, sample_rate, f0_hz: f0, rms_db: rms, median_f0_hz: None, range_semitones: None, unavailable_reason: Some("Invalid sample rate.".into()) };
+        return Contour { algorithm: "yin-v1", source: "Estimated", hop_ms: HOP_MS, sample_rate, f0_hz: f0, rms_db: rms, median_f0_hz: None, range_semitones: None, loudness_range_db: None, unavailable_reason: Some("Invalid sample rate.".into()) };
     }
     let mut start = 0usize;
     while start < samples.len() {
@@ -108,6 +110,9 @@ pub fn contour(samples: &[f32], sample_rate: u32) -> Contour {
     let enough = voiced.len() >= 50; // at least half a second of voicing
     let median = enough.then(|| percentile(&voiced, 0.5));
     let range = enough.then(|| 12.0 * (percentile(&voiced, 0.95) / percentile(&voiced, 0.05)).log2());
+    let mut loud: Vec<f32> = f0.iter().zip(&rms).filter_map(|(f, r)| f.and(*r)).collect();
+    loud.sort_by(|a, b| a.total_cmp(b));
+    let loudness = enough.then(|| percentile(&loud, 0.95) - percentile(&loud, 0.05));
     Contour {
         algorithm: "yin-v1",
         source: "Estimated",
@@ -117,6 +122,7 @@ pub fn contour(samples: &[f32], sample_rate: u32) -> Contour {
         rms_db: rms,
         median_f0_hz: median,
         range_semitones: range,
+        loudness_range_db: loudness,
         unavailable_reason: (!enough).then(|| "Too little voiced speech for a pitch range.".to_string()),
     }
 }
@@ -130,7 +136,7 @@ pub fn for_take(root: &std::path::Path, asset_id: &str) -> Result<Contour, Strin
     let dir = root.join("cache").join("prosody");
     std::fs::create_dir_all(&dir).map_err(|_| "Cannot create the intonation cache.")?;
     prepare::contained(root, &dir)?;
-    let cached = dir.join(format!("{asset_id}--{}-yin-v1.json", &audio.sha256[..16]));
+    let cached = dir.join(format!("{asset_id}--{}-yin-v1-l1.json", &audio.sha256[..16]));
     if let Ok(bytes) = std::fs::read(&cached) {
         if let Ok(contour) = serde_json::from_slice::<CachedContour>(&bytes) {
             return Ok(contour.into());
@@ -162,13 +168,14 @@ struct CachedContour {
     rms_db: Vec<Option<f32>>,
     median_f0_hz: Option<f32>,
     range_semitones: Option<f32>,
+    loudness_range_db: Option<f32>,
     unavailable_reason: Option<String>,
 }
 
 impl From<CachedContour> for Contour {
     fn from(c: CachedContour) -> Self {
         Contour { algorithm: "yin-v1", source: "Estimated", hop_ms: c.hop_ms, sample_rate: c.sample_rate, f0_hz: c.f0_hz, rms_db: c.rms_db,
-            median_f0_hz: c.median_f0_hz, range_semitones: c.range_semitones, unavailable_reason: c.unavailable_reason }
+            median_f0_hz: c.median_f0_hz, range_semitones: c.range_semitones, loudness_range_db: c.loudness_range_db, unavailable_reason: c.unavailable_reason }
     }
 }
 
@@ -205,7 +212,20 @@ mod tests {
                 assert!(error < 0.5, "{target} Hz tracked as {f} Hz ({error:.2} semitones off)");
             }
             assert!(c.range_semitones.unwrap() < 0.5, "steady tone has almost no range");
+            assert!(c.loudness_range_db.unwrap() < 1.0, "steady tone has steady loudness");
         }
+    }
+
+    #[test]
+    fn halving_the_amplitude_shows_about_six_db_of_loudness_range() {
+        let mut samples = voice(|_| 150.0, 1.0);
+        let half = samples.len() / 2;
+        for s in &mut samples[half..] {
+            *s *= 0.5;
+        }
+        let c = contour(&samples, RATE);
+        let range = c.loudness_range_db.unwrap();
+        assert!((5.0..7.0).contains(&range), "{range} dB");
     }
 
     #[test]
@@ -255,7 +275,7 @@ mod tests {
         let c = contour(&noise, RATE);
         let voiced = c.f0_hz.iter().flatten().count();
         assert!(voiced < 10, "white noise should be mostly unvoiced, got {voiced}");
-        assert!(c.range_semitones.is_none() && c.unavailable_reason.is_some());
+        assert!(c.range_semitones.is_none() && c.loudness_range_db.is_none() && c.unavailable_reason.is_some());
         assert!(contour(&voice(|_| 150.0, 0.2), RATE).unavailable_reason.is_some());
     }
 }

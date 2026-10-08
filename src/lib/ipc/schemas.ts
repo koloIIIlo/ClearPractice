@@ -222,6 +222,7 @@ export const IntonationContour = z.object({
   rmsDb: z.array(z.number().nullable()),
   medianF0Hz: z.number().positive().nullable(),
   rangeSemitones: z.number().nonnegative().nullable(),
+  loudnessRangeDb: z.number().nonnegative().nullable().default(null),
   unavailableReason: z.string().nullable(),
 });
 export type IntonationContour = z.infer<typeof IntonationContour>;
