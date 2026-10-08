@@ -205,11 +205,11 @@ These API transcription items add an estimated 1–2 days to feasibility if cred
 - [x] 2.6 Trusted native IDs and generated relative asset paths; recording, chunk, database and snapshot access checks links/junctions/containment. Traversal tests pass. Adversarial checks done 2026-10-08: a real NTFS junction planted in `recordings/<id>` is refused by backup (no partial file) and by permanent delete (left pending, outside target untouched); restore rejects link entries, traversal and unlisted paths in archives (2.19 tests)
 
 **Recording in the app**
-- [ ] 2.7 `start_recording` / `stop_recording` with idempotency keys; a second Stop creates no duplicate. The native behaviour is already proven by 0.7 and 2.4; what remains here is the whole-app check from the Studio (double-click Stop, Ctrl+Enter twice)
-- [ ] 2.8 Capture state machine: Preparing → Recording → Finalizing → Saved / Interrupted
-- [ ] 2.9 Device disconnect → safe stop and preserved audio; full-disk simulation → no false "Saved"
-- [ ] 2.10 Close-app guard during recording (Stop and save / Continue recording)
-- [ ] 2.11 Practice studio UI: PromptOutline, RecorderTransport, InputLevelMeter, AttemptList, optional prep countdown
+- [x] 2.7 `start_recording` / `stop_recording` with idempotency keys; a second Stop creates no duplicate. Native: idempotency keys and `live_capture_saves_and_repeated_stop_returns_same_asset` (re-run 2026-10-08). UI: `recorder.test` dedupes rapid Start/Stop into one capture and one saved asset; Ctrl+Enter shares the same guarded action
+- [x] 2.8 Capture state machine: Preparing → Recording → Finalizing → Saved / Interrupted, implemented natively (`RecordingStatus.phase`) and in `useRecorder`; tests cover saved, interrupted, cancelled countdown and disk-error paths, and the timer/levels under StrictMode
+- [~] 2.9 Device disconnect → safe stop and preserved audio; full-disk simulation → no false "Saved". Covered: a failed save never reports Saved (UI test), missing/corrupt chunks never finalize, failed finalization keeps chunks, stream faults and 3 s without audio stop capture with chunks kept. Remaining: physically unplug a USB microphone mid-take in the desktop app
+- [~] 2.10 Close-app guard during recording (Stop and save / Continue recording). Built: the window close is prevented natively while capturing and the Studio dialog offers both choices; in-app navigation is blocked too. Remaining: desktop check
+- [x] 2.11 Practice studio UI: PromptOutline, RecorderTransport, InputLevelMeter, AttemptList, optional prep countdown. Outline fields, record/stop with Ctrl+Enter, live waveform meter, takes list with playback, 3-second countdown; exercised in the browser preview and keyboard pass on 2026-10-08
 - [~] 2.12 Microphone picker + 5-second test with playback (onboarding step 2). Settings → Audio: Test microphone records 5 s from the selected device through the verified capture path with its own root (`cache/mic-test`, wiped at start and before each test, never in history/SQLite/backups), live waveform, playback, and quiet-input advice (peak below about −32 dBFS). Mutually exclusive with real recording both ways. Live microphone hardware test passes; onboarding step itself is M4
 
 **Playback & history**
