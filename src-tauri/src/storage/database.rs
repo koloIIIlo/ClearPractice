@@ -1848,6 +1848,16 @@ mod tests {
         let revisions: i64 = owner.connection.lock().unwrap().query_row("SELECT COUNT(*) FROM transcript_revisions WHERE attempt_id='take'", [], |r| r.get(0)).unwrap();
         assert_eq!(revisions, 3, "two API runs and the correction");
 
+        // 3.19: filler review works on API text with and without timings, and
+        // pauses still come from the take's own audio, not from the provider.
+        owner.set_filler_decision("api-deepgram-1", 0, "uh", Some("confirmed"), 9).unwrap();
+        owner.set_filler_decision("api-deepgram-2", 0, "uh", Some("dismissed"), 9).unwrap();
+        let view = owner.attempt_transcript_with_voice("take").unwrap();
+        let measures = &view["revision"]["measures"];
+        assert_eq!(measures["fillers"][0]["decision"], "dismissed", "untimed API revision keeps its own decisions");
+        assert!(measures["paceWpm"].is_null() && measures["paceUnavailableReason"].is_string(), "no timings: pace withheld with a reason");
+        assert_eq!(measures["voice"]["method"], "peak-energy-v1", "pauses measured from the local audio");
+
         // A result for different audio than the saved take is refused.
         let mut other = api_result(&take, "api-deepgram-3", None);
         other.source_sha256 = "e".repeat(64);
