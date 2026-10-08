@@ -40,7 +40,7 @@ export function Transport({ playback, segments }: { playback: Playback; segments
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {[0.75, 1, 1.25].map((r) => (
+              {[0.75, 1, 1.25, 1.5, 1.75, 2].map((r) => (
                 <SelectItem key={r} value={String(r)}>
                   {r}×
                 </SelectItem>

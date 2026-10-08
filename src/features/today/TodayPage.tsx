@@ -26,7 +26,10 @@ export function TodayPage() {
       <QueryView query={plan} loading={<LoadingBlock rows={4} label="Loading today's plan" />}>
         {(p) => <TodayContent plan={p} length={length} onLengthChange={setLength} />}
       </QueryView>
-      <RecordingLibrary />
+      {/* Same column and spacing as the plan above, so it reads as the next section, not a wider separate box. */}
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <RecordingLibrary />
+      </div>
     </Page>
   );
 }

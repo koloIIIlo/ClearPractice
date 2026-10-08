@@ -119,8 +119,9 @@ async fn get_saved_recording(
 fn preview_coaching_request(
     owner: State<'_, Arc<api::coaching::PreviewOwner>>,
     selected_text: String,
+    model: Option<api::coaching::CoachingModel>,
 ) -> Result<api::coaching::Preview, String> {
-    owner.preview(selected_text)
+    owner.preview(selected_text, model.unwrap_or_default())
 }
 
 #[tauri::command]

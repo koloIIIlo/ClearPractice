@@ -36,3 +36,24 @@ it("requires a separate Send action and invalidates the preview when its text ch
   expect(screen.queryByRole("button", {name: /Send sample text/})).not.toBeInTheDocument();
   expect(client.requestCoaching).toHaveBeenCalledOnce(); // no automatic retry
 });
+
+it("previews with the chosen model: Luna by default, or 6.1 Sol / Astra", async () => {
+  const preview = vi.fn(async (selectedText: string, model?: string): Promise<CoachingPreview> => ({
+    version: 1, requestId: "p", payloadSha256: "a".repeat(64), recipient: "https://api.openai.com/v1/responses",
+    model: model ?? "gpt-6-luna", selectedText, prompt: "p", focus: "f", instructions: "i", maximumOutputTokens: 4096,
+    estimatedMaximumCostMicroUsd: 90_000, priceDate: "2026-10-08", priceSource: "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+    inputUsdPerMillionTokens: "2", outputUsdPerMillionTokens: "10", costExplanation: "c", expiresAtMs: Date.now() + 300000,
+  }));
+  const client = { ...createMockClient(), recordingMode: "native" as const,
+    getApiKeyStatus: async () => ({provider: "OpenAI" as const, present: true}),
+    previewCoachingRequest: preview, cancelCoachingPreview: vi.fn(async () => {}) };
+  const user = userEvent.setup();
+  render(<QueryClientProvider client={new QueryClient()}><IpcContext.Provider value={client}><CoachingSpike /></IpcContext.Provider></QueryClientProvider>);
+  await user.click(screen.getByRole("button", {name: "Preview feedback test"}));
+  expect(preview).toHaveBeenLastCalledWith(expect.any(String), "gpt-6-luna");
+  await user.click(screen.getByRole("combobox", {name: "Model"}));
+  await user.click(await screen.findByRole("option", {name: /GPT-6\.1 Sol/}));
+  await user.click(screen.getByRole("button", {name: "Preview feedback test"}));
+  expect(preview).toHaveBeenLastCalledWith(expect.any(String), "gpt-6.1-sol");
+  expect(await screen.findByText(/\$2\/million input tokens, \$10\/million output tokens/)).toBeInTheDocument();
+});

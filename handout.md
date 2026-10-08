@@ -69,7 +69,7 @@ E (environment) → **M0 Feasibility** (audio, Whisper, text API spike; optional
 | Interface locale | English; dates formatted as `en-GB` regardless of the Windows locale (`UI_LOCALE` in `src/lib/format.ts`) |
 | Models beyond plain transcription | Discussed (see §7). The user asked to add the **first two** ideas to the plan; done |
 | Mood/emotion detection | **Not built** (D-18): unreliable for second-language speech; self-rated ease + energy measures instead |
-| Hosted coaching | OpenAI GPT-6 Luna initially (one approved sample); configurable in M5; USD 5/month app stop limit, USD 4 warning default |
+| Hosted coaching | OpenAI GPT-6 Luna by default (one approved sample); GPT-6.1 Sol and GPT-6 Astra can be chosen in the feedback test, each previewed with its own price; full model controls in M5; USD 5/month app stop limit, USD 4 warning default |
 | API transcription | User requested the option. OpenAI proposed as the first adapter; local remains default; separate audio preview and approval per saved take |
 | Shared API budget | Working assumption D-22: extend the existing USD 5 stop / USD 4 warning to **combined transcription + coaching**, with separate subtotals. No extra allowance; combined allocation was not previously confirmed |
 | Practice and interface | English initially; German may follow; English interface confirmed |

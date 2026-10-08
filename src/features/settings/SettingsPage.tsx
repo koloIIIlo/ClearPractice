@@ -273,8 +273,8 @@ function CoachingSettings() {
               </Select>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="api-model">Model ID</Label>
-              <Input id="api-model" className="h-10" disabled placeholder="gpt-6-luna · development candidate" />
+              <Label htmlFor="api-model">Model</Label>
+              <Input id="api-model" className="h-10" disabled placeholder="Chosen per request below: GPT-6 Luna, 6.1 Sol or Astra" />
             </div>
           </div>
           <ApiCredentialSettings />

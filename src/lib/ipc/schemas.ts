@@ -615,6 +615,10 @@ export const BudgetSummary = z.object({
 }).strict();
 export type BudgetSummary = z.infer<typeof BudgetSummary>;
 
+/** OpenAI models offered for coaching (IDs and prices checked 2026-10-08). */
+export const CoachingModel = z.enum(["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"]);
+export type CoachingModel = z.infer<typeof CoachingModel>;
+
 export const CoachingPreview = z.object({
   version: z.literal(1), requestId: Id, payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
   recipient: z.literal("https://api.openai.com/v1/responses"), model: z.string().min(1),

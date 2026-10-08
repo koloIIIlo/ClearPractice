@@ -18,14 +18,22 @@ function NavEntry({ item, active }: { item: NavItem; active: boolean }) {
   const { isMobile, setOpenMobile } = useSidebar();
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton asChild isActive={active} tooltip={item.label} size="lg" className="h-10 text-body">
+      <SidebarMenuButton
+        asChild
+        isActive={active}
+        tooltip={item.label}
+        size="lg"
+        className="h-10 text-body group-data-[collapsible=icon]:justify-center"
+      >
         <Link
           to={item.to}
           aria-current={active ? "page" : undefined}
+          aria-label={item.label}
           onClick={() => isMobile && setOpenMobile(false)}
         >
-          <item.icon aria-hidden className="size-[18px]" />
-          <span>{item.label}</span>
+          <item.icon aria-hidden className="size-[18px] shrink-0" />
+          {/* Icon-only rail: the label is hidden (the tooltip and aria-label keep the name). */}
+          <span className="truncate group-data-[collapsible=icon]:hidden">{item.label}</span>
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>

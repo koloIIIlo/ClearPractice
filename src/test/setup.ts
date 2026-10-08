@@ -30,3 +30,7 @@ class ResizeObserverStub {
 globalThis.ResizeObserver ??= ResizeObserverStub as unknown as typeof ResizeObserver;
 Element.prototype.scrollIntoView ??= () => {};
 window.scrollTo = () => {};
+// Radix Select opens on pointer events that jsdom does not implement.
+Element.prototype.hasPointerCapture ??= () => false;
+Element.prototype.setPointerCapture ??= () => {};
+Element.prototype.releasePointerCapture ??= () => {};

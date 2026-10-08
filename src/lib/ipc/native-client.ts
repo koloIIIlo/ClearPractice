@@ -101,7 +101,7 @@ export function createNativeClient(): IpcClient {
     getAttemptReview: async () => { throw new IpcError("analysis_pending", "Transcription and analysis are not connected to saved sessions yet."); },
     getApiKeyStatus: () => command("get_api_key_status", S.CredentialStatus),
     getApiUsageSummary: () => command("get_api_usage_summary", S.BudgetSummary),
-    previewCoachingRequest: (selectedText) => command("preview_coaching_request", S.CoachingPreview, { selectedText }),
+    previewCoachingRequest: (selectedText, model) => command("preview_coaching_request", S.CoachingPreview, { selectedText, model: model ?? null }),
     cancelCoachingPreview: async (requestId) => { await invoke("cancel_coaching_preview", { requestId }); },
     requestCoaching: (requestId, payloadSha256) => command("request_coaching", S.FeedbackResult, { requestId, payloadSha256 }),
     storeApiKey: (key) => command("store_api_key", S.CredentialStatus, { key }),

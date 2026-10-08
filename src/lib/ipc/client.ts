@@ -44,6 +44,7 @@ import type {
   RecordingStatus,
   CredentialStatus,
   BudgetSummary,
+  CoachingModel,
   CoachingPreview,
   FeedbackResult,
 } from "./schemas";
@@ -153,7 +154,7 @@ export interface IpcClient {
   storeApiKey(key: string): Promise<CredentialStatus>;
   removeApiKey(): Promise<CredentialStatus>;
   getApiUsageSummary(): Promise<BudgetSummary>;
-  previewCoachingRequest(selectedText: string): Promise<CoachingPreview>;
+  previewCoachingRequest(selectedText: string, model?: CoachingModel): Promise<CoachingPreview>;
   cancelCoachingPreview(requestId: string): Promise<void>;
   requestCoaching(requestId: string, payloadSha256: string): Promise<FeedbackResult>;
 }

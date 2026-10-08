@@ -2,10 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useIpc } from "@/lib/ipc";
-import type { CoachingPreview, FeedbackResult } from "@/lib/ipc/schemas";
+import type { CoachingModel, CoachingPreview, FeedbackResult } from "@/lib/ipc/schemas";
 import { UI_LOCALE } from "@/lib/format";
+
+/** Official IDs and standard text prices per million tokens (input / output), checked 2026-10-08. */
+export const COACHING_MODELS: { id: CoachingModel; label: string; note: string }[] = [
+  { id: "gpt-6-luna", label: "GPT-6 Luna", note: "most efficient · $0.10 / $0.50 per M tokens" },
+  { id: "gpt-6.1-sol", label: "GPT-6.1 Sol", note: "near-flagship · $2 / $10 per M tokens" },
+  { id: "gpt-6-astra", label: "GPT-6 Astra", note: "flagship · $10 / $50 per M tokens" },
+];
 
 const money = (micro: number) => new Intl.NumberFormat(UI_LOCALE, { style: "currency", currency: "USD", maximumFractionDigits: 6 }).format(micro / 1_000_000);
 
@@ -15,6 +23,7 @@ export function CoachingSpike() {
   const native = ipc.recordingMode === "native";
   const key = useQuery({queryKey: ["api-key-status"], queryFn: () => ipc.getApiKeyStatus(), enabled: native, retry: false});
   const [text, setText] = useState("I want to explain how a database index works. It makes searching more fast, but updates can take longer. I want my explanation to be more clear.");
+  const [model, setModel] = useState<CoachingModel>("gpt-6-luna");
   const [preview, setPreview] = useState<CoachingPreview | null>(null);
   const previewRef = useRef<CoachingPreview | null>(null);
   const [feedback, setFeedback] = useState<FeedbackResult | null>(null);
@@ -29,7 +38,7 @@ export function CoachingSpike() {
   async function prepare() {
     setBusy(true); setError(null); setFeedback(null); discard();
     try {
-      const value = await ipc.previewCoachingRequest(text);
+      const value = await ipc.previewCoachingRequest(text, model);
       previewRef.current = value; setPreview(value);
     } catch { setError("Could not prepare the preview. Check the sample text and desktop connection."); }
     finally { setBusy(false); }
@@ -45,7 +54,16 @@ export function CoachingSpike() {
   return (
     <div className="space-y-3 rounded-lg border p-4">
       <h3 className="font-medium">Sample-text feedback test</h3>
-      <p className="text-meta text-muted-foreground">Development candidate: GPT-6 Luna. Review its correction quality before selecting a default. This test sends the text below to OpenAI when you approve Send.</p>
+      <p className="text-meta text-muted-foreground">Compare the models' correction quality before choosing a default. This test sends the text below to OpenAI when you approve Send; larger models cost more per request.</p>
+      <div className="space-y-1">
+        <Label htmlFor="coaching-model">Model</Label>
+        <Select value={model} onValueChange={(v) => { discard(); setModel(v as CoachingModel); }} disabled={!native || busy}>
+          <SelectTrigger id="coaching-model" className="h-10 w-full max-w-md"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {COACHING_MODELS.map((m) => <SelectItem key={m.id} value={m.id}>{m.label} · {m.note}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
       <Label htmlFor="coaching-sample">Text to review</Label>
       <Textarea id="coaching-sample" value={text} disabled={!native || busy} onChange={(event) => { discard(); setText(event.target.value); }} rows={5} />
       <Button variant="outline" disabled={!native || busy || !text.trim()} onClick={() => void prepare()}>Preview feedback test</Button>

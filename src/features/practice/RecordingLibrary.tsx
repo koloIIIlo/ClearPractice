@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,10 +19,10 @@ import type { SavedRecording } from "@/lib/ipc/schemas";
 import { WaveformPlayer } from "@/features/review/WaveformPlayer";
 import type { PlayerLink } from "@/features/review/player-link";
 
+/** A saved take's player. Peaks are a small cached file and the audio streams on Play, so it opens directly. */
 export function SavedAudio({ recording, link }: { recording: SavedRecording; link?: PlayerLink }) {
   const ipc = useIpc();
-  const [opened, setOpened] = useState(false);
-  const enabled = opened && ipc.recordingMode === "native";
+  const enabled = ipc.recordingMode === "native";
   const playback = useQuery({
     queryKey: ["recording-playback", recording.assetId],
     queryFn: () => ipc.getRecordingPlaybackUrl(recording.assetId),
@@ -40,8 +40,7 @@ export function SavedAudio({ recording, link }: { recording: SavedRecording; lin
   const error = playback.error ?? waveform.error;
   return (
     <div className="space-y-2">
-      {!opened && <Button variant="outline" onClick={() => setOpened(true)}>Listen to recording</Button>}
-      {opened && !error && (playback.isPending || waveform.isPending) && (
+      {!error && (playback.isPending || waveform.isPending) && (
         <p role="status" className="text-meta text-muted-foreground">Opening recording…</p>
       )}
       {error && <p role="alert" className="text-meta text-destructive">{error.message}</p>}
