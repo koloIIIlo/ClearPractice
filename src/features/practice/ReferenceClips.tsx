@@ -178,7 +178,7 @@ export function ReferenceClips({ locked, native, onSelect }: { locked: boolean; 
   return (
     <div className="space-y-3">
       {list.length === 0 && !importing && (
-        <p className="text-meta text-muted-foreground">No clips yet. Import a short clip from a file you have the right to use; bundled VOA Learning English clips are being added.</p>
+        <p className="text-meta text-muted-foreground">No clips yet. Import a short clip from a file you have the right to use.</p>
       )}
       {list.length > 0 && current && (
         <>

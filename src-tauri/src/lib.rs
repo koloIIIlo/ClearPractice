@@ -1249,6 +1249,18 @@ pub fn run() {
             app.manage(Arc::new(SessionStorage(std::sync::RwLock::new(
                 rollback.and_then(|_| storage::database::DatabaseOwner::open(&root)),
             ))));
+            // Bundled reference clips (4.4) are installed once, in the background.
+            if let Ok(resources) = app.path().resource_dir() {
+                let storage = app.state::<Arc<SessionStorage>>().inner().clone();
+                std::thread::spawn(move || {
+                    let pack = resources.join("resources").join("clips");
+                    if pack.join("manifest.json").is_file() {
+                        let _ = storage.with(|owner| {
+                            clips::install_bundled(owner.root(), &pack, |id| owner.has_clip(id), |clip| owner.insert_clip(clip)).map(|_| ())
+                        });
+                    }
+                });
+            }
             // Damaged/unavailable accounting disables API work, while capture
             // and offline practice still start normally.
             app.manage(Arc::new(ApiAccounting(

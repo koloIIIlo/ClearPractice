@@ -5,7 +5,7 @@
 //! Nothing is uploaded; the user is responsible for the right to keep a clip.
 use crate::audio::prepare::contained;
 use crate::storage::recording::{self, hash_file, wav_header};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
     io::{Read, Write},
@@ -219,6 +219,73 @@ pub fn commit(root: &Path, staging_id: &str, start_ms: u64, end_ms: u64, details
     })
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BundledManifest {
+    clips: Vec<BundledEntry>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BundledEntry {
+    id: String,
+    file: String,
+    sha256: String,
+    title: String,
+    source: String,
+    transcript: Option<String>,
+}
+
+/// Installs the bundled clips (4.4) listed in `dir/manifest.json` that are not
+/// installed yet. Each source file must match its manifest checksum; it is
+/// decoded once into the same mono WAV form as imported clips. Returns how many
+/// were installed. A bad entry is skipped and reported, never half-installed.
+pub fn install_bundled(
+    root: &Path,
+    dir: &Path,
+    installed: impl Fn(&str) -> bool,
+    mut insert: impl FnMut(&Clip) -> Result<()>,
+) -> Result<(usize, Vec<String>)> {
+    let manifest: BundledManifest = serde_json::from_slice(&fs::read(dir.join("manifest.json")).map_err(|_| "The bundled clip list is missing.")?)
+        .map_err(|_| "The bundled clip list is damaged.")?;
+    let (mut count, mut problems) = (0, Vec::new());
+    for entry in manifest.clips {
+        if recording::validate_id(&entry.id).is_err() || entry.file.contains(['/', '\\']) || installed(&entry.id) {
+            continue;
+        }
+        let result = (|| {
+            let file = dir.join(&entry.file);
+            if format!("{:x}", <sha2::Sha256 as sha2::Digest>::digest(fs::read(&file).map_err(|_| "missing file")?)) != entry.sha256 {
+                return Err("checksum mismatch".to_string());
+            }
+            let (samples, rate) = decode_mono(&file)?;
+            let path = clip_path(root, &entry.id)?;
+            let clip_dir = path.parent().ok_or("bad path")?;
+            fs::create_dir_all(clip_dir).map_err(|_| "Cannot store the clip.")?;
+            contained(root, clip_dir)?;
+            write_wav(&path, &samples, rate)?;
+            let clip = Clip {
+                id: entry.id.clone(),
+                origin: "bundled".into(),
+                title: entry.title.clone(),
+                source: entry.source.clone(),
+                transcript: entry.transcript.clone(),
+                duration_ms: samples.len() as u64 * 1000 / u64::from(rate),
+                sha256: hash_file(&path)?,
+                created_at_ms: recording::now_ms(),
+            };
+            insert(&clip).inspect_err(|_| {
+                let _ = remove_files(root, &entry.id);
+            })
+        })();
+        match result {
+            Ok(()) => count += 1,
+            Err(error) => problems.push(format!("{}: {error}", entry.id)),
+        }
+    }
+    Ok((count, problems))
+}
+
 /// Removes a clip's files (after its record is deleted).
 pub fn remove_files(root: &Path, id: &str) -> Result<()> {
     let path = clip_path(root, id)?;
@@ -272,6 +339,45 @@ mod tests {
         assert!(!staging_dir(&root.0, &staged.staging_id).unwrap().exists(), "staging removed");
         remove_files(&root.0, &clip.id).unwrap();
         assert!(!clip_path(&root.0, &clip.id).unwrap().exists());
+    }
+
+    #[test]
+    fn installs_bundled_clips_once_and_skips_files_that_fail_their_checksum() {
+        let root = TestRoot::new();
+        let pack = root.0.join("pack");
+        fs::create_dir(&pack).unwrap();
+        tone_wav(&pack.join("good.wav"), 5, 22_050, 1);
+        tone_wav(&pack.join("bad.wav"), 5, 22_050, 1);
+        let sha = |p: &Path| format!("{:x}", <sha2::Sha256 as sha2::Digest>::digest(fs::read(p).unwrap()));
+        let manifest = serde_json::json!({"version": 1, "clips": [
+            {"id": "voa-good", "file": "good.wav", "sha256": sha(&pack.join("good.wav")), "title": "Good", "source": "VOA", "transcript": "Hello."},
+            {"id": "voa-bad", "file": "bad.wav", "sha256": "0".repeat(64), "title": "Bad", "source": "VOA", "transcript": null},
+            {"id": "voa-escape", "file": "../x.wav", "sha256": "0".repeat(64), "title": "Escape", "source": "VOA", "transcript": null}
+        ]});
+        fs::write(pack.join("manifest.json"), manifest.to_string()).unwrap();
+        let installed = std::cell::RefCell::new(Vec::<Clip>::new());
+        let (count, problems) = install_bundled(&root.0, &pack, |id| installed.borrow().iter().any(|c| c.id == id), |c| { installed.borrow_mut().push(c.clone()); Ok(()) }).unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(problems, ["voa-bad: checksum mismatch"]);
+        let clip = installed.borrow()[0].clone();
+        assert_eq!((clip.origin.as_str(), clip.duration_ms, clip.transcript.as_deref()), ("bundled", 5_000, Some("Hello.")));
+        assert!(clip_path(&root.0, "voa-good").unwrap().is_file());
+        assert!(!clip_path(&root.0, "voa-bad").unwrap().exists());
+        // A second start installs nothing new.
+        let (again, _) = install_bundled(&root.0, &pack, |id| installed.borrow().iter().any(|c| c.id == id), |_| Ok(())).unwrap();
+        assert_eq!(again, 0);
+    }
+
+    /// The real bundled pack decodes and matches its manifest.
+    #[test]
+    fn the_shipped_voa_pack_installs_completely() {
+        let root = TestRoot::new();
+        let pack = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/clips");
+        let mut clips = Vec::new();
+        let (count, problems) = install_bundled(&root.0, &pack, |_| false, |c| { clips.push(c.clone()); Ok(()) }).unwrap();
+        assert!(problems.is_empty(), "{problems:?}");
+        assert_eq!(count, 10);
+        assert!(clips.iter().all(|c| (10_000..=20_000).contains(&c.duration_ms) && c.source.contains("learningenglish.voanews.com")), "{clips:?}");
     }
 
     #[test]

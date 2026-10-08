@@ -1,0 +1,106 @@
+{
+ "version": 1,
+ "licence": "VOA Learning English texts and MP3s are in the public domain; reuse requires credit to learningenglish.voanews.com (https://learningenglish.voanews.com/p/6861.html, checked 2026-10-08).",
+ "clips": [
+  {
+   "id": "voa-grass",
+   "file": "voa-grass.mp3",
+   "sha256": "ea3029905b80de2640012255cf61b49673aa380e70d86672bf287bfd89d5a88e",
+   "title": "'Watching the Grass Grow' Is Not Fun (VOA)",
+   "feature": "Emphasis",
+   "transcript": "Imagine you are sitting in a grassy field. And you have only one job, to watch the grass grow. That does not sound very interesting. In fact, it sounds really boring.",
+   "approxDurationMs": 17600,
+   "source": "VOA Learning English, Words and Their Stories: “'Watching the Grass Grow' Is Not Fun”, written by Anna Matteo. learningenglish.voanews.com — https://learningenglish.voanews.com/a/watching-the-grass-grow-is-not-fun/8003108.html"
+  },
+  {
+   "id": "voa-green",
+   "file": "voa-green.mp3",
+   "sha256": "917492635ee298548a7394bb3918402d1fcd19286034aaa142f06c26d73ced7d",
+   "title": "Green Means Spring and Other Things (VOA)",
+   "feature": "Phrase rhythm",
+   "transcript": "Green is an important color in nature. It is the color of grass and the leaves on trees. It is also the color of most growing plants.",
+   "approxDurationMs": 15300,
+   "source": "VOA Learning English, Words and Their Stories: “Green Means Spring and Other Things”, written by Marilyn Christiano (narrated by Warren Scheer and Anna Matteo). learningenglish.voanews.com — https://learningenglish.voanews.com/a/words-and-their-stories-green-idioim-expressions-garden-jealousy/2688277.html"
+  },
+  {
+   "id": "voa-dishup",
+   "file": "voa-dishup.mp3",
+   "sha256": "179729ad248e17c56b31dde927712aa04111fa9598b217c6ca1668e05e9c9b4b",
+   "title": "How to 'Dish Up' Something Good (VOA)",
+   "feature": "Clear endings",
+   "transcript": "Do you have a signature dish? Our signature is how we sign our names. So, a signature dish is a dish we are known for making well. In a way, it identifies us.",
+   "approxDurationMs": 16500,
+   "source": "VOA Learning English, Words and Their Stories: “How to 'Dish Up' Something Good”, written by Anna Matteo. learningenglish.voanews.com — https://learningenglish.voanews.com/a/how-to-dish-up-something-good/7980848.html"
+  },
+  {
+   "id": "voa-dialedin",
+   "file": "voa-dialedin.mp3",
+   "sha256": "ab511041d0bc71a9d3c75b09e8dc93a61bceb0751cac7708db6cde52335e7da3",
+   "title": "The Importance of Being 'Dialed In' (VOA)",
+   "feature": "Phrase rhythm",
+   "transcript": "First, let's talk about dials. These controls are used for changing settings on a piece of equipment, like a radio or old television.",
+   "approxDurationMs": 11900,
+   "source": "VOA Learning English, Words and Their Stories: “The Importance of Being 'Dialed In'”, written by Anna Matteo. learningenglish.voanews.com — https://learningenglish.voanews.com/a/the-importance-of-being-dialed-in-/7979814.html"
+  },
+  {
+   "id": "voa-eagleeyes",
+   "file": "voa-eagleeyes.mp3",
+   "sha256": "81f8d318f3d990e2b14a86f357e9e1a72470fd63cade2dd9b288e6b7110192b0",
+   "title": "Don't Miss a Thing With 'Eagle Eyes' (VOA)",
+   "feature": "Clear endings",
+   "transcript": "I ask myself several important questions. What is the overall goal? Who is the main focus? What resources do I have available to me?",
+   "approxDurationMs": 13500,
+   "source": "VOA Learning English, Words and Their Stories: “Don't Miss a Thing With 'Eagle Eyes'”, written by Anna Matteo. learningenglish.voanews.com — https://learningenglish.voanews.com/a/don-t-miss-a-thing-with-eagle-eyes-/7963085.html"
+  },
+  {
+   "id": "voa-powercouple",
+   "file": "voa-powercouple.mp3",
+   "sha256": "ba61039ff784d8e44add9bf0cb47a36b7e130aae8429774eabc0104b884657d4",
+   "title": "What Does It Take to Be a 'Power Couple'? (VOA)",
+   "feature": "Emphasis",
+   "transcript": "If we say two people are joined at the hip, they are nearly always together. If we describe individuals as thick as thieves, it means they are very close.",
+   "approxDurationMs": 14800,
+   "source": "VOA Learning English, Words and Their Stories: “What Does It Take to Be a 'Power Couple'?”, written by Anna Matteo. learningenglish.voanews.com — https://learningenglish.voanews.com/a/what-does-it-take-to-be-a-power-couple-/7963076.html"
+  },
+  {
+   "id": "voa-kitchentable",
+   "file": "voa-kitchentable.mp3",
+   "sha256": "374ffe28f511ac2d4ec72cd5f2506625c8f92a0523b67c3f9880b13ef48d0cd6",
+   "title": "'Kitchen-Table' Is a Type of Politics (VOA)",
+   "feature": "Phrase rhythm",
+   "transcript": "The kitchen is often considered the hub or center of the home. It is where we gather to not only share a meal, but to talk about the events of the day.",
+   "approxDurationMs": 12900,
+   "source": "VOA Learning English, Words and Their Stories: “'Kitchen-Table' Is a Type of Politics”, written by Anna Matteo. learningenglish.voanews.com — https://learningenglish.voanews.com/a/what-are-kitchen-table-politics-/7953635.html"
+  },
+  {
+   "id": "voa-toothin",
+   "file": "voa-toothin.mp3",
+   "sha256": "ee21e85ab1de1603ae9e8cb98e59bc201cbb82a6ef813573642aa35acf6727b1",
+   "title": "Sometimes We 'Spread Ourself Too Thin' (VOA)",
+   "feature": "Emphasis",
+   "transcript": "However, if we try to do too much, we may spread ourselves too thin. This expression means we have taken on too much. We are pushed to the limit.",
+   "approxDurationMs": 14300,
+   "source": "VOA Learning English, Words and Their Stories: “Sometimes We 'Spread Ourself Too Thin'”, written by Anna Matteo. learningenglish.voanews.com — https://learningenglish.voanews.com/a/sometimes-we-spread-ourself-too-thin-/7940837.html"
+  },
+  {
+   "id": "voa-kneejerk",
+   "file": "voa-kneejerk.mp3",
+   "sha256": "a1b0b01d5d6ba379ecf92dd404af321da4c6c8cf96f1d3222912598d7b301d84",
+   "title": "Knee Jerk and Gut Reactions: When We Are Not in Control (VOA)",
+   "feature": "Emphasis",
+   "transcript": "And other decisions and actions are not well thought out. We make them quickly, without thinking, almost like a pure physical reaction.",
+   "approxDurationMs": 13700,
+   "source": "VOA Learning English, Words and Their Stories: “Knee Jerk and Gut Reactions: When We Are Not in Control”, written by Anna Matteo. learningenglish.voanews.com — https://learningenglish.voanews.com/a/knee-jerk-when-you-are-not-in-control-/7937763.html"
+  },
+  {
+   "id": "voa-jackfrost",
+   "file": "voa-jackfrost.mp3",
+   "sha256": "cc3846742f965bb51ef943158ec94439bd2f69ff900ace9aeb1896d7e9ab53b0",
+   "title": "The Story of Jack Frost (VOA)",
+   "feature": "Clear endings",
+   "transcript": "When temperatures drop and a cold snap comes, that means one thing. Jack Frost has arrived. Jack Frost represents the coming of dark, cold days.",
+   "approxDurationMs": 14500,
+   "source": "VOA Learning English, Words and Their Stories: “The Story of Jack Frost”, written by Anna Matteo. learningenglish.voanews.com — https://learningenglish.voanews.com/a/the-story-of-jack-frost-/7932530.html"
+  }
+ ]
+}

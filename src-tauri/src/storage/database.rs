@@ -618,6 +618,10 @@ impl DatabaseOwner {
         Ok(())
     }
 
+    pub fn has_clip(&self, id: &str) -> bool {
+        self.connection.lock().ok().and_then(|conn| conn.query_row("SELECT EXISTS(SELECT 1 FROM reference_clips WHERE id=?1)", [id], |r| r.get(0)).ok()).unwrap_or(false)
+    }
+
     /// Reference clips whose audio is present, bundled first, then newest imports.
     pub fn list_clips(&self) -> Result<Vec<crate::clips::Clip>> {
         let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
