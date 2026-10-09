@@ -68,6 +68,8 @@ E (environment) → **M0 Feasibility** (audio, Whisper, text API spike; optional
 
 **End of the 9 October session:** the shared budget now shows billed, still-open and uncertain spending separately, with your own warning level under the fixed USD 5 stop (3.17); interrupted takes are announced on every screen until recovered or discarded (6.3); Windows high-contrast styles and an accessibility scan of 22 screens (no unnamed controls, one main heading each, visible focus; 6.4); installer settings for the offline WebView2 installer and a per-user install (6.2, not yet built). Tests: Rust 117 passed (14 hardware tests ignored), Vitest 134 in 49 files, typecheck and production build clean. **Next:** rebuild and recheck (schema v15), see the plan's Next actions.
 
+**Evening of 9 October:** AssemblyAI benchmarked through the app (0.23: 13/14 fillers, 4/194 word errors, 12.8 s, USD 0.007; selected as the cloud provider; Deepgram unmeasured without a key). Recording no longer stops on a slow disk or microphone dropouts (20 s buffer). AI feedback now suggests phrases you can save in one click (corrections too). New logo (an intonation line over a baseline) as app icon, favicon and sidebar mark (`design/logo`). Typed sentences can be kept as a phrase's examples without recording (4.9). Key slots are tested against every address the app calls (5.5). Start-up, record response and search are measured each run (Settings → About → Performance, 6.5). Tests: Rust 119, Vitest 135 in 49 files.
+
 ## 5. Answers and decisions so far
 
 | Topic | Answer / decision |
