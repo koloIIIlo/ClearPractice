@@ -1,0 +1,113 @@
+{
+  "summary": {
+    "recordings": 11,
+    "framesBothVoiced": 4033,
+    "octaveErrors": 12,
+    "octaveErrorRate": 0.0029754525167369206,
+    "within1Semitone": 0.9963,
+    "voicedOnlyByYin": 40,
+    "voicedOnlyByPraat": 1719,
+    "reference": "Praat 7.0.02 To Pitch (ac): 0.01 s step, 60-500 Hz, default thresholds"
+  },
+  "recordings": {
+    "DISFLUENCY_TEST_000003": {
+      "framesBothVoiced": 372,
+      "octaveErrors": 1,
+      "octaveErrorRate": 0.002688172043010753,
+      "medianAbsDiffSemitones": 0.043,
+      "within1Semitone": 0.9973,
+      "voicedOnlyByYin": 11,
+      "voicedOnlyByPraat": 114
+    },
+    "DISFLUENCY_TEST_000013": {
+      "framesBothVoiced": 360,
+      "octaveErrors": 0,
+      "octaveErrorRate": 0.0,
+      "medianAbsDiffSemitones": 0.019,
+      "within1Semitone": 1.0,
+      "voicedOnlyByYin": 2,
+      "voicedOnlyByPraat": 149
+    },
+    "DISFLUENCY_TEST_000018": {
+      "framesBothVoiced": 341,
+      "octaveErrors": 0,
+      "octaveErrorRate": 0.0,
+      "medianAbsDiffSemitones": 0.027,
+      "within1Semitone": 1.0,
+      "voicedOnlyByYin": 0,
+      "voicedOnlyByPraat": 144
+    },
+    "DISFLUENCY_TEST_000019": {
+      "framesBothVoiced": 286,
+      "octaveErrors": 1,
+      "octaveErrorRate": 0.0034965034965034965,
+      "medianAbsDiffSemitones": 0.029,
+      "within1Semitone": 0.9965,
+      "voicedOnlyByYin": 8,
+      "voicedOnlyByPraat": 133
+    },
+    "DISFLUENCY_TEST_000021": {
+      "framesBothVoiced": 310,
+      "octaveErrors": 0,
+      "octaveErrorRate": 0.0,
+      "medianAbsDiffSemitones": 0.016,
+      "within1Semitone": 1.0,
+      "voicedOnlyByYin": 0,
+      "voicedOnlyByPraat": 142
+    },
+    "DISFLUENCY_TEST_000026": {
+      "framesBothVoiced": 362,
+      "octaveErrors": 0,
+      "octaveErrorRate": 0.0,
+      "medianAbsDiffSemitones": 0.017,
+      "within1Semitone": 1.0,
+      "voicedOnlyByYin": 1,
+      "voicedOnlyByPraat": 181
+    },
+    "DISFLUENCY_TEST_000037": {
+      "framesBothVoiced": 275,
+      "octaveErrors": 0,
+      "octaveErrorRate": 0.0,
+      "medianAbsDiffSemitones": 0.017,
+      "within1Semitone": 1.0,
+      "voicedOnlyByYin": 7,
+      "voicedOnlyByPraat": 137
+    },
+    "DISFLUENCY_TEST_000038": {
+      "framesBothVoiced": 265,
+      "octaveErrors": 0,
+      "octaveErrorRate": 0.0,
+      "medianAbsDiffSemitones": 0.014,
+      "within1Semitone": 1.0,
+      "voicedOnlyByYin": 1,
+      "voicedOnlyByPraat": 134
+    },
+    "jfk": {
+      "framesBothVoiced": 300,
+      "octaveErrors": 8,
+      "octaveErrorRate": 0.02666666666666667,
+      "medianAbsDiffSemitones": 0.014,
+      "within1Semitone": 0.9667,
+      "voicedOnlyByYin": 3,
+      "voicedOnlyByPraat": 264
+    },
+    "voa-dialedin": {
+      "framesBothVoiced": 472,
+      "octaveErrors": 2,
+      "octaveErrorRate": 0.00423728813559322,
+      "medianAbsDiffSemitones": 0.021,
+      "within1Semitone": 0.9958,
+      "voicedOnlyByYin": 2,
+      "voicedOnlyByPraat": 144
+    },
+    "voa-dishup": {
+      "framesBothVoiced": 690,
+      "octaveErrors": 0,
+      "octaveErrorRate": 0.0,
+      "medianAbsDiffSemitones": 0.023,
+      "within1Semitone": 0.9986,
+      "voicedOnlyByYin": 5,
+      "voicedOnlyByPraat": 177
+    }
+  }
+}

@@ -33,3 +33,15 @@ The same public 62 s fixture, imported into the app and sent once after the in-a
 | Cost | USD 0.007 recorded (list price, two started minutes; covered by free credit) | none |
 
 Deepgram Nova-3 was not measured: no key. Personal accuracy remains unknown (public fixture, D-24).
+
+## Pitch tracker against Praat (gate P, 9 October 2026)
+
+ClearPractice's YIN contour (yin-v1: 40 ms window, 10 ms hop, 60–500 Hz, threshold 0.15) against Praat 7.0.02 `To Pitch (ac)` (10 ms step, 60–500 Hz, default thresholds) on 11 recordings: the 8 public disfluency clips (8 speakers), the JFK sample and two bundled VOA clips. Frames matched to the nearest Praat frame within 5 ms. `bench/pitch_vs_praat.py`, results in `results-pitch-vs-praat-2026-10.json`.
+
+| YIN threshold | Frames voiced by both | Octave errors | Within 1 semitone | Voiced only by Praat | Voiced only by YIN |
+| --- | --- | --- | --- | --- | --- |
+| **0.15 (shipped)** | 4,033 | **12 (0.30%)**, 8 of them in the noisy JFK recording | **99.6%** (median difference 0.02 st) | 1,719 | 40 |
+| 0.20 | 4,448 | 27 (0.61%) | 99.1% | 1,304 | 75 |
+| 0.25 | 4,765 | 38 (0.80%) | 98.2% | 987 | 100 |
+
+No systematic octave errors: gate P passes and D-17 (YIN) is confirmed. YIN is more cautious than Praat about calling a frame voiced (about 30% of Praat's voiced frames show as gaps); loosening the threshold closes some of that gap but doubles the octave errors, so 0.15 stays: a gap is honest, a wrong octave is misleading.

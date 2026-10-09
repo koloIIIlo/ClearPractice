@@ -24,7 +24,8 @@ def compare(yin, praat):
     both, only_yin, only_praat, diffs, octave = 0, 0, 0, [], 0
     for t, f in yin:
         ms = round(t * 1000)
-        p = next((praat_by_t[k] for k in (ms, ms - 5, ms + 5) if k in praat_by_t), "missing")
+        near = [k for k in range(ms - 5, ms + 6) if k in praat_by_t]
+        p = praat_by_t[min(near, key=lambda k: abs(k - ms))] if near else "missing"
         if p == "missing":
             continue
         if f and p:
