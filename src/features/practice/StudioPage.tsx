@@ -22,7 +22,7 @@ import { useExercises, usePhrases, usePreferences, usePrompts, useInputDevices }
 import { playCue } from "@/lib/tone";
 import { useIpc } from "@/lib/ipc";
 import type { ExerciseDefinition, PhraseCard, PracticePrompt } from "@/lib/ipc/schemas";
-import { ExpressionPanel, expressionPrompt, ImitationPanel, RepeatFocus } from "./ExercisePanels";
+import { ExpressionPanel, expressionPrompt, IMITATION_PROMPT, ImitationPanel, RepeatFocus } from "./ExercisePanels";
 import { SequenceBar } from "./SequenceBar";
 import { FollowUpPanel } from "./FollowUpPanel";
 import { cn } from "@/lib/utils";
@@ -57,6 +57,7 @@ export function StudioPage() {
               const phrase = exercise.type === "expression" && phraseList.length > 0 ? (phraseList.find((p) => p.id === params.get("phrase")) ?? phraseList[0]) : undefined;
               const asked = params.get("prompt");
               const prompt = passage ? passagePrompt(passage) : phrase ? expressionPrompt(phrase)
+                : exercise.type === "imitate" ? IMITATION_PROMPT
                 : asked === BASELINE_PROMPT.id ? BASELINE_PROMPT : (promptList.find((p) => p.id === asked) ?? promptList[0]);
               return <Studio key={`${exercise.id}-${prompt.id}`} exercise={exercise} prompt={prompt} passage={passage} phrase={phrase} phrases={phraseList} />;
             }}

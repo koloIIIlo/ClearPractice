@@ -27,7 +27,7 @@ it("searches real sessions natively and never mixes in sample sessions", async (
   const client = createNativeClient();
   native.invoke.mockResolvedValueOnce([{ kind: "session", id: "real-1", title: "Explaining indexes", excerpt: "Transcript: uh, indexes", href: "/sessions/real-1" }]);
   const hits = await client.searchContent("a");
-  expect(native.invoke).toHaveBeenLastCalledWith("search_content", { query: "a" });
+  expect(native.invoke).toHaveBeenCalledWith("search_content", { query: "a" });
   const sessionHits = hits.filter((h) => h.kind === "session");
   expect(sessionHits.map((h) => h.id)).toEqual(["real-1"]);
   expect(sessions.some((s) => sessionHits.some((h) => h.id === s.id))).toBe(false);

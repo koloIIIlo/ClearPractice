@@ -28,11 +28,14 @@ export function CompletionPage() {
   const sessions = useQueries({ queries: sessionIds.map((id) => ({ queryKey: ["session", id], queryFn: () => ipc.getSession(id), retry: false })) });
   const [ease, setEase] = useState<number | null>(null);
   const [takeaway, setTakeaway] = useState("");
-  const save = useMutation({
-    mutationFn: () => Promise.all(sessionIds.map((id) => ipc.setSessionReflection(id, ease, takeaway.trim() || null))),
-  });
   const loaded = sessions.flatMap((q) => (q.data ? [q.data] : []));
   const takes = loaded.reduce((n, s) => n + s.attemptCount, 0);
+  const anyPending = sessions.some((q) => q.isPending);
+  // A step left without a take has no session; it is counted, not listed as an error.
+  const skipped = sessions.filter((q) => q.isError).length;
+  const save = useMutation({
+    mutationFn: () => Promise.all(loaded.map((s) => ipc.setSessionReflection(s.id, ease, takeaway.trim() || null))),
+  });
   const focuses = loaded.flatMap((s) => (s.focus ? [s.focus] : []));
 
   return (
@@ -41,23 +44,23 @@ export function CompletionPage() {
       <div className="space-y-6">
         <Panel className="space-y-3">
           <h2 className="flex items-center gap-2 font-semibold"><CheckCircle2 aria-hidden className="size-5 text-primary" /> What you practised</h2>
-          {sessionIds.length === 0 ? (
+          {loaded.length === 0 && !anyPending ? (
             <p className="text-muted-foreground">No takes were saved in this sequence. That's fine: listening and reading count too.</p>
           ) : (
             <>
-              <p>{takes} {takes === 1 ? "take" : "takes"} in {sessionIds.length} {sessionIds.length === 1 ? "exercise" : "exercises"}.</p>
+              <p>
+                {takes} {takes === 1 ? "take" : "takes"} in {loaded.length} {loaded.length === 1 ? "exercise" : "exercises"}
+                {skipped > 0 && ` · ${skipped} ${skipped === 1 ? "step" : "steps"} without a take`}.
+              </p>
               <ul className="space-y-1">
-                {sessions.map((q, i) => (
-                  <li key={sessionIds[i]}>
-                    {q.data ? (
-                      <Link className="underline" to={`/sessions/${q.data.id}`}>
-                        {q.data.title} · {q.data.attemptCount} {q.data.attemptCount === 1 ? "take" : "takes"} · {formatClock(q.data.durationMs)}
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">{q.isPending ? "Loading…" : "This session is not available."}</span>
-                    )}
+                {loaded.map((s) => (
+                  <li key={s.id}>
+                    <Link className="underline" to={`/sessions/${s.id}`}>
+                      {s.title} · {s.attemptCount} {s.attemptCount === 1 ? "take" : "takes"} · {formatClock(s.durationMs)}
+                    </Link>
                   </li>
                 ))}
+                {anyPending && <li className="text-muted-foreground">Loading…</li>}
               </ul>
               {focuses.length > 0 && (
                 <p className="text-meta"><span className="text-muted-foreground">What you worked on:</span> {focuses.join(" · ")}</p>
@@ -66,7 +69,7 @@ export function CompletionPage() {
           )}
         </Panel>
 
-        {sessionIds.length > 0 && (
+        {loaded.length > 0 && (
           <Panel className="space-y-4">
             <h2 className="font-semibold">Before you go</h2>
             <fieldset className="space-y-2">

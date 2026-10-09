@@ -373,6 +373,31 @@ mod tests {
         assert_eq!(c.f0_hz.len(), 150, "one frame per 10 ms on the original timeline");
     }
 
+    /// Gate P (Praat comparison): writes the YIN contour of each 16 kHz mono
+    /// PCM WAV in `CP_PITCH_FILES` (separated by `;`) to `CP_PITCH_OUT/<name>.csv`
+    /// as frame-centre time and F0 (empty when unvoiced). Run on request:
+    /// `cargo test --release --lib praat_comparison_dump -- --ignored`.
+    #[test]
+    #[ignore]
+    fn praat_comparison_dump() {
+        let (Ok(files), Ok(out)) = (std::env::var("CP_PITCH_FILES"), std::env::var("CP_PITCH_OUT")) else { return };
+        for file in files.split(';').filter(|f| !f.is_empty()) {
+            let path = std::path::Path::new(file);
+            let bytes = std::fs::read(path).unwrap();
+            let data = bytes.windows(4).position(|w| w == b"data").expect("data chunk") + 8;
+            let samples: Vec<f32> = bytes[data..].chunks_exact(2).map(|p| f32::from(i16::from_le_bytes([p[0], p[1]])) / 32768.0).collect();
+            let c = contour(&samples, RATE);
+            let half = (WINDOW_MS / 2) as f64 / 1000.0;
+            let rows: String = c.f0_hz.iter().enumerate()
+                .map(|(i, f)| format!("{:.3},{}
+", i as f64 * c.hop_ms as f64 / 1000.0 + half, f.map_or(String::new(), |v| format!("{v:.2}"))))
+                .collect();
+            let name = path.file_stem().unwrap().to_string_lossy();
+            std::fs::write(std::path::Path::new(&out).join(format!("{name}.csv")), format!("time_s,f0_hz
+{rows}")).unwrap();
+        }
+    }
+
     /// Real speech, optimised build only: `cargo test --release --lib prosody -- --ignored --nocapture`
     /// (P.8 target: ≤ 5 s per 60 s take; debug builds are many times slower).
     #[test]

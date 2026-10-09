@@ -84,6 +84,16 @@ export function RepeatFocus({ sessionId, takeCount, locked, native }: { sessionI
   );
 }
 
+/** The task an imitation take records (4.8): the clip is the model, not a speaking prompt. */
+export const IMITATION_PROMPT: PracticePrompt = {
+  id: "imitate",
+  text: "Listen to a short clip, then repeat it in your own voice, imitating one feature.",
+  tags: ["daily_life"],
+  conditions: { familiarity: "familiar", preparationSeconds: 0, targetSeconds: 30, audience: null, followUp: false },
+  favorite: false,
+  source: "bundled",
+};
+
 // ── Use a better expression (4.9) ────────────────────────────────────────────
 
 export function expressionPrompt(phrase: PhraseCard): PracticePrompt {
