@@ -48,6 +48,13 @@ export function TranscriptionMode() {
             </span>
           </span>
         </Label>
+        <Label htmlFor="tmode-off" className="flex items-start gap-3 font-normal">
+          <RadioGroupItem id="tmode-off" value="off" className="mt-1" />
+          <span>
+            <span className="block font-medium">Off</span>
+            <span className="block text-meta text-muted-foreground">No transcription is offered. Playback, notes and existing transcripts still work.</span>
+          </span>
+        </Label>
       </RadioGroup>
       {current.mode === "api" && (
         <div className="space-y-2 pl-7">

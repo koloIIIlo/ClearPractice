@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { NativeSelect } from "@/components/ui/native-select";
 import { useQuery } from "@tanstack/react-query";
 import { useIpc } from "@/lib/ipc";
 import { formatClock } from "@/lib/format";
@@ -160,26 +161,24 @@ function PracticeSettings() {
             </SelectContent>
           </Select>
         </div>
-        <SwitchRow id="reminders" label="Daily reminder" hint="Only while the app is open. No penalty for skipped days." />
+        <SwitchRow id="reminders" label="Daily reminder" hint="A gentle reminder at the time below, only while the app is open and only if you haven't practised that day. No penalty for skipped days."
+          checked={preferences.reminderTime !== null} onCheckedChange={(on) => update({ reminderTime: on ? "18:00" : null })} />
+        {preferences.reminderTime !== null && (
+          <div className="flex items-center gap-2 pl-1">
+            <Label htmlFor="reminder-time" className="font-normal">Remind me at</Label>
+            <NativeSelect id="reminder-time" compact value={preferences.reminderTime} onChange={(e) => update({ reminderTime: e.target.value })}>
+              {Array.from({ length: 34 }, (_, i) => `${String(Math.floor(i / 2) + 6).padStart(2, "0")}:${i % 2 ? "30" : "00"}`).map((t) => <option key={t} value={t}>{t}</option>)}
+            </NativeSelect>
+          </div>
+        )}
         <SwitchRow id="rec-shortcuts" label="Recording keyboard shortcuts" hint="Ctrl+Enter starts or stops a take in the studio." checked={preferences.recordingShortcuts} onCheckedChange={(on) => update({ recordingShortcuts: on })} />
       </Section>
-      <Section title="Languages" description="The interface language and the language you practise are set separately.">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1">
-            <Label htmlFor="ui-lang">Interface language</Label>
-            <Select defaultValue="en">
-              <SelectTrigger id="ui-lang" className="h-10 w-full"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="en">English</SelectItem></SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="practice-lang">Practice language</Label>
-            <Select defaultValue="en">
-              <SelectTrigger id="practice-lang" className="h-10 w-full"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="en">English</SelectItem></SelectContent>
-            </Select>
-          </div>
-        </div>
+      <Section title="Languages">
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1">
+          <dt className="text-muted-foreground">Interface</dt><dd>English (dates in British format)</dd>
+          <dt className="text-muted-foreground">Practice</dt><dd>English</dd>
+        </dl>
+        <p className="text-meta text-muted-foreground">This version is for practising English. German practice may follow later.</p>
       </Section>
     </>
   );
@@ -223,23 +222,8 @@ function TranscriptionSettings() {
       <Section title="Default transcription" description="How new takes are transcribed. You can switch on any take.">
         <TranscriptionMode />
       </Section>
-      <Section title="Local Whisper" description="Speech is transcribed on this computer. Audio is never uploaded.">
+      <Section title="Local Whisper" description="Speech is transcribed on this computer. Audio is never uploaded. The setup file decides the model and whether the NVIDIA GPU or the CPU is used; there is no automatic fallback. Choose another setup file to switch.">
         <TranscriptionSetup />
-      </Section>
-      <Section title="Acceleration" description="CUDA was selected after benchmarking the original laptop. Recheck hardware on another computer.">
-        <RadioGroup defaultValue="cuda" disabled className="gap-2">
-          {(
-            [
-              ["auto", "No automatic fallback"],
-              ["cpu", "CPU"],
-              ["cuda", "NVIDIA GPU"],
-            ] as const
-          ).map(([v, l]) => (
-            <Label key={v} htmlFor={`accel-${v}`} className="flex items-center gap-2 font-normal">
-              <RadioGroupItem id={`accel-${v}`} value={v} /> {l}
-            </Label>
-          ))}
-        </RadioGroup>
       </Section>
       <Section title="Cloud API keys and test" description="Keys for cloud transcription. Both providers keep fillers and return word timings (D-21).">
         <ApiTranscriptionTest />

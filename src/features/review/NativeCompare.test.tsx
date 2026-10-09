@@ -19,7 +19,7 @@ const transcript = (attemptId: string, text: string, paceWpm: number | null): At
     workerElapsedMs: 1, createdAt: "2026-10-09T08:00:00.000Z", segments: [],
     measures: {
       definitionVersion: 1, source: "Estimated", wordCount: text.split(" ").length, speechSpanMs: 20_000, paceWpm, paceUnavailableReason: paceWpm === null ? "Too short." : null,
-      pauseThresholdMs: 700, pauses: [], pausesUnavailableReason: null, fillers: [{ segment: 0, word: "uh", segmentStartMs: 0, decision: null }], repeatedWords: [], untimedSegments: 0,
+      pauseThresholdMs: 700, pauses: [], pausesUnavailableReason: null, fillers: [{ segment: 0, word: "uh", segmentStartMs: 0, wordStartMs: null, wordEndMs: null, decision: null }], repeatedWords: [], untimedSegments: 0,
       voice: { method: "peak-energy-v1", source: "Estimated", speechStartMs: 0, speechEndMs: 1, pauses: [{ afterSegment: 0, startMs: 1, durationMs: 800 }], unavailableReason: null },
     },
   },

@@ -63,7 +63,7 @@ it("shows progress, then the saved transcript with estimated timings and kept fi
       measures: {
         definitionVersion: 1, source: "Estimated", wordCount: 5, speechSpanMs: 3_000, paceWpm: null,
         paceUnavailableReason: "Needs at least 15 seconds of speech.", pauseThresholdMs: 700, pauses: [], pausesUnavailableReason: null,
-        fillers: [{ segment: 0, word: "uh", segmentStartMs: 12_000, decision: null }], repeatedWords: [], untimedSegments: 0,
+        fillers: [{ segment: 0, word: "uh", segmentStartMs: 12_000, wordStartMs: null, wordEndMs: null, decision: null }], repeatedWords: [], untimedSegments: 0,
         voice: { method: "peak-energy-v1", source: "Estimated", speechStartMs: 0, speechEndMs: 3_000, pauses: [{ afterSegment: 0, startMs: 1_500, durationMs: 900 }], unavailableReason: null },
       },
     },

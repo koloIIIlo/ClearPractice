@@ -40,6 +40,8 @@ pub enum TranscriptionMode {
     #[default]
     Local,
     Api,
+    /// No transcription is offered; playback, notes and existing transcripts stay (3.12).
+    Off,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]

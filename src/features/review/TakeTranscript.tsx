@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Loader2, X } from "lucide-react";
+import { FileText, Loader2, Volume2, X } from "lucide-react";
 import { EvidenceLabel } from "@/components/evidence";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -70,7 +70,7 @@ function Measures({ m }: { m: TranscriptMeasures }) {
 }
 
 /** Confirm or dismiss each filler candidate (plan 3.7); decisions are stored per revision. */
-function FillerReview({ revisionId, measures, onChanged }: { revisionId: string; measures: TranscriptMeasures; onChanged: () => void }) {
+function FillerReview({ revisionId, measures, onChanged, link }: { revisionId: string; measures: TranscriptMeasures; onChanged: () => void; link?: PlayerLink }) {
   const ipc = useIpc();
   const decide = useMutation({
     mutationFn: ({ index, word, decision }: { index: number; word: string; decision: "confirmed" | "dismissed" | null }) =>
@@ -90,8 +90,13 @@ function FillerReview({ revisionId, measures, onChanged }: { revisionId: string;
         {fillers.map((f, index) => (
           <li key={index} className="flex flex-wrap items-center gap-2 text-meta">
             <span className="w-28 tabular-nums text-muted-foreground">
-              “{f.word}” · {f.segmentStartMs != null ? `near ${formatClock(f.segmentStartMs)}` : "time unknown"}
+              “{f.word}” · {f.wordStartMs != null ? `at ${formatClock(f.wordStartMs)}` : f.segmentStartMs != null ? `near ${formatClock(f.segmentStartMs)}` : "time unknown"}
             </span>
+            {f.wordStartMs != null && link && (
+              <Button size="sm" variant="ghost" aria-label={`Hear “${f.word}” ${index + 1}`} onClick={() => link.seek(Math.max(0, f.wordStartMs! - 600), true)}>
+                <Volume2 aria-hidden /> Hear it
+              </Button>
+            )}
             {(["confirmed", "dismissed"] as const).map((choice) => (
               <Button
                 key={choice}
@@ -253,7 +258,8 @@ export function TakeTranscript({ attemptId, link }: { attemptId: string; link?: 
   const [live, setLive] = useState<TranscriptionEvent | null>(null);
   const preference = useQuery({ queryKey: ["transcription-preference"], queryFn: () => ipc.getTranscriptionPreference(), staleTime: 60_000 });
   const [choice, setChoice] = useState<"local" | "api" | null>(null);
-  const mode = choice ?? preference.data?.mode ?? "local";
+  const off = preference.data?.mode === "off";
+  const mode = choice ?? (off ? "local" : (preference.data?.mode ?? "local"));
 
   useEffect(() => {
     let disposed = false;
@@ -309,7 +315,7 @@ export function TakeTranscript({ attemptId, link }: { attemptId: string; link?: 
               <X aria-hidden /> Cancel
             </Button>
           ) : (
-            mode === "local" && (
+            !off && mode === "local" && (
               <Button
                 variant={revision ? "ghost" : "default"}
                 disabled={start.isPending || !!notSetUp || !setup.data}
@@ -322,7 +328,12 @@ export function TakeTranscript({ attemptId, link }: { attemptId: string; link?: 
         </div>
       </div>
 
-      {!running && ipc.recordingMode === "native" && (
+      {off && !running && (
+        <p className="text-meta text-muted-foreground">
+          Transcription is off. Playback, notes and existing transcripts still work. <Link className="underline" to="/settings/transcription">Turn it on in Settings → Transcription</Link>.
+        </p>
+      )}
+      {!off && !running && ipc.recordingMode === "native" && (
         <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-1 text-meta">
           <legend className="sr-only">Transcribe with</legend>
           <span className="text-muted-foreground" aria-hidden>Transcribe with</span>
@@ -349,12 +360,12 @@ export function TakeTranscript({ attemptId, link }: { attemptId: string; link?: 
           {live?.percent != null ? ` · ${live.percent}%` : "…"} Recording a new take cancels this; you can run it again.
         </p>
       )}
-      {notSetUp && !revision && mode === "local" && (
+      {!off && notSetUp && !revision && mode === "local" && (
         <p className="text-meta text-muted-foreground">
           Local transcription isn't set up yet. <Link className="underline" to="/settings/transcription">Set it up in Settings → Transcription</Link>.
         </p>
       )}
-      {mode === "api" && !running && <CloudTranscribe attemptId={attemptId} defaultProvider={preference.data?.provider ?? "deepgram"} />}
+      {!off && mode === "api" && !running && <CloudTranscribe attemptId={attemptId} defaultProvider={preference.data?.provider ?? "deepgram"} />}
       {start.error && <p role="alert" className="text-meta text-destructive">{start.error.message}</p>}
       {transcript.error && <p role="alert" className="text-meta text-destructive">{transcript.error.message}</p>}
       {data && !running && <JobMessage data={data} />}
@@ -363,7 +374,7 @@ export function TakeTranscript({ attemptId, link }: { attemptId: string; link?: 
         <>
           <Segments revision={revision} link={link} />
           <Measures m={revision.measures} />
-          <FillerReview revisionId={revision.id} measures={revision.measures} onChanged={() => void qc.invalidateQueries({ queryKey: key })} />
+          <FillerReview revisionId={revision.id} measures={revision.measures} link={link} onChanged={() => void qc.invalidateQueries({ queryKey: key })} />
           {data && <Corrections data={data} onSaved={() => void qc.invalidateQueries({ queryKey: key })} />}
           <p className="flex flex-wrap items-center gap-2 text-meta text-muted-foreground">
             <EvidenceLabel source="estimated" /> Times and measures are estimated from the model's segments. Fillers such as “uh” and

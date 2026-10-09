@@ -34,6 +34,8 @@ pub struct Preferences {
     /// Your own warning level for the shared monthly API spending (3.17), in
     /// micro-USD; the USD 5 stop is fixed (D-7, D-22).
     pub budget_warning_micro_usd: u64,
+    /// Daily reminder time ("HH:MM", local), or `None` for no reminder.
+    pub reminder_time: Option<String>,
 }
 
 impl Default for Preferences {
@@ -41,7 +43,7 @@ impl Default for Preferences {
         Self { recording_sounds: true, recording_shortcuts: true, input_device_id: None, session_length: "standard".into(),
             coaching_mode: "api".into(), coaching_model: CoachingModel::default(), delivery_impressions: false,
             onboarded: false, goals: Vec::new(), goal_note: String::new(), difficulty_language: None,
-            local_endpoint: "http://127.0.0.1:8080".into(), local_model: String::new(), budget_warning_micro_usd: 4_000_000 }
+            local_endpoint: "http://127.0.0.1:8080".into(), local_model: String::new(), budget_warning_micro_usd: 4_000_000, reminder_time: None }
     }
 }
 
@@ -53,6 +55,9 @@ fn validate(mut p: Preferences) -> Result<Preferences, String> {
         return Err("Unknown coaching mode.".into());
     }
     p.local_endpoint = crate::api::local_llm::validate_endpoint(&p.local_endpoint)?;
+    if p.reminder_time.as_deref().is_some_and(|t| chrono::NaiveTime::parse_from_str(t, "%H:%M").is_err()) {
+        return Err("Choose a reminder time like 18:00.".into());
+    }
     if !(100_000..=5_000_000).contains(&p.budget_warning_micro_usd) {
         return Err("Choose a warning between USD 0.10 and USD 5.00.".into());
     }

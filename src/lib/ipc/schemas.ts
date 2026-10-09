@@ -353,6 +353,9 @@ export const TranscriptMeasures = z.object({
       segment: z.number().int().nonnegative(),
       word: z.string(),
       segmentStartMs: z.number().int().nonnegative().nullable(),
+      /** The word's own time, when a cloud transcript timed every filler (Estimated); else null. */
+      wordStartMs: z.number().int().nonnegative().nullable().default(null),
+      wordEndMs: z.number().int().nonnegative().nullable().default(null),
       /** Your review of this candidate; null until you decide. */
       decision: z.enum(["confirmed", "dismissed"]).nullable().default(null),
     }),
@@ -696,6 +699,7 @@ export const Preferences = z
     localEndpoint: z.string().min(1),
     localModel: z.string(),
     budgetWarningMicroUsd: z.number().int().min(100_000).max(5_000_000),
+    reminderTime: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
   })
   .strict();
 export type Preferences = z.infer<typeof Preferences>;
@@ -703,10 +707,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   recordingSounds: true, recordingShortcuts: true, inputDeviceId: null, sessionLength: "standard",
   coachingMode: "api", coachingModel: "gpt-6-luna", deliveryImpressions: false,
   onboarded: false, goals: [], goalNote: "", difficultyLanguage: null,
-  localEndpoint: "http://127.0.0.1:8080", localModel: "", budgetWarningMicroUsd: 4_000_000,
+  localEndpoint: "http://127.0.0.1:8080", localModel: "", budgetWarningMicroUsd: 4_000_000, reminderTime: null,
 };
 
-export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api"]), provider: AudioProvider }).strict();
+export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api", "off"]), provider: AudioProvider }).strict();
 export type TranscriptionPreference = z.infer<typeof TranscriptionPreference>;
 
 export const ProviderKeyStatus = z.object({ provider: AudioProvider, present: z.boolean() });

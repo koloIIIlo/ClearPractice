@@ -1276,9 +1276,28 @@ impl DatabaseOwner {
                     .map_err(db_error)?
                     .collect::<rusqlite::Result<_>>()
                     .map_err(db_error)?;
+                // A cloud transcript with word timings (3.7 "Hear it"): the n-th filler
+                // candidate is the n-th filler word the provider timed, in order.
+                let word_times: Vec<(u64, u64)> = if revision["source"] == "api" {
+                    conn.query_row("SELECT result FROM api_runs WHERE id=?1", [revision["id"].as_str().unwrap_or("")], |r| r.get::<_, String>(0))
+                        .optional().map_err(db_error)?
+                        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+                        .and_then(|result| result["words"]["value"].as_array().cloned())
+                        .unwrap_or_default()
+                        .iter()
+                        .filter(|w| w["text"].as_str().is_some_and(crate::analysis::is_filler))
+                        .filter_map(|w| Some((w["startMs"].as_u64()?, w["endMs"].as_u64()?)))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 if let Some(fillers) = measures["fillers"].as_array_mut() {
+                    let timed = word_times.len() == fillers.len();
                     for (index, filler) in fillers.iter_mut().enumerate() {
                         filler["decision"] = decisions.get(&(index as i64)).map_or(Value::Null, |d| json!(d));
+                        let (start, end) = if timed { (json!(word_times[index].0), json!(word_times[index].1)) } else { (Value::Null, Value::Null) };
+                        filler["wordStartMs"] = start;
+                        filler["wordEndMs"] = end;
                     }
                 }
                 revision["measures"] = measures;
@@ -2191,6 +2210,9 @@ mod tests {
         let segments = view["revision"]["segments"].as_array().unwrap();
         assert_eq!(segments.len(), 2, "split at sentence ends");
         assert_eq!(segments[0]["text"], "So, uh, I think.");
+        // "Hear it" (3.7): the provider timed the filler word itself.
+        let filler = &view["revision"]["measures"]["fillers"][0];
+        assert_eq!((filler["word"].as_str(), filler["wordStartMs"].as_u64(), filler["wordEndMs"].as_u64()), (Some("uh"), Some(120), Some(200)));
         assert_eq!((segments[1]["startMs"].as_i64(), segments[1]["endMs"].as_i64()), (Some(500), Some(900)));
         assert_eq!(view["revision"]["measures"]["fillers"].as_array().unwrap().len(), 1, "filler review works on API text");
         let (raw, request, cost): (String, Option<String>, Option<i64>) = owner.connection.lock().unwrap()

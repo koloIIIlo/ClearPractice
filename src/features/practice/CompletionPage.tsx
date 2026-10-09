@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router";
 import { useMutation, useQueries } from "@tanstack/react-query";
-import { CheckCircle2 } from "lucide-react";
+import { BookmarkPlus, CheckCircle2 } from "lucide-react";
+import { PhraseForm } from "@/features/phrases/PhrasesPage";
 import { Page, PageHeader, Panel } from "@/components/page";
 import { EvidenceLabel } from "@/components/evidence";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,8 @@ const EASE = ["Very hard", "Hard", "Manageable", "Easy", "Very easy"] as const;
 export function CompletionPage() {
   const ipc = useIpc();
   const location = useLocation();
+  const [addingPhrase, setAddingPhrase] = useState(false);
+  const [phraseSaved, setPhraseSaved] = useState(false);
   const sessionIds: string[] = (location.state as { sessionIds?: string[] } | null)?.sessionIds ?? [];
   const sessions = useQueries({ queries: sessionIds.map((id) => ({ queryKey: ["session", id], queryFn: () => ipc.getSession(id), retry: false })) });
   const [ease, setEase] = useState<number | null>(null);
@@ -86,9 +89,16 @@ export function CompletionPage() {
               {save.isSuccess && <span role="status" className="text-meta">Saved with today's sessions.</span>}
               {save.error && <span role="alert" className="text-meta text-destructive">{save.error.message}</span>}
             </div>
-            <p className="text-meta text-muted-foreground">
-              Heard an expression worth keeping? <Link className="underline" to="/phrases">Open Phrases</Link>.
-            </p>
+            {addingPhrase ? (
+              <PhraseForm sourceSessionId={sessionIds[0] ?? null} onDone={() => { setAddingPhrase(false); setPhraseSaved(true); }} />
+            ) : (
+              <div className="flex flex-wrap items-center gap-2 text-meta">
+                <Button variant="outline" size="sm" onClick={() => setAddingPhrase(true)}><BookmarkPlus aria-hidden /> Save a phrase…</Button>
+                <span className="text-muted-foreground">
+                  {phraseSaved ? <>Saved. <Link className="underline" to="/phrases">Open Phrases</Link></> : "Heard or used an expression worth keeping? It will come up for review."}
+                </span>
+              </div>
+            )}
           </Panel>
         )}
 

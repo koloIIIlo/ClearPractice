@@ -6,6 +6,7 @@ import { CommandPalette } from "./CommandPalette";
 import { TopBar } from "./TopBar";
 import { useIpc } from "@/lib/ipc";
 import { RecoveryNotice } from "./RecoveryNotice";
+import { DailyReminder } from "./DailyReminder";
 
 /** Start-up is measured once per app run: process start → first painted screen (6.5). */
 let startupMeasured = false;
@@ -52,6 +53,7 @@ export function AppShell() {
           <p role="note" className="border-b px-4 py-2 text-meta text-muted-foreground">Browser preview with sample data. Open the desktop app for real recording.</p>
         )}
         <RecoveryNotice />
+        <DailyReminder />
         <main id="main" tabIndex={-1} className="flex-1 outline-none">
           <Outlet />
         </main>

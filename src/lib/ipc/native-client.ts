@@ -104,21 +104,26 @@ export function createNativeClient(): IpcClient {
     // The status line from your real settings, not sample data (4.12).
     getServiceStatus: async () => {
       const labels = { deepgram: "Deepgram", assemblyai: "AssemblyAI" } as const;
-      const [preference, setup, keys, openai] = await Promise.all([
+      const [preference, setup, keys, openai, prefs, backups] = await Promise.all([
         command("get_transcription_preference", S.TranscriptionPreference),
         command("get_transcription_setup", S.TranscriptionSetup).catch(() => null),
         command("get_transcription_api_keys", S.ProviderKeyStatus.array()).catch(() => []),
         command("get_api_key_status", S.CredentialStatus).catch(() => null),
+        command("get_preferences", S.Preferences).catch(() => S.DEFAULT_PREFERENCES),
+        command("get_backup_status", S.BackupStatus).catch(() => null),
       ]);
-      const cloud = preference.mode === "api";
-      const transcription = cloud
-        ? { mode: "api" as const, model: labels[preference.provider], state: keys.some((k) => k.provider === preference.provider && k.present) ? ("ready" as const) : ("needs_setup" as const) }
-        : { mode: "local" as const, model: setup?.modelId ?? null, state: setup?.configured ? ("ready" as const) : ("needs_setup" as const) };
-      return S.ServiceStatus.parse({
-        transcription,
-        coaching: { mode: "api", providerLabel: "OpenAI", state: openai?.present ? "ready" : "needs_setup" },
-        storage: { lastBackupAt: null },
-      });
+      const transcription = preference.mode === "off"
+        ? { mode: "off" as const, model: null, state: "ready" as const }
+        : preference.mode === "api"
+          ? { mode: "api" as const, model: labels[preference.provider], state: keys.some((k) => k.provider === preference.provider && k.present) ? ("ready" as const) : ("needs_setup" as const) }
+          : { mode: "local" as const, model: setup?.modelId ?? null, state: setup?.configured ? ("ready" as const) : ("needs_setup" as const) };
+      const coaching = prefs.coachingMode === "off"
+        ? { mode: "off" as const, providerLabel: null, state: "ready" as const }
+        : prefs.coachingMode === "local"
+          ? { mode: "local_llm" as const, providerLabel: prefs.localModel || "Local model", state: "ready" as const }
+          : { mode: "api" as const, providerLabel: "OpenAI", state: openai?.present ? ("ready" as const) : ("needs_setup" as const) };
+      const lastBackup = backups?.backups.filter((b) => b.status === "verified").map((b) => b.createdAt).sort().at(-1) ?? null;
+      return S.ServiceStatus.parse({ transcription, coaching, storage: { lastBackupAt: lastBackup } });
     },
     // Progress from your own sessions (4.16, first part): the 60 most recent are read.
     getProgress: async (view) => {
