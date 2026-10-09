@@ -4,6 +4,8 @@ import { z } from "zod";
 import { IpcError, type IpcClient } from "./client";
 import { createMockClient } from "./mock-client";
 import * as S from "./schemas";
+import { buildTodayPlan } from "../today-plan";
+import { toLocalDate } from "../phrase-schedule";
 
 async function command<T>(name: string, schema: { parse(value: unknown): T }, args?: Record<string, unknown>): Promise<T> {
   try {
@@ -82,6 +84,35 @@ export function createNativeClient(): IpcClient {
     getTranscriptionSetup: () => command("get_transcription_setup", S.TranscriptionSetup),
     getPreferences: () => command("get_preferences", S.Preferences),
     listPhrases: () => command("list_phrases", S.PhraseCard.array()),
+    // The status line from your real settings, not sample data (4.12).
+    getServiceStatus: async () => {
+      const labels = { deepgram: "Deepgram", assemblyai: "AssemblyAI" } as const;
+      const [preference, setup, keys, openai] = await Promise.all([
+        command("get_transcription_preference", S.TranscriptionPreference),
+        command("get_transcription_setup", S.TranscriptionSetup).catch(() => null),
+        command("get_transcription_api_keys", S.ProviderKeyStatus.array()).catch(() => []),
+        command("get_api_key_status", S.CredentialStatus).catch(() => null),
+      ]);
+      const cloud = preference.mode === "api";
+      const transcription = cloud
+        ? { mode: "api" as const, model: labels[preference.provider], state: keys.some((k) => k.provider === preference.provider && k.present) ? ("ready" as const) : ("needs_setup" as const) }
+        : { mode: "local" as const, model: setup?.modelId ?? null, state: setup?.configured ? ("ready" as const) : ("needs_setup" as const) };
+      return S.ServiceStatus.parse({
+        transcription,
+        coaching: { mode: "api", providerLabel: "OpenAI", state: openai?.present ? "ready" : "needs_setup" },
+        storage: { lastBackupAt: null },
+      });
+    },
+    // Today's plan from your own sessions and phrases plus the curriculum rotation (4.12).
+    getTodayPlan: async (length) => {
+      const [sessions, phrases] = await Promise.all([
+        command("list_sessions", S.SessionSummary.array(), { filter: null }),
+        command("list_phrases", S.PhraseCard.array()),
+      ]);
+      const newest = sessions.find((s) => s.status === "completed") ?? sessions[0];
+      const latest = newest ? await command("get_session", S.SessionDetail, { sessionId: newest.id }).catch(() => null) : null;
+      return S.TodayPlan.parse(buildTodayPlan({ localDate: toLocalDate(new Date()), length, sessions, phrases, latest }));
+    },
     reviewPhrase: (phraseId, rating) => command("review_phrase", S.PhraseCard, { phraseId, rating }),
     addPhrase: (phrase, sourceSessionId) => command("add_phrase", S.PhraseCard, { phrase, sourceSessionId: sourceSessionId ?? null }),
     updatePhrase: (phraseId, phrase) => command("update_phrase", S.PhraseCard, { phraseId, phrase }),

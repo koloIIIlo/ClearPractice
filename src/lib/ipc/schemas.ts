@@ -15,7 +15,8 @@ export type EvidenceSource = z.infer<typeof EvidenceSource>;
 export const ServiceState = z.enum(["ready", "needs_setup", "unavailable", "busy"]);
 export const ServiceStatus = z.object({
   transcription: z.object({
-    mode: z.enum(["local", "off"]),
+    /** "api" = cloud transcription chosen as the default (D-26); `model` names the provider. */
+    mode: z.enum(["local", "api", "off"]),
     model: z.string().nullable(),
     state: ServiceState,
   }),

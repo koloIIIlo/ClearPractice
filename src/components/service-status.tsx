@@ -6,7 +6,9 @@ import type { ServiceStatus } from "@/lib/ipc/schemas";
 const STATE_TEXT = { ready: "ready", needs_setup: "needs setup", unavailable: "unavailable", busy: "working" } as const;
 
 function transcriptionLabel(t: ServiceStatus["transcription"]) {
-  return t.mode === "off" ? "Off" : `Local${t.model ? ` (${t.model})` : ""}`;
+  if (t.mode === "off") return "Off";
+  if (t.mode === "api") return `Cloud${t.model ? ` (${t.model})` : ""}`;
+  return `Local${t.model ? ` (${t.model})` : ""}`;
 }
 
 function coachingLabel(c: ServiceStatus["coaching"]) {
