@@ -27,3 +27,23 @@ it("rotates the focus daily and the new topic weekly, from real sessions and phr
   expect(sunday.weekly.newSituation.promptId).toBe(monday.weekly.newSituation.promptId);
   expect(next.weekly.newSituation.promptId).not.toBe(monday.weekly.newSituation.promptId);
 });
+
+it("builds progress from real sessions, keeping rehearsed and unfamiliar apart and pace unavailable, never 0 (4.16)", async () => {
+  const { buildProgress } = await import("./today-plan");
+  const base = structuredClone(sessions[0]);
+  const s = (id: string, familiarity: "familiar" | "unfamiliar", startedAt: string, extra: object = {}) =>
+    ({ ...base, id, status: "in_progress" as const, startedAt, localDate: startedAt.slice(0, 10), durationMs: 90_000, conditions: { ...base.conditions!, familiarity }, ...extra });
+  const details = [
+    s("a", "familiar", "2026-10-01T10:00:00Z", { ease: 3 }),
+    s("b", "familiar", "2026-10-03T10:00:00Z", { ease: null, takeaway: "Lead with the point." }),
+    s("c", "unfamiliar", "2026-10-02T10:00:00Z"),
+    s("d", "familiar", "2026-10-04T10:00:00Z", { status: "interrupted" as const }),
+  ];
+  const rehearsed = buildProgress("rehearsed", details as never);
+  expect(rehearsed.completedSessions).toBe(2);
+  expect(rehearsed.practiceMinutes).toBe(3);
+  expect(rehearsed.points.map((p) => [p.sessionId, p.ease, p.estimatedPaceWpm])).toEqual([["a", 3, null], ["b", null, null]]);
+  expect(rehearsed.highlight).toEqual({ sessionId: "b", title: base.title, improvement: "Lead with the point.", listenerFeedback: null });
+  expect(buildProgress("unfamiliar", details as never).points.map((p) => p.sessionId)).toEqual(["c"]);
+  expect(buildProgress("real", details as never).completedSessions).toBe(0);
+});

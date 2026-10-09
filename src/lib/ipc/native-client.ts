@@ -4,7 +4,7 @@ import { z } from "zod";
 import { IpcError, type IpcClient } from "./client";
 import { createMockClient } from "./mock-client";
 import * as S from "./schemas";
-import { buildTodayPlan } from "../today-plan";
+import { buildProgress, buildTodayPlan } from "../today-plan";
 import { toLocalDate } from "../phrase-schedule";
 
 async function command<T>(name: string, schema: { parse(value: unknown): T }, args?: Record<string, unknown>): Promise<T> {
@@ -103,13 +103,21 @@ export function createNativeClient(): IpcClient {
         storage: { lastBackupAt: null },
       });
     },
+    // Progress from your own sessions (4.16, first part): the 60 most recent are read.
+    getProgress: async (view) => {
+      const sessions = await command("list_sessions", S.SessionSummary.array(), { filter: null });
+      const details = await Promise.all(
+        sessions.filter((s) => s.status !== "interrupted" && s.attemptCount > 0).slice(0, 60).map((s) => command("get_session", S.SessionDetail, { sessionId: s.id }).catch(() => null)),
+      );
+      return S.ProgressSummary.parse(buildProgress(view, details.filter((d): d is S.SessionDetail => d !== null)));
+    },
     // Today's plan from your own sessions and phrases plus the curriculum rotation (4.12).
     getTodayPlan: async (length) => {
       const [sessions, phrases] = await Promise.all([
         command("list_sessions", S.SessionSummary.array(), { filter: null }),
         command("list_phrases", S.PhraseCard.array()),
       ]);
-      const newest = sessions.find((s) => s.status === "completed") ?? sessions[0];
+      const newest = sessions.find((s) => s.status === "completed") ?? sessions.find((s) => s.status !== "interrupted" && s.attemptCount > 0);
       const latest = newest ? await command("get_session", S.SessionDetail, { sessionId: newest.id }).catch(() => null) : null;
       return S.TodayPlan.parse(buildTodayPlan({ localDate: toLocalDate(new Date()), length, sessions, phrases, latest }));
     },

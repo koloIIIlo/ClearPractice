@@ -5,7 +5,7 @@
  * from your sessions, and the phrase to review is your next due phrase.
  */
 import { PROMPTS } from "@/content/prompts";
-import type { PhraseCard, SessionDetail, SessionLength, SessionSummary, TodayPlan } from "./ipc/schemas";
+import type { PhraseCard, ProgressSummary, ProgressView, SessionDetail, SessionLength, SessionSummary, TodayPlan } from "./ipc/schemas";
 
 export const PLAN_STEPS: Record<SessionLength, TodayPlan["steps"]> = {
   standard: [
@@ -45,7 +45,8 @@ export function buildTodayPlan({ localDate, length, sessions, phrases, latest }:
   // Monday-based weeks: 1970-01-01 was a Thursday.
   const week = Math.floor((day + 3) / 7);
   const topic = unfamiliar[week % unfamiliar.length];
-  const lastCompleted = sessions.find((s) => s.status === "completed") ?? sessions[0] ?? null;
+  // Native sessions stay "in progress" after their takes are saved; any session with takes counts.
+  const lastCompleted = sessions.find((s) => s.status === "completed") ?? sessions.find((s) => s.status !== "interrupted" && s.attemptCount > 0) ?? null;
   const reflection = latest && lastCompleted && latest.id === lastCompleted.id ? (latest.takeaway?.trim() || latest.notes.trim() || null) : null;
   const due = phrases.filter((p) => p.dueDate <= localDate).sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0] ?? null;
   return {
@@ -67,5 +68,25 @@ export function buildTodayPlan({ localDate, length, sessions, phrases, latest }:
       },
       realConversation: { task: "Explain a recent decision to someone and ask what they understood.", done: false },
     },
+  };
+}
+
+/**
+ * Progress from real sessions (plan 4.16, first part): rehearsed and unfamiliar
+ * practice are kept apart by each session's task conditions; ease is your own
+ * rating. Pace stays unavailable (null, never 0) until it is read from each
+ * session's transcript; real conversations arrive with 4.17.
+ */
+export function buildProgress(view: ProgressView, details: SessionDetail[]): ProgressSummary {
+  const familiarity = view === "rehearsed" ? "familiar" : view === "unfamiliar" ? "unfamiliar" : null;
+  const subset = familiarity === null ? [] : details.filter((s) => s.status !== "interrupted" && s.attempts.length > 0 && s.conditions?.familiarity === familiarity);
+  const ordered = [...subset].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  const withTakeaway = [...ordered].reverse().find((s) => s.takeaway?.trim());
+  return {
+    view,
+    practiceMinutes: Math.round(subset.reduce((n, s) => n + s.durationMs, 0) / 60_000),
+    completedSessions: subset.length,
+    points: ordered.map((s) => ({ date: s.localDate, sessionId: s.id, estimatedPaceWpm: null, ease: s.ease ?? null })),
+    highlight: withTakeaway ? { sessionId: withTakeaway.id, title: withTakeaway.title, improvement: withTakeaway.takeaway!.trim(), listenerFeedback: null } : null,
   };
 }
