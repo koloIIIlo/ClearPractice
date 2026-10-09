@@ -172,7 +172,7 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
         className="flex items-start gap-2 rounded-lg border border-dashed px-3 py-2 text-meta text-muted-foreground"
       >
         <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
-        {native ? "Recordings stay on this computer. After saving, open the session to transcribe a take and review fillers and pauses. Coaching feedback is still being developed." : "Browser preview: recording is simulated. Open the desktop app to capture and save real audio."}
+        {native ? "Recordings stay on this computer. After saving, open the session to transcribe a take, review fillers, pauses and intonation, compare takes, and ask for optional AI feedback." : "Browser preview: recording is simulated. Open the desktop app to capture and save real audio."}
       </div>
 
       {passage && (

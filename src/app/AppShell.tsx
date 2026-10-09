@@ -5,6 +5,7 @@ import { AppSidebar } from "./AppSidebar";
 import { CommandPalette } from "./CommandPalette";
 import { TopBar } from "./TopBar";
 import { useIpc } from "@/lib/ipc";
+import { RecoveryNotice } from "./RecoveryNotice";
 
 export function AppShell() {
   const ipc = useIpc();
@@ -36,9 +37,10 @@ export function AppShell() {
       <AppSidebar />
       <SidebarInset>
         <TopBar onOpenSearch={() => setSearchOpen(true)} />
-        <p role="note" className="border-b px-4 py-2 text-meta text-muted-foreground">
-          {ipc.recordingMode === "native" ? "Development preview: recordings and session history are stored on this computer. Routine, phrases and progress still show sample data." : "Browser preview with sample data. Open the desktop app for real recording."}
-        </p>
+        {ipc.recordingMode !== "native" && (
+          <p role="note" className="border-b px-4 py-2 text-meta text-muted-foreground">Browser preview with sample data. Open the desktop app for real recording.</p>
+        )}
+        <RecoveryNotice />
         <main id="main" tabIndex={-1} className="flex-1 outline-none">
           <Outlet />
         </main>
