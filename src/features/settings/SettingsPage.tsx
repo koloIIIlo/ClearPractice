@@ -355,7 +355,7 @@ function DataSettings() {
   return (
     <>
       <Section title="Storage" description="Recordings, transcripts, and notes stay on this computer, in the data folder below.">
-        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-body">
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 text-body">
           <dt className="text-muted-foreground">Data folder</dt>
           <dd><DataFolder /></dd>
           <dt className="text-muted-foreground">Recordings</dt>

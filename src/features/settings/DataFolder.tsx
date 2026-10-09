@@ -42,7 +42,7 @@ export function DataFolder() {
     onSuccess: async () => { setConfirmRemove(false); await qc.invalidateQueries({ queryKey: ["data-location"] }); },
   });
 
-  if (!native) return <code>%LOCALAPPDATA%\com.clearpractice.app</code>;
+  if (!native) return <code className="break-all">%LOCALAPPDATA%\com.clearpractice.app</code>;
   const s = status.data;
   return (
     <div className="space-y-2">
