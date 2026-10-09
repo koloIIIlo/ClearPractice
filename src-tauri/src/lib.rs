@@ -933,7 +933,8 @@ async fn preview_split_transcription(
 }
 
 /// Sends an approved split preview and proposes clips from the word timings.
-/// The paid result is not stored as a transcript: the recording is not a take.
+/// The paid result is not stored as a transcript (the recording is not a take);
+/// its raw answer is kept under cache/api-transcription.
 #[tauri::command]
 async fn request_split_transcription(
     storage: State<'_, Arc<SessionStorage>>,
@@ -951,6 +952,7 @@ async fn request_split_transcription(
     let accounting = accounting.inner().clone();
     accounting.0.as_ref().map_err(Clone::clone)?;
     let inflight = inflight.inner().clone();
+    let started = std::time::Instant::now();
     let task = {
         let (accounting, request_id, payload_sha256) = (accounting.clone(), request_id.clone(), payload_sha256.clone());
         tauri::async_runtime::spawn(async move {
@@ -970,6 +972,14 @@ async fn request_split_transcription(
         Ok(result) => result?,
         Err(_) => return Err(api::audio::stopped(accounting.0.as_ref().map_err(Clone::clone)?, &request_id)),
     };
+    // The recording is not a take, so the paid result is kept beside the app's
+    // other provider results (raw answer, validated result, time from Send to
+    // result) for review and the provider benchmark (0.23). Never logged.
+    if let Ok(dir) = api::audio::keep_unsaved(&accounting.1, &run) {
+        let timing = serde_json::json!({"elapsedMs": started.elapsed().as_millis() as u64,
+            "measured": "From Send to the validated result: upload, processing and polling, on this computer's clock"});
+        let _ = std::fs::write(dir.join("timing.json"), timing.to_string());
+    }
     let words = run.result.words.value.ok_or("The provider returned no word timings, so no clips can be cut. Try transcribing on this computer.")?;
     let segments = clipsplit::segments_from_words(&words);
     let staging_id = run.result.asset_id.clone();

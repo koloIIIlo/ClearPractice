@@ -132,6 +132,40 @@ def score(reference_path, run_dir):
     print(json.dumps(trials[0], indent=2))
 
 
+def score_api(reference_path, run_dir, output_path):
+    """Scores one approved cloud transcription (0.23) kept by the app under
+    cache/api-transcription/<run>: the same measures as the local runs, plus
+    word-timing checks, the app's Send-to-result time and the recorded cost.
+    Reads only files on disk; sends nothing."""
+    reference, folder = read(reference_path), Path(run_dir)
+    result = read(folder / "transcription.json")
+    timing = read(folder / "timing.json") if (folder / "timing.json").exists() else None
+    usage = result.get("usage", {})
+    duration = (usage.get("audioDurationMs") or {}).get("value")
+    if duration is not None and abs(duration - reference["durationMs"]) > 500:
+        raise ValueError(f"This run is {duration} ms long; the public sample is {reference['durationMs']:.0f} ms. Wrong recording?")
+    words = (result.get("words") or {}).get("value") or []
+    starts = [w["startMs"] for w in words]
+    timings = {
+        "wordTimings": bool(words), "words": len(words),
+        "monotonic": all(a <= b for a, b in zip(starts, starts[1:])),
+        "withinAudio": all(0 <= w["startMs"] <= w["endMs"] <= reference["durationMs"] + 1000 for w in words),
+        "firstWordMs": starts[0] if starts else None, "lastWordEndMs": words[-1]["endMs"] if words else None,
+        "unavailableReason": (result.get("words") or {}).get("unavailableReason"),
+    }
+    output = {"version": 1, "dataset": reference["dataset"], "source": reference["source"], "license": reference["license"],
+              "provider": result["provider"], "model": result["modelId"], "adapterVersion": result.get("adapterVersion"),
+              "runId": result["runId"], "durationMs": reference["durationMs"],
+              "quality": metrics(reference["verbatim"], result["rawText"]), "timings": timings,
+              "sendToResultMs": timing["elapsedMs"] if timing else None,
+              "sendToResultUnavailableReason": None if timing else "This run was kept before the app recorded timings",
+              "estimatedCostMicroUsd": (usage.get("estimatedCostMicroUsd") or {}).get("value"),
+              "costUnavailableReason": (usage.get("estimatedCostMicroUsd") or {}).get("unavailableReason"),
+              "personalAccuracy": None, "personalAccuracyUnavailableReason": "Public multi-clip fixture substituted at user's request"}
+    Path(output_path).write_text(json.dumps(output, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps({k: output[k] for k in ("provider", "model", "quality", "timings", "sendToResultMs", "estimatedCostMicroUsd")}, indent=2))
+
+
 class ScoringTests(unittest.TestCase):
     def test_filler_deletion_and_false_insertion(self):
         result = metrics("I [UH] think [UM] so", "I think um so uh")
@@ -146,12 +180,14 @@ class ScoringTests(unittest.TestCase):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["prepare", "score", "test"])
+    parser.add_argument("action", choices=["prepare", "score", "score-api", "test"])
     parser.add_argument("paths", nargs="*")
     args = parser.parse_args()
     if args.action == "test":
         unittest.main(argv=[__file__])
     elif args.action == "prepare":
         prepare(*args.paths)
+    elif args.action == "score-api":
+        score_api(*args.paths)
     else:
         score(*args.paths)
