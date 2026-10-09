@@ -14,7 +14,8 @@ import { SavedAudio } from "@/features/practice/RecordingLibrary";
 import { MoveTakeToTrashButton, MoveToTrashButton } from "./TrashPage";
 import { TakeTranscript } from "@/features/review/TakeTranscript";
 import { IntonationTrack } from "@/features/review/IntonationTrack";
-import { Download } from "lucide-react";
+import { BookmarkPlus, Download } from "lucide-react";
+import { PhraseForm } from "@/features/phrases/PhrasesPage";
 
 /** Real saved audio never falls through to simulated review or mock observations. */
 export function NativeSession({ session, selectedOrdinal }: { session: SessionDetail; selectedOrdinal?: number }) {
@@ -50,7 +51,7 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
         <h2 className="font-semibold">Take {a.ordinal} · {formatClock(a.durationMs)} <span className="text-meta font-normal text-muted-foreground">Measured duration</span></h2>
         <div className="ml-auto"><MoveTakeToTrashButton take={a} sessionTitle={session.title} /></div>
       </div>
-      {a.audioUnavailableReason ? <p role="alert">Audio unavailable: {a.audioUnavailableReason}</p> : <LinkedTake attemptId={a.id} />}
+      {a.audioUnavailableReason ? <p role="alert">Audio unavailable: {a.audioUnavailableReason}</p> : <LinkedTake attemptId={a.id} sessionId={session.id} />}
     </Panel>)}
     <Panel>
       <form className="space-y-4" onChange={() => save.reset()} onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
@@ -84,9 +85,33 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
   </div>;
 }
 /** Player and intonation share one position, so the pitch view follows playback (P.4). */
-function LinkedTake({ attemptId }: { attemptId: string }) {
+function LinkedTake({ attemptId, sessionId }: { attemptId: string; sessionId: string }) {
   const [link] = useState(createPlayerLink);
-  return <><NativeTake assetId={attemptId} link={link} /><IntonationTrack attemptId={attemptId} link={link} /><TakeTranscript attemptId={attemptId} link={link} /></>;
+  return <><NativeTake assetId={attemptId} link={link} /><IntonationTrack attemptId={attemptId} link={link} /><TakeTranscript attemptId={attemptId} link={link} /><SavePhrase sessionId={sessionId} /></>;
+}
+
+/**
+ * Save a phrase from this session (4.11, 4.15): selected transcript text, if
+ * any, becomes "What you said"; the card links back to the session.
+ */
+export function SavePhrase({ sessionId }: { sessionId: string }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  if (open !== null) return <PhraseForm initialOriginal={open} sourceSessionId={sessionId} onDone={() => { setOpen(null); setSaved(true); }} />;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-meta">
+      <Button
+        variant="outline"
+        size="sm"
+        // Read the selection before the click moves focus away from it.
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => { setSaved(false); setOpen((window.getSelection()?.toString() ?? "").trim().slice(0, 500)); }}
+      >
+        <BookmarkPlus aria-hidden /> Save a phrase…
+      </Button>
+      <span className="text-muted-foreground">{saved ? <>Saved. <Link className="underline" to="/phrases">Open Phrases</Link></> : "Select words in the transcript first to start from them."}</span>
+    </div>
+  );
 }
 function NativeTake({ assetId, link }: { assetId: string; link: PlayerLink }) {
   const ipc = useIpc();

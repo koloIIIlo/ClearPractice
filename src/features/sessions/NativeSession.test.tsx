@@ -5,7 +5,7 @@ import { expect, it, vi } from "vitest";
 import { IpcContext } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
 import { sessions } from "@/lib/ipc/mock-data";
-import { NativeSession } from "./NativeSession";
+import { NativeSession, SavePhrase } from "./NativeSession";
 
 it("keeps user edits after failed saving and never substitutes sample analysis for real audio", async () => {
   const session = { ...structuredClone(sessions[0]), conditions: null, conditionsUnavailableReason: "Not recorded in this older take.",
@@ -38,4 +38,30 @@ it("exports a session through the native save dialog and reports what was includ
   fireEvent.click(screen.getByRole("button", { name: "Export…" }));
   expect(await screen.findByRole("status")).toHaveTextContent("Exported Habit 2026-10-08.zip: notes, measurements and 1 original recording (1 unavailable, listed in the file).");
   expect(client.exportSession).toHaveBeenCalledWith(session.id);
+});
+
+it("saves a phrase from a session, starting from the selected transcript words (4.15)", async () => {
+  const client = { ...createMockClient(), recordingMode: "native" as const, addPhrase: vi.fn(createMockClient().addPhrase) };
+  render(
+    <MemoryRouter>
+      <QueryClientProvider client={new QueryClient()}>
+        <IpcContext.Provider value={client}>
+          <p>So I want to say my opinion about indexes.</p>
+          <SavePhrase sessionId="session-7" />
+        </IpcContext.Provider>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+  const words = screen.getByText(/I want to say my opinion/).firstChild!;
+  const range = document.createRange();
+  range.setStart(words, 3);
+  range.setEnd(words, 27);
+  window.getSelection()!.removeAllRanges();
+  window.getSelection()!.addRange(range);
+  fireEvent.click(screen.getByRole("button", { name: "Save a phrase…" }));
+  expect(screen.getByLabelText("What you said")).toHaveValue("I want to say my opinion");
+  fireEvent.change(screen.getByLabelText("A better way to say it"), { target: { value: "I'd like to share my view" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add phrase" }));
+  await waitFor(() => expect(client.addPhrase).toHaveBeenCalledWith(expect.objectContaining({ original: "I want to say my opinion", expression: "I'd like to share my view" }), "session-7"));
+  expect(await screen.findByRole("link", { name: "Open Phrases" })).toHaveAttribute("href", "/phrases");
 });

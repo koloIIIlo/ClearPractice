@@ -36,7 +36,7 @@ it("adds a phrase that is new and due today, edits its text and removes it after
   await user.type(screen.getByLabelText("A better way to say it"), "I lead with the conclusion");
   await user.type(screen.getByLabelText("Examples (optional, one per line)"), "I lead with the conclusion in reviews.{enter}{enter}");
   await user.click(screen.getByRole("button", { name: "Add phrase" }));
-  expect(client.addPhrase).toHaveBeenCalledWith({ original: "I start with the end", expression: "I lead with the conclusion", explanation: "", examples: ["I lead with the conclusion in reviews.", "", ""] });
+  expect(client.addPhrase).toHaveBeenCalledWith({ original: "I start with the end", expression: "I lead with the conclusion", explanation: "", examples: ["I lead with the conclusion in reviews.", "", ""] }, null);
   const row = (await screen.findByText("I lead with the conclusion")).closest("li")!;
   expect(within(row).getByText("New")).toBeInTheDocument();
   expect(within(row).getByText("Due now")).toBeInTheDocument();

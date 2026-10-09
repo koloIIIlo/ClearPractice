@@ -65,15 +65,15 @@ export function PhrasesPage() {
 }
 
 /** Add or edit a card (4.15). Editing changes the text only; the schedule stays. */
-function PhraseForm({ card, onDone }: { card?: PhraseCard; onDone: () => void }) {
+export function PhraseForm({ card, onDone, initialOriginal = "", sourceSessionId = null }: { card?: PhraseCard; onDone: () => void; initialOriginal?: string; sourceSessionId?: string | null }) {
   const ipc = useIpc();
   const qc = useQueryClient();
-  const [original, setOriginal] = useState(card?.original ?? "");
+  const [original, setOriginal] = useState(card?.original ?? initialOriginal);
   const [expression, setExpression] = useState(card?.expression ?? "");
   const [explanation, setExplanation] = useState(card?.explanation ?? "");
   const [examples, setExamples] = useState((card?.examples ?? []).join("\n"));
   const save = useMutation({
-    mutationFn: (input: PhraseInput) => (card ? ipc.updatePhrase(card.id, input) : ipc.addPhrase(input)),
+    mutationFn: (input: PhraseInput) => (card ? ipc.updatePhrase(card.id, input) : ipc.addPhrase(input, sourceSessionId)),
     onSuccess: async () => {
       await Promise.all([qc.invalidateQueries({ queryKey: ["phrases"] }), qc.invalidateQueries({ queryKey: ["today"] })]);
       onDone();
