@@ -70,6 +70,8 @@ E (environment) → **M0 Feasibility** (audio, Whisper, text API spike; optional
 
 **Evening of 9 October:** AssemblyAI benchmarked through the app (0.23: 13/14 fillers, 4/194 word errors, 12.8 s, USD 0.007; selected as the cloud provider; Deepgram unmeasured without a key). Recording no longer stops on a slow disk or microphone dropouts (20 s buffer). AI feedback now suggests phrases you can save in one click (corrections too). New logo (an intonation line over a baseline) as app icon, favicon and sidebar mark (`design/logo`). Typed sentences can be kept as a phrase's examples without recording (4.9). Key slots are tested against every address the app calls (5.5). Start-up, record response and search are measured each run (Settings → About → Performance, 6.5). Tests: Rust 119, Vitest 135 in 49 files.
 
+**Late on 9 October (completeness pass):** Settings has no dead controls left: a working daily reminder (in-app, once a day, only if you have not practised), plain Languages facts, the setup-file note instead of a disabled Acceleration control, and Transcription Off. Hear it plays filler words timed by a cloud transcript. Practice complete can save a phrase. Thought groups has Listen with an offline Windows voice. Coaching prices are editable with a date. AI follow-ups work with the local model. Ctrl+K searches real phrases, all prompts and full guide text. The session export now carries transcripts, corrections, measures and AI feedback. Today's status line shows the real coaching mode and last backup. Tests: Rust 120, Vitest 139+.
+
 ## 5. Answers and decisions so far
 
 | Topic | Answer / decision |
