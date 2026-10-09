@@ -17,6 +17,8 @@ import { formatClockTenths, parseClock } from "@/features/review/waveform";
 import { API_LABELS, ApiRequestFlow } from "@/features/review/ApiTranscribe";
 import type { AudioProvider } from "@/lib/ipc/schemas";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 type Proposal = ClipCandidate & { keep: boolean; description: string; feature: Feature | null; suggested: boolean; reason?: string; savedAs?: string };
 
@@ -247,10 +249,12 @@ function AiPick({ stagingId, active, settings, onSettings, onPicked }: {
           {COACHING_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} · {m.note}</option>)}
         </NativeSelect>
         <Label htmlFor="pick-wanted" className="text-meta">Up to</Label>
-        <Input id="pick-wanted" type="number" min={1} max={20} className="h-9 w-16" value={wanted} disabled={working} onChange={(e) => change({ wanted: Math.max(1, Math.min(20, Number(e.target.value) || 1)) })} />
+        <NativeSelect id="pick-wanted" compact value={wanted} disabled={working} onChange={(e) => change({ wanted: Number(e.target.value) })}>
+          {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+        </NativeSelect>
         <span>clips</span>
         <label className="flex items-center gap-2">
-          <input type="checkbox" checked={toneHint} disabled={working} onChange={(e) => change({ toneHint: e.target.checked })} /> Experimental: let AI guess the speaker's tone as a hint
+          <Checkbox checked={toneHint} disabled={working} onCheckedChange={(v) => change({ toneHint: v === true })} /> Experimental: let AI guess the speaker's tone as a hint
         </label>
       </div>
 
@@ -590,15 +594,17 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
             <p className="flex items-center gap-2 font-medium"><Scissors aria-hidden className="size-4" /> Split into clips automatically</p>
             <p className="text-meta text-muted-foreground">Transcribes the recording, then proposes 8–20 s clips that start and end on whole sentences.</p>
             <label className="flex items-center gap-2 text-meta">
-              <input type="checkbox" checked={aiChoose} onChange={(e) => setAiChoose(e.target.checked)} /> Let AI choose the best parts (after transcription; sends only text)
+              <Checkbox checked={aiChoose} onCheckedChange={(v) => setAiChoose(v === true)} /> Let AI choose the best parts (after transcription; sends only text)
             </label>
-            <fieldset className="flex flex-wrap gap-4 text-meta" disabled={!!busy}>
+            <fieldset className="text-meta" disabled={!!busy}>
               <legend className="sr-only">Transcribe with</legend>
-              {([["local", "This computer"], ["api", "Cloud API"]] as const).map(([value, label]) => (
-                <label key={value} className="flex min-h-8 items-center gap-2">
-                  <input type="radio" name="split-engine" checked={splitEngine === value} onChange={() => setEngine(value)} /> {label}
-                </label>
-              ))}
+              <RadioGroup value={splitEngine} onValueChange={(v) => setEngine(v as "local" | "api")} className="flex flex-wrap gap-4" disabled={!!busy}>
+                {([["local", "This computer"], ["api", "Cloud API"]] as const).map(([value, label]) => (
+                  <Label key={value} htmlFor={`split-engine-${value}`} className="flex min-h-8 items-center gap-2 font-normal">
+                    <RadioGroupItem id={`split-engine-${value}`} value={value} /> {label}
+                  </Label>
+                ))}
+              </RadioGroup>
             </fieldset>
             {splitEngine === "local" ? (
               <Button disabled={!!busy} onClick={() => void split()}>Transcribe and split</Button>
@@ -669,11 +675,10 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
                   {proposals.map((p, i) => (
                     <li key={`${p.startMs}`} className="space-y-1 rounded-md border p-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           aria-label={`Keep clip ${i + 1}`}
                           checked={p.keep}
-                          onChange={(e) => setProposals((all) => all!.map((q, j) => (j === i ? { ...q, keep: e.target.checked } : q)))}
+                          onCheckedChange={(v) => setProposals((all) => all!.map((q, j) => (j === i ? { ...q, keep: v === true } : q)))}
                         />
                         <Input
                           aria-label={`Title of clip ${i + 1}`}

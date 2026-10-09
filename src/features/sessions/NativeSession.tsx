@@ -17,6 +17,7 @@ import { IntonationTrack } from "@/features/review/IntonationTrack";
 import { BookmarkPlus, Columns2, Download } from "lucide-react";
 import { PhraseForm } from "@/features/phrases/PhrasesPage";
 import { TakeCoaching } from "@/features/review/TakeCoaching";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /** Real saved audio never falls through to simulated review or mock observations. */
 export function NativeSession({ session, selectedOrdinal }: { session: SessionDetail; selectedOrdinal?: number }) {
@@ -64,7 +65,7 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
         <div className="space-y-2"><Label htmlFor="session-title">Title</Label><Input id="session-title" value={title} maxLength={512} required disabled={save.isPending} onChange={(e) => setTitle(e.target.value)} /></div>
         <div className="space-y-2"><Label htmlFor="session-notes">Your note</Label><Textarea id="session-notes" value={notes} maxLength={32768} disabled={save.isPending} onChange={(e) => setNotes(e.target.value)} /></div>
         <div className="space-y-2"><Label htmlFor="session-tags">Tags, separated by commas</Label><Input id="session-tags" value={tags} disabled={save.isPending} onChange={(e) => setTags(e.target.value)} /></div>
-        <label className="flex min-h-10 items-center gap-2"><input type="checkbox" checked={favorite} disabled={save.isPending} onChange={(e) => setFavorite(e.target.checked)} /> Favorite</label>
+        <label className="flex min-h-10 items-center gap-2"><Checkbox checked={favorite} disabled={save.isPending} onCheckedChange={(v) => { save.reset(); setFavorite(v === true); }} /> Favorite</label>
         <Button type="submit" disabled={save.isPending}>{save.isPending ? "Saving…" : "Save details"}</Button>
         {save.isSuccess && <p role="status" className="text-meta">Session details saved on this computer.</p>}
         {save.error && <p role="alert" className="text-destructive">{save.error.message}</p>}

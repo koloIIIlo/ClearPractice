@@ -10,6 +10,7 @@ import { useIpc } from "@/lib/ipc";
 import type { ClipFolder, ReferenceClip } from "@/lib/ipc/schemas";
 import { cn } from "@/lib/utils";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export type Feature = "emphasis" | "rhythm" | "endings";
 export const FEATURE_LABELS: Record<Feature, string> = { emphasis: "Emphasis", rhythm: "Phrase rhythm", endings: "Clear endings" };
@@ -70,7 +71,7 @@ function ClipRow({ clip, folders, chosen, checked, playing, onCheck, onPlay, onC
   return (
     <li className={cn("space-y-2 rounded-md border p-2", chosen && "border-primary bg-secondary/40")}>
       <div className="flex flex-wrap items-center gap-2">
-        <input type="checkbox" aria-label={`Select ${clip.title}`} checked={checked} onChange={(e) => onCheck(e.target.checked)} />
+        <Checkbox aria-label={`Select ${clip.title}`} checked={checked} onCheckedChange={(v) => onCheck(v === true)} />
         <Button variant="ghost" size="sm" aria-label={`${playing ? "Pause" : "Play"} ${clip.title}`} onClick={onPlay}>
           {playing ? <Pause aria-hidden /> : <Play aria-hidden />}
         </Button>

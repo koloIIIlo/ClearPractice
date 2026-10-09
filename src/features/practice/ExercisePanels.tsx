@@ -202,11 +202,13 @@ export function ImitationPanel({ sessionId, hasTake, locked, native, lastTakeAss
       <h2 id="imitation-heading" className="font-semibold">Choose one feature to imitate</h2>
       <fieldset disabled={locked} className="space-y-2">
         <legend className="sr-only">Feature</legend>
-        {IMITATION_FEATURES.map((f) => (
-          <label key={f} className="flex min-h-9 items-center gap-2">
-            <input type="radio" name="imitation-feature" checked={feature === f} onChange={() => { setFeature(f); save.mutate(f); }} /> {f}
-          </label>
-        ))}
+        <RadioGroup value={feature ?? ""} onValueChange={(f) => { setFeature(f as typeof feature); save.mutate(f); }} className="gap-1" disabled={locked}>
+          {IMITATION_FEATURES.map((f, i) => (
+            <Label key={f} htmlFor={`imitation-feature-${i}`} className="flex min-h-9 items-center gap-2 font-normal">
+              <RadioGroupItem id={`imitation-feature-${i}`} value={f} /> {f}
+            </Label>
+          ))}
+        </RadioGroup>
       </fieldset>
       <ReferenceClips locked={locked} native={native} onSelect={setClip} />
       <p role="note" className="rounded-lg border border-dashed px-3 py-2 text-meta text-muted-foreground">

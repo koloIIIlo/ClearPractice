@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 const EASE = ["Very hard", "Hard", "Manageable", "Easy", "Very easy"] as const;
 
@@ -67,13 +68,13 @@ export function CompletionPage() {
             <h2 className="font-semibold">Before you go</h2>
             <fieldset className="space-y-2">
               <legend className="flex items-center gap-2 font-medium">How easy did today feel? <EvidenceLabel source="note" /></legend>
-              <div className="flex flex-wrap gap-2">
+              <RadioGroup value={ease ? String(ease) : ""} onValueChange={(v) => setEase(Number(v))} className="flex flex-wrap gap-2">
                 {EASE.map((label, i) => (
-                  <label key={label} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border px-3 has-[:checked]:border-primary has-[:checked]:bg-secondary">
-                    <input type="radio" name="ease" checked={ease === i + 1} onChange={() => setEase(i + 1)} /> {i + 1} · {label}
-                  </label>
+                  <Label key={label} htmlFor={`ease-${i + 1}`} className="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border px-3 font-normal has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-secondary">
+                    <RadioGroupItem id={`ease-${i + 1}`} value={String(i + 1)} /> {i + 1} · {label}
+                  </Label>
                 ))}
-              </div>
+              </RadioGroup>
               <p className="text-meta text-muted-foreground">Your own rating, used only to suggest how hard tomorrow's tasks are. It is never a score.</p>
             </fieldset>
             <div className="space-y-1">

@@ -12,6 +12,7 @@ import { CloudTranscribe } from "./ApiTranscribe";
 import { useLinkedPosition, type PlayerLink } from "./player-link";
 import { cn } from "@/lib/utils";
 import type { AttemptTranscript, TranscriptMeasures, TranscriptionEvent } from "@/lib/ipc/schemas";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 const PHASES: Record<string, string> = {
   preparing: "Preparing audio",
@@ -325,17 +326,19 @@ export function TakeTranscript({ attemptId, link }: { attemptId: string; link?: 
         <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-1 text-meta">
           <legend className="sr-only">Transcribe with</legend>
           <span className="text-muted-foreground" aria-hidden>Transcribe with</span>
-          {(
-            [
-              ["local", "This computer"],
-              ["api", "Cloud API"],
-            ] as const
-          ).map(([value, label]) => (
-            <label key={value} className="flex min-h-8 items-center gap-2">
-              <input type="radio" name={`transcribe-mode-${attemptId}`} checked={mode === value} onChange={() => setChoice(value)} />
-              {label}
-            </label>
-          ))}
+          <RadioGroup value={mode} onValueChange={(v) => setChoice(v as "local" | "api")} className="flex flex-wrap gap-x-4 gap-y-1">
+            {(
+              [
+                ["local", "This computer"],
+                ["api", "Cloud API"],
+              ] as const
+            ).map(([value, label]) => (
+              <label key={value} htmlFor={`transcribe-mode-${attemptId}-${value}`} className="flex min-h-8 items-center gap-2">
+                <RadioGroupItem id={`transcribe-mode-${attemptId}-${value}`} value={value} />
+                {label}
+              </label>
+            ))}
+          </RadioGroup>
         </fieldset>
       )}
 

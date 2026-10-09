@@ -6,6 +6,8 @@ import { formatClock, formatLongDay, UI_LOCALE } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
 import type { AudioPreview, AudioProvider, AudioResult } from "@/lib/ipc/schemas";
 import { AudioPlayer } from "@/components/audio-player";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 
 export const API_LABELS: Record<AudioProvider, string> = { deepgram: "Deepgram Nova-3", assemblyai: "AssemblyAI Universal-3.5 Pro" };
 export const money = (micro: number) =>
@@ -174,13 +176,15 @@ export function CloudTranscribe({ attemptId, defaultProvider }: { attemptId: str
         Sends this whole take to {API_LABELS[chosen]} after you review the preview. Your local transcript and corrections stay as they are.
       </p>
       {stored.length > 1 && (
-        <fieldset className="flex flex-wrap gap-4 text-meta">
+        <fieldset className="text-meta">
           <legend className="sr-only">Cloud provider</legend>
-          {stored.map((p) => (
-            <label key={p} className="flex min-h-10 items-center gap-2">
-              <input type="radio" name={`api-provider-${attemptId}`} checked={chosen === p} onChange={() => setProvider(p)} /> {API_LABELS[p]}
-            </label>
-          ))}
+          <RadioGroup value={chosen} onValueChange={(p) => setProvider(p as AudioProvider)} className="flex flex-wrap gap-4">
+            {stored.map((p) => (
+              <Label key={p} htmlFor={`api-provider-${attemptId}-${p}`} className="flex min-h-10 items-center gap-2 font-normal">
+                <RadioGroupItem id={`api-provider-${attemptId}-${p}`} value={p} /> {API_LABELS[p]}
+              </Label>
+            ))}
+          </RadioGroup>
         </fieldset>
       )}
       <ApiRequestFlow attemptId={attemptId} provider={chosen} hasKey keyHint="" />
