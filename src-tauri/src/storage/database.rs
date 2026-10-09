@@ -27,6 +27,8 @@ pub mod prompts;
 pub mod transfer;
 #[path = "progression.rs"]
 pub mod progression;
+#[path = "counts.rs"]
+pub mod counts;
 const VERSION: i64 = 15;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;

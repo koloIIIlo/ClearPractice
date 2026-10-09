@@ -16,6 +16,8 @@ import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BackupSettings } from "./BackupSettings";
 import { DataFolder } from "./DataFolder";
+import { StorageUsage } from "./StorageUsage";
+import { DiagnosticReport } from "./DiagnosticReport";
 import { TranscriptionSetup } from "./TranscriptionSetup";
 import { TranscriptionMode } from "./TranscriptionMode";
 import { MicrophoneTest } from "./MicrophoneTest";
@@ -323,6 +325,9 @@ function DataSettings() {
           <dd><RecordingTotals /></dd>
         </dl>
       </Section>
+      <Section title="Space used" description="What the data folder holds. Clearing the cache never removes recordings or anything you saved.">
+        <StorageUsage />
+      </Section>
       <Section
         title="Backups"
         description="A backup on another drive protects against drive failure. A copy on the same drive doesn't. API keys are never included."
@@ -336,6 +341,7 @@ function DataSettings() {
 
 function AboutSettings() {
   return (
+    <>
     <Section title="About ClearPractice">
       <p>Version 0.1.0 · development preview</p>
       <p className="text-muted-foreground">
@@ -347,5 +353,9 @@ function AboutSettings() {
       </p>
       <Button variant="outline" className="w-fit" asChild><NavLink to="/welcome">Run the first-launch setup again</NavLink></Button>
     </Section>
+    <Section title="Diagnostic report" description="For reporting a problem: versions, counts and settings states, without your recordings, words or names. You read it before saving it.">
+      <DiagnosticReport />
+    </Section>
+    </>
   );
 }

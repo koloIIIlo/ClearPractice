@@ -812,6 +812,12 @@ export const FollowUpQuestion = z.object({
 }).strict();
 export type FollowUpQuestion = z.infer<typeof FollowUpQuestion>;
 
+/** Storage by category (6.6). Only the rebuildable cache can be cleared. */
+export const StorageCategory = z.object({
+  key: z.string(), label: z.string(), note: z.string(), bytes: z.number().int().nonnegative(), files: z.number().int().nonnegative(), clearable: z.boolean(),
+}).strict();
+export type StorageCategory = z.infer<typeof StorageCategory>;
+
 export const TakeCoachingPreview = z.object({
   preview: CoachingPreview,
   /** When this exact request was already answered for the take (asking again may be billed). */

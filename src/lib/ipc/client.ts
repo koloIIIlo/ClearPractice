@@ -68,6 +68,7 @@ import type {
   CoachingRun,
   TakeCoachingPreview,
   FollowUpQuestion,
+  StorageCategory,
 } from "./schemas";
 
 export interface SessionFilter {
@@ -273,6 +274,13 @@ export interface IpcClient {
   /** Stops waiting for a sent request; a dispatched one keeps its possible charge. */
   stopTakeCoaching(requestId: string): Promise<void>;
   listTakeCoaching(attemptId: string): Promise<CoachingRun[]>;
+  /** Storage by category; clearing removes only the rebuildable cache (6.6). Returns bytes freed. */
+  getStorageUsage(): Promise<StorageCategory[]>;
+  /** Diagnostic report (6.7): counts, versions, states; no personal content. Read it, then save it. */
+  buildDiagnostics(): Promise<string>;
+  /** Returns the saved file's name, or null when cancelled. */
+  saveDiagnostics(text: string): Promise<string | null>;
+  clearCache(): Promise<number>;
   /** An AI follow-up question after a take (5.11): a separate request, a simulation. */
   previewFollowUp(attemptId: string, model: CoachingModel): Promise<CoachingPreview>;
   requestFollowUp(attemptId: string, requestId: string, payloadSha256: string): Promise<FollowUpQuestion>;

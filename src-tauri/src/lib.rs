@@ -16,6 +16,8 @@ pub mod prosody;
 pub mod sources;
 pub mod storage;
 pub mod take_coaching;
+pub mod storage_usage;
+pub mod diagnostics;
 mod redaction_audit;
 pub mod transcribe;
 
@@ -1682,6 +1684,67 @@ async fn request_follow_up(
     }
 }
 
+/// Storage by category (6.6).
+#[tauri::command]
+async fn get_storage_usage(storage: State<'_, Arc<SessionStorage>>) -> Result<Vec<storage_usage::Category>, String> {
+    let root = storage.with(|db| Ok(db.root().to_path_buf()))?;
+    tauri::async_runtime::spawn_blocking(move || Ok(storage_usage::usage(&root)))
+        .await
+        .map_err(|_| "Measuring storage failed.".to_string())?
+}
+
+/// Removes only the rebuildable cache (6.6); refused while recording or transcribing.
+#[tauri::command]
+async fn clear_cache(
+    storage: State<'_, Arc<SessionStorage>>,
+    capture: State<'_, Arc<CaptureService>>,
+    transcription: State<'_, Arc<Transcription>>,
+) -> Result<u64, String> {
+    if capture.is_active() || transcription.active.is_active() {
+        return Err("Finish the recording or transcription first. Nothing was removed.".into());
+    }
+    let root = storage.with(|db| Ok(db.root().to_path_buf()))?;
+    tauri::async_runtime::spawn_blocking(move || storage_usage::clear_cache(&root))
+        .await
+        .map_err(|_| "Clearing the cache failed.".to_string())?
+}
+
+/// Builds the diagnostic report for you to read before saving (6.7).
+#[tauri::command]
+async fn build_diagnostics(storage: State<'_, Arc<SessionStorage>>, accounting: State<'_, Arc<ApiAccounting>>) -> Result<String, String> {
+    let budget = accounting.0.as_ref().ok().and_then(|b| b.summary().ok());
+    with_storage(&storage, move |db| {
+        let setup = transcribe::status(db).ok();
+        let key = |p: &str| credentials::provider_status(p).map(|s| s.present).ok();
+        let extra = serde_json::json!({
+            "localTranscription": setup.map(|s| serde_json::json!({"configured": s.configured, "model": s.model_id, "backend": s.backend})),
+            "keysPresent": {"openai": credentials::status().map(|s| s.present).ok(), "deepgram": key("deepgram"), "assemblyai": key("assemblyai")},
+            "apiBudgetThisMonth": budget.map(|b| serde_json::json!({"countedMicroUsd": b.counted_micro_usd, "uncertainMicroUsd": b.uncertain_micro_usd, "stopMicroUsd": b.stop_micro_usd})),
+        });
+        diagnostics::report(db, extra)
+    })
+    .await
+    .map_err(|_| "Building the report failed.".to_string())?
+}
+
+/// Saves the report you reviewed to a file you choose. Nothing is sent.
+#[tauri::command]
+async fn save_diagnostics(app: tauri::AppHandle, text: String) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    if text.len() > 1_048_576 || !text.starts_with('{') {
+        return Err("This is not a diagnostic report.".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let name = format!("clearpractice-diagnostics-{}.json", chrono::Local::now().format("%Y-%m-%d"));
+        let picked = app.dialog().file().set_title("Save diagnostic report").set_file_name(&name).add_filter("JSON", &["json"]).blocking_save_file();
+        let Some(target) = picked.and_then(|p| p.into_path().ok()) else { return Ok(None) };
+        std::fs::write(&target, text).map_err(|_| "Could not save the report there. Choose another folder.".to_string())?;
+        Ok(target.file_name().map(|n| n.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|_| "Saving failed.".to_string())?
+}
+
 /// A take's saved AI feedback, newest first.
 #[tauri::command]
 async fn list_take_coaching(storage: State<'_, Arc<SessionStorage>>, attempt_id: String) -> Result<Vec<storage::database::coaching_runs::CoachingRun>, String> {
@@ -2351,6 +2414,10 @@ pub fn run() {
             preview_take_coaching,
             request_take_coaching,
             list_take_coaching,
+            get_storage_usage,
+            build_diagnostics,
+            save_diagnostics,
+            clear_cache,
             preview_follow_up,
             request_follow_up,
             import_model_pack,
