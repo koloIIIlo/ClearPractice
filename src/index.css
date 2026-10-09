@@ -186,3 +186,36 @@ html[data-reduced-motion="true"] *::after {
   transition-duration: 1ms !important;
   scroll-behavior: auto !important;
 }
+
+/* Windows high contrast (6.4): system colours replace backgrounds, so states
+   drawn only with a fill need a system-colour equivalent to stay visible. */
+@media (forced-colors: active) {
+  [data-slot="switch"],
+  [data-slot="checkbox"],
+  [data-slot="radio-group-item"] {
+    border: 1px solid ButtonText;
+  }
+  [data-slot="switch"][data-state="checked"],
+  [data-slot="checkbox"][data-state="checked"] {
+    background: Highlight;
+    border-color: Highlight;
+  }
+  [data-slot="switch-thumb"] {
+    background: ButtonText;
+    forced-color-adjust: none;
+  }
+  [data-slot="radio-group-indicator"] svg {
+    fill: Highlight;
+  }
+  [data-slot="toggle"][data-state="on"],
+  [data-slot="tabs-trigger"][data-state="active"],
+  [aria-current="page"],
+  [aria-current="step"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  button,
+  [role="button"] {
+    border: 1px solid ButtonText;
+  }
+}
