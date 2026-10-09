@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "dataset": "nyralabs/disfluency_speech_english",
+  "source": "https://huggingface.co/datasets/nyralabs/disfluency_speech_english",
+  "license": "Apache-2.0 (dataset card)",
+  "provider": "assemblyai",
+  "model": "universal-3-5-pro",
+  "adapterVersion": "audio-api-v1",
+  "runId": "api-assemblyai-1791547340258",
+  "durationMs": 61934.0625,
+  "quality": {
+    "provenance": "Measured",
+    "referenceWords": 194,
+    "verbatimWordErrors": 4,
+    "verbatimWer": 0.020618556701030927,
+    "ordinaryWer": 0.011111111111111112,
+    "referenceUhUm": 14,
+    "retainedUhUm": 13,
+    "insertedUhUm": 1,
+    "fillerRecall": 0.9285714285714286,
+    "fillerUnavailableReason": null,
+    "scope": "Explicit UH/UM only; like/you know are ambiguous and excluded from filler counts",
+    "alignmentLimit": "Word edit alignment without reference word timestamps; repeated fillers can be ambiguous"
+  },
+  "timings": {
+    "wordTimings": true,
+    "words": 193,
+    "monotonic": true,
+    "withinAudio": true,
+    "firstWordMs": 0,
+    "lastWordEndMs": 61853,
+    "unavailableReason": null
+  },
+  "sendToResultMs": 12816,
+  "sendToResultUnavailableReason": null,
+  "estimatedCostMicroUsd": 7000,
+  "costUnavailableReason": null,
+  "personalAccuracy": null,
+  "personalAccuracyUnavailableReason": "Public multi-clip fixture substituted at user's request"
+}

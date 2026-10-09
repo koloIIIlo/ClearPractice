@@ -16,3 +16,20 @@ Selected: large-v3-turbo-q5_0, CUDA, four threads, initial prompt `Umm, so, uh, 
 This small public sample does not establish personal accuracy or verified word alignment. Ambiguous ‘like’ and ‘you know’ are excluded from filler counts. All detected fillers require review. Out-of-range segment timing remains unavailable rather than clamped. Per-process VRAM is unavailable with a reason. The older slow JFK GPU result was not reproduced; its cause remains unknown. Some CPU filler trials overlapped development checks.
 
 CrisperWhisper is deferred: its custom adapter and noncommercial model licence need separate evaluation. No additional model download is required for the selected profile. Packaging and redistribution review remain M6 work.
+
+## Cloud transcription: AssemblyAI Universal-3.5 Pro (0.23, 9 October 2026)
+
+The same public 62 s fixture, imported into the app and sent once after the in-app preview and the user's Send (`disfluencies: true`, English). Scored with `public_sample.py score-api` from the result the app kept (`results-api-assemblyai-2026-10.json`).
+
+| Measure | AssemblyAI Universal-3.5 Pro | Local selected (turbo, CUDA) |
+| --- | --- | --- |
+| Verbatim word errors | 4 / 194 (2.1%) | 3 / 194 (1.5%) |
+| Ordinary word error rate (fillers excluded) | 1.1% | — |
+| UH/UM kept | 13 / 14 | 13 / 14 |
+| UH/UM inserted | 1 (the missing "uh" placed one word away, so counted as one omission and one insertion) | 0 |
+| Other differences | "papyrus" heard as "peppers"; "huh" omitted | — |
+| Word timings | 193 words, in order, inside the audio (0.0–61.9 s) | Segment timings only |
+| Time from Send to result | 12.8 s (upload, processing, polling) | 14.0 s warm total |
+| Cost | USD 0.007 recorded (list price, two started minutes; covered by free credit) | none |
+
+Deepgram Nova-3 was not measured: no key. Personal accuracy remains unknown (public fixture, D-24).
