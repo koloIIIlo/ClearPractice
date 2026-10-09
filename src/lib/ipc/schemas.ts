@@ -801,6 +801,8 @@ export type FeedbackResult = z.infer<typeof FeedbackResult>;
 export const TakeFeedback = z.object({
   summary: z.string().min(1), oneImprovement: z.string().min(1), nextAttempt: z.string().min(1),
   corrections: z.array(z.object({kind: z.enum(["clear-error", "style"]), quote: z.string().min(1), suggestion: z.string().min(1), reason: z.string().min(1)}).strict()).max(3),
+  /** Expressions to keep, each with the words it replaces ("" for a new idea). Older answers have none. */
+  phrases: z.array(z.object({ instead: z.string(), expression: z.string().min(1), why: z.string() }).strict()).max(3).default([]),
   deliveryNotes: z.array(z.object({part: z.number().int().positive(), note: z.string().min(1)}).strict()).max(3),
 }).strict();
 export type TakeFeedback = z.infer<typeof TakeFeedback>;

@@ -40,6 +40,7 @@ const run = (revisionId: string): CoachingRun => ({
   feedback: {
     summary: "Your point is easy to follow.", oneImprovement: "Say the conclusion first.", nextAttempt: "Start with one sentence that answers the question.",
     corrections: [{ kind: "style", quote: "more clear", suggestion: "clearer", reason: "Shorter and more natural." }],
+    phrases: [{ instead: "I want to be more clear", expression: "Let me put it more simply", why: "Before you rephrase a point." }],
     deliveryNotes: [{ part: 1, note: "The ending rises +2.4 st, so it may sound like a question." }],
   },
   inputTokens: 300, outputTokens: 120, estimatedCostMicroUsd: null, costUnavailableReason: "The provider did not report usage; the full reservation stays counted.",
@@ -59,7 +60,7 @@ function setup(overrides: Partial<IpcClient>) {
     <MemoryRouter>
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <IpcContext.Provider value={client}>
-          <TakeCoaching attemptId="take-1" />
+          <TakeCoaching attemptId="take-1" sessionId="s1" />
         </IpcContext.Provider>
       </QueryClientProvider>
     </MemoryRouter>,
@@ -74,6 +75,7 @@ it("previews the exact text, sends only on Send, and shows the stored feedback a
     listTakeCoaching: vi.fn(async () => stored),
     previewTakeCoaching: vi.fn(async () => preview(null)),
     requestTakeCoaching: vi.fn(async () => { stored = [run("take-1--1")]; return stored[0]; }),
+    addPhrase: vi.fn(async (input) => ({ id: "ph-1", ...input, dueDate: "2026-10-09", intervalDays: 0, sourceSessionId: "s1" })),
   });
   await user.click(await screen.findByRole("button", { name: "Get AI feedback…" }));
   // Delivery impressions are off by default (D-27).
@@ -96,6 +98,13 @@ it("previews the exact text, sends only on Send, and shows the stored feedback a
   expect(within(feedback).getByText(/did not report usage/)).toBeInTheDocument();
   expect(within(feedback).queryByText(/earlier version/)).not.toBeInTheDocument();
   expect(screen.getByText("AI suggestion")).toBeInTheDocument();
+  // Suggested phrases and corrections can be kept as phrase cards.
+  expect(within(feedback).getByText(/instead of “I want to be more clear”/)).toBeInTheDocument();
+  await user.click(within(feedback).getByRole("button", { name: "Save “Let me put it more simply” to Phrases" }));
+  expect(client.addPhrase).toHaveBeenCalledWith({ original: "I want to be more clear", expression: "Let me put it more simply", explanation: "Before you rephrase a point.", examples: [] }, "s1");
+  expect(await within(feedback).findByText("Saved to Phrases")).toBeInTheDocument();
+  await user.click(within(feedback).getByRole("button", { name: "Save “clearer” to Phrases" }));
+  expect(client.addPhrase).toHaveBeenLastCalledWith(expect.objectContaining({ original: "more clear", expression: "clearer" }), "s1");
 });
 
 it("says when feedback is from an earlier transcript and labels an identical request as asking again", async () => {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageSquareText } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { BookmarkPlus, Check, MessageSquareText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,7 +26,7 @@ const time = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { hour: 
  * takes, each part's locally measured delivery. Never audio. Words you hide
  * are replaced before the text is built. Results are stored with the take.
  */
-export function TakeCoaching({ attemptId }: { attemptId: string }) {
+export function TakeCoaching({ attemptId, sessionId }: { attemptId: string; sessionId?: string }) {
   const ipc = useIpc();
   const qc = useQueryClient();
   const { preferences: prefs } = usePreferences();
@@ -196,12 +196,12 @@ export function TakeCoaching({ attemptId }: { attemptId: string }) {
       )}
       {error && <p role="alert" className="text-meta text-destructive">{error}</p>}
 
-      {list[0] && <FeedbackCard run={list[0]} stale={!!currentRevision && list[0].revisionId !== currentRevision} />}
+      {list[0] && <FeedbackCard run={list[0]} sessionId={sessionId} stale={!!currentRevision && list[0].revisionId !== currentRevision} />}
       {list.length > 1 && (
         <details className="text-meta">
           <summary className="cursor-pointer">Earlier feedback ({list.length - 1})</summary>
           <div className="mt-2 space-y-2">
-            {list.slice(1).map((r) => <FeedbackCard key={r.id} run={r} stale={!!currentRevision && r.revisionId !== currentRevision} />)}
+            {list.slice(1).map((r) => <FeedbackCard key={r.id} run={r} sessionId={sessionId} stale={!!currentRevision && r.revisionId !== currentRevision} />)}
           </div>
         </details>
       )}
@@ -209,7 +209,29 @@ export function TakeCoaching({ attemptId }: { attemptId: string }) {
   );
 }
 
-function FeedbackCard({ run, stale }: { run: CoachingRun; stale: boolean }) {
+/**
+ * Saves a suggestion from AI feedback as a phrase card (user request
+ * 2026-10-09): new and due today, linked to the session.
+ */
+function SaveSuggestion({ original, expression, explanation, sessionId }: { original: string; expression: string; explanation: string; sessionId?: string }) {
+  const ipc = useIpc();
+  const qc = useQueryClient();
+  const save = useMutation({
+    mutationFn: () => ipc.addPhrase({ original: original.trim() || "(a new way to say it)", expression, explanation, examples: [] }, sessionId ?? null),
+    onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: ["phrases"] }), qc.invalidateQueries({ queryKey: ["today"] })]),
+  });
+  if (save.isSuccess) return <span className="inline-flex h-8 items-center gap-1 text-meta text-muted-foreground"><Check aria-hidden className="size-4" /> Saved to Phrases</span>;
+  return (
+    <>
+      <Button variant="outline" size="sm" disabled={save.isPending} aria-label={`Save “${expression}” to Phrases`} onClick={() => save.mutate()}>
+        <BookmarkPlus aria-hidden /> Save to Phrases
+      </Button>
+      {save.error && <span role="alert" className="text-meta text-destructive">{save.error.message}</span>}
+    </>
+  );
+}
+
+function FeedbackCard({ run, stale, sessionId }: { run: CoachingRun; stale: boolean; sessionId?: string }) {
   const f = run.feedback;
   return (
     <article className="space-y-2 rounded-lg border p-3" aria-label={`AI feedback from ${formatLongDay(run.createdAt.slice(0, 10))}`}>
@@ -224,11 +246,30 @@ function FeedbackCard({ run, stale }: { run: CoachingRun; stale: boolean }) {
       {f.corrections.length > 0 && (
         <ul className="space-y-1">
           {f.corrections.map((c, i) => (
-            <li key={i}>
-              <span className="font-medium">{c.kind === "style" ? "Optional style" : "Clear error"}:</span> “{c.quote}” → “{c.suggestion}”. <span className="text-muted-foreground">{c.reason}</span>
+            <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="min-w-0 flex-1">
+                <span className="font-medium">{c.kind === "style" ? "Optional style" : "Clear error"}:</span> “{c.quote}” → “{c.suggestion}”. <span className="text-muted-foreground">{c.reason}</span>
+              </span>
+              <SaveSuggestion original={c.quote} expression={c.suggestion} explanation={c.reason} sessionId={sessionId} />
             </li>
           ))}
         </ul>
+      )}
+      {f.phrases.length > 0 && (
+        <div className="space-y-1">
+          <p className="font-medium">Phrases you could use</p>
+          <ul className="space-y-2">
+            {f.phrases.map((p, i) => (
+              <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="min-w-0 flex-1">
+                  “{p.expression}”{p.instead && <span className="text-muted-foreground"> instead of “{p.instead}”</span>}
+                  {p.why && <span className="block text-meta text-muted-foreground">{p.why}</span>}
+                </span>
+                <SaveSuggestion original={p.instead} expression={p.expression} explanation={p.why} sessionId={sessionId} />
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {f.deliveryNotes.length > 0 && (
         <div>
