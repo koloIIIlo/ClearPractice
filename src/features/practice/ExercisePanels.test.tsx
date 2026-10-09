@@ -51,14 +51,27 @@ it("uses a saved expression in three sentences and saves them to the session not
   expect(expressionPrompt(phrase).text).toBe(`Use “${phrase.expression}” in three sentences of your own.`);
   wrap(client, <ExpressionPanel phrase={phrase} phrases={phrases} sessionId={session.id} hasTake locked={false} native onChoose={vi.fn()} />);
   expect(screen.getByRole("heading", { name: `“${phrase.expression}”` })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Save sentences to session notes" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Save to session notes" })).toBeDisabled();
   await user.type(screen.getByLabelText("Sentence 1"), "First sentence.");
   await user.type(screen.getByLabelText("Sentence 3"), "Third sentence.");
-  await user.click(screen.getByRole("button", { name: "Save sentences to session notes" }));
+  await user.click(screen.getByRole("button", { name: "Save to session notes" }));
   await waitFor(() => expect(client.updateSession).toHaveBeenCalledOnce());
   const [, details] = (client.updateSession as ReturnType<typeof vi.fn>).mock.calls[0] as [string, { notes: string; title: string }];
   expect(details.title).toBe(session.title);
   expect(details.notes).toContain(`Sentences with “${phrase.expression}”:\n1. First sentence.\n2. Third sentence.`);
+});
+
+it("keeps typed sentences as the phrase's examples without any recording (4.9)", async () => {
+  const user = userEvent.setup();
+  const base = createMockClient();
+  const client = { ...base, updatePhrase: vi.fn(base.updatePhrase) };
+  const phrase = { ...phrases[0], examples: ["Old example."] };
+  wrap(client, <ExpressionPanel phrase={phrase} phrases={phrases} sessionId="s-9" hasTake={false} locked={false} native onChoose={vi.fn()} />);
+  expect(screen.getByRole("button", { name: "Save to session notes" })).toBeDisabled();
+  await user.type(screen.getByLabelText("Sentence 2"), "A new sentence.");
+  await user.click(screen.getByRole("button", { name: "Keep as examples of this phrase" }));
+  expect(client.updatePhrase).toHaveBeenCalledWith(phrase.id, { original: phrase.original, expression: phrase.expression, explanation: phrase.explanation, examples: ["A new sentence.", "Old example."] });
+  expect(await screen.findByText(/Kept with/)).toBeInTheDocument();
 });
 
 it("lets the user choose one feature to imitate and stores it after the first take (4.8)", async () => {

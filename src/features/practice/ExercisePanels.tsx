@@ -124,6 +124,16 @@ export function ExpressionPanel({ phrase, phrases, sessionId, hasTake, locked, n
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["session", sessionId] }),
   });
+  // Typed-only practice (4.9): no recording needed; the sentences become the
+  // card's own examples (newest kept, at most five).
+  const keep = useMutation({
+    mutationFn: () => {
+      const written = sentences.map((s) => s.trim()).filter(Boolean);
+      const examples = [...new Set([...written, ...phrase.examples])].slice(0, 5);
+      return ipc.updatePhrase(phrase.id, { original: phrase.original, expression: phrase.expression, explanation: phrase.explanation, examples });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["phrases"] }),
+  });
   const written = sentences.filter((s) => s.trim()).length;
   return (
     <Panel className="space-y-4" aria-labelledby="expression-heading">
@@ -164,16 +174,22 @@ export function ExpressionPanel({ phrase, phrases, sessionId, hasTake, locked, n
           </div>
         ))}
       </div>
-      {native && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" disabled={!hasTake || written === 0 || save.isPending} onClick={() => save.mutate()}>
-            Save sentences to session notes
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" disabled={written === 0 || keep.isPending} onClick={() => keep.mutate()}>
+          Keep as examples of this phrase
+        </Button>
+        {native && (
+          <Button variant="ghost" disabled={!hasTake || written === 0 || save.isPending} onClick={() => save.mutate()}>
+            Save to session notes
           </Button>
-          {!hasTake && <span className="text-meta text-muted-foreground">Record a take first; the sentences are saved with that session.</span>}
-          {save.isSuccess && <span role="status" className="text-meta">Saved to the session notes.</span>}
-          {save.error && <span role="alert" className="text-meta text-destructive">{save.error.message}</span>}
-        </div>
-      )}
+        )}
+        {native && !hasTake && <span className="text-meta text-muted-foreground">Session notes need a recorded take; examples don't.</span>}
+      </div>
+      <div aria-live="polite" className="text-meta">
+        {keep.isSuccess && <p role="status">Kept with “{phrase.expression}” in Phrases.</p>}
+        {save.isSuccess && <p role="status">Saved to the session notes.</p>}
+        {(keep.error ?? save.error) && <p role="alert" className="text-destructive">{(keep.error ?? save.error)!.message}</p>}
+      </div>
     </Panel>
   );
 }
