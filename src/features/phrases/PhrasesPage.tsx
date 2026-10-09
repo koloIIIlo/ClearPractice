@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { BookOpenText } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { BookOpenText, Pencil, Plus, Trash2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useIpc } from "@/lib/ipc";
+import type { PhraseInput } from "@/lib/ipc/schemas";
 import { EmptyState, LoadingBlock, Page, PageHeader, Panel, QueryView, SectionTitle } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { formatRelativeDay } from "@/lib/format";
@@ -13,6 +19,7 @@ export function PhrasesPage() {
   const phrases = usePhrases();
   const [params] = useSearchParams();
   const [practising, setPractising] = useState(false);
+  const [adding, setAdding] = useState(false);
   const focus = params.get("focus");
   const localToday = toLocalDate(new Date());
 
@@ -27,17 +34,27 @@ export function PhrasesPage() {
                 title="Phrases"
                 description="Expressions you've chosen to keep. Recall each one before you see it again."
                 actions={
-                  !practising && due.length > 0 ? (
-                    <Button size="lg" onClick={() => setPractising(true)}>
-                      Practise {due.length} due {due.length === 1 ? "phrase" : "phrases"}
-                    </Button>
+                  !practising ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" onClick={() => setAdding(true)} disabled={adding}>
+                        <Plus aria-hidden /> Add a phrase
+                      </Button>
+                      {due.length > 0 && (
+                        <Button onClick={() => setPractising(true)}>
+                          Practise {due.length} due {due.length === 1 ? "phrase" : "phrases"}
+                        </Button>
+                      )}
+                    </div>
                   ) : undefined
                 }
               />
               {practising ? (
                 <PhraseReview due={due} onDone={() => setPractising(false)} />
               ) : (
-                <PhraseList list={list} focus={focus} today={localToday} />
+                <>
+                  {adding && <PhraseForm onDone={() => setAdding(false)} />}
+                  <PhraseList list={list} focus={focus} today={localToday} />
+                </>
               )}
             </>
           );
@@ -47,38 +64,118 @@ export function PhrasesPage() {
   );
 }
 
+/** Add or edit a card (4.15). Editing changes the text only; the schedule stays. */
+function PhraseForm({ card, onDone }: { card?: PhraseCard; onDone: () => void }) {
+  const ipc = useIpc();
+  const qc = useQueryClient();
+  const [original, setOriginal] = useState(card?.original ?? "");
+  const [expression, setExpression] = useState(card?.expression ?? "");
+  const [explanation, setExplanation] = useState(card?.explanation ?? "");
+  const [examples, setExamples] = useState((card?.examples ?? []).join("\n"));
+  const save = useMutation({
+    mutationFn: (input: PhraseInput) => (card ? ipc.updatePhrase(card.id, input) : ipc.addPhrase(input)),
+    onSuccess: async () => {
+      await Promise.all([qc.invalidateQueries({ queryKey: ["phrases"] }), qc.invalidateQueries({ queryKey: ["today"] })]);
+      onDone();
+    },
+  });
+  const id = card?.id ?? "new";
+  return (
+    <Panel className="mb-4 space-y-3">
+      <SectionTitle>{card ? "Edit phrase" : "Add a phrase"}</SectionTitle>
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save.mutate({ original, expression, explanation, examples: examples.split("\n") });
+        }}
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label htmlFor={`original-${id}`}>What you said</Label>
+            <Input id={`original-${id}`} maxLength={500} placeholder="I want to say my opinion" value={original} onChange={(e) => setOriginal(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor={`expression-${id}`}>A better way to say it</Label>
+            <Input id={`expression-${id}`} maxLength={200} placeholder="I'd like to share my view" value={expression} onChange={(e) => setExpression(e.target.value)} />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`explanation-${id}`}>Why (optional)</Label>
+          <Input id={`explanation-${id}`} maxLength={500} value={explanation} onChange={(e) => setExplanation(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={`examples-${id}`}>Examples (optional, one per line)</Label>
+          <Textarea id={`examples-${id}`} rows={2} maxLength={1500} value={examples} onChange={(e) => setExamples(e.target.value)} />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" disabled={save.isPending || !original.trim() || !expression.trim()}>{card ? "Save changes" : "Add phrase"}</Button>
+          <Button type="button" variant="ghost" onClick={onDone}>Cancel</Button>
+          {!card && <span className="text-meta text-muted-foreground">New phrases are due today.</span>}
+        </div>
+        {save.error && <p role="alert" className="text-meta text-destructive">{save.error.message}</p>}
+      </form>
+    </Panel>
+  );
+}
+
+function PhraseRow({ p, focus, today }: { p: PhraseCard; focus: string | null; today: string }) {
+  const ipc = useIpc();
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const remove = useMutation({
+    mutationFn: () => ipc.deletePhrase(p.id),
+    onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: ["phrases"] }), qc.invalidateQueries({ queryKey: ["today"] })]),
+  });
+  if (editing) return <li className="px-2 pt-2"><PhraseForm card={p} onDone={() => setEditing(false)} /></li>;
+  return (
+    <li className={cn("grid gap-2 px-4 py-3 sm:grid-cols-[1fr_auto]", p.id === focus && "bg-secondary")}>
+      <div className="min-w-0">
+        <p className="font-medium">{p.expression}</p>
+        <p className="text-meta text-muted-foreground">
+          Instead of “{p.original}”{p.explanation ? ` · ${p.explanation}` : ""}
+        </p>
+        {p.sourceSessionId && (
+          <Link to={`/sessions/${p.sourceSessionId}`} className="text-meta text-primary hover:underline">
+            From a session<span className="sr-only">: where you first used “{p.expression}”</span>
+          </Link>
+        )}
+        {confirm && (
+          <p className="mt-2 flex flex-wrap items-center gap-2 text-meta">
+            Remove “{p.expression}” from practice? Its review history is kept.
+            <Button size="sm" variant="destructive" disabled={remove.isPending} onClick={() => remove.mutate()}>Remove</Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirm(false)}>Keep</Button>
+          </p>
+        )}
+        {remove.error && <p role="alert" className="text-meta text-destructive">{remove.error.message}</p>}
+      </div>
+      <div className="flex items-start gap-3 sm:justify-end">
+        <div className="text-meta text-muted-foreground sm:text-right">
+          <div className={cn(p.dueDate <= today && "font-medium text-foreground")}>
+            {p.dueDate <= today ? "Due now" : `Due ${formatRelativeDay(p.dueDate, today).toLowerCase()}`}
+          </div>
+          <div className="tabular-nums">{p.intervalDays === 0 ? "New" : `Every ${p.intervalDays} ${p.intervalDays === 1 ? "day" : "days"}`}</div>
+        </div>
+        <Button variant="ghost" size="icon-sm" aria-label={`Edit ${p.expression}`} onClick={() => setEditing(true)}><Pencil aria-hidden /></Button>
+        <Button variant="ghost" size="icon-sm" aria-label={`Remove ${p.expression}`} onClick={() => setConfirm(true)}><Trash2 aria-hidden /></Button>
+      </div>
+    </li>
+  );
+}
+
 function PhraseList({ list, focus, today }: { list: PhraseCard[]; focus: string | null; today: string }) {
   if (list.length === 0)
     return (
       <EmptyState icon={BookOpenText} title="No saved phrases yet">
-        While reviewing a session, select some text and choose “Save a phrase”.
+        Add a phrase you want to use more naturally, for example one you noticed in a recording.
       </EmptyState>
     );
   const sorted = [...list].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   return (
     <>
       <ul className="divide-y rounded-panel border bg-card">
-        {sorted.map((p) => (
-          <li key={p.id} className={cn("grid gap-1 px-4 py-3 sm:grid-cols-[1fr_auto]", p.id === focus && "bg-secondary")}>
-            <div className="min-w-0">
-              <p className="font-medium">{p.expression}</p>
-              <p className="text-meta text-muted-foreground">
-                Instead of “{p.original}” · {p.explanation}
-              </p>
-              {p.sourceSessionId && (
-                <Link to={`/sessions/${p.sourceSessionId}`} className="text-meta text-primary hover:underline">
-                  From a session<span className="sr-only">: where you first used “{p.expression}”</span>
-                </Link>
-              )}
-            </div>
-            <div className="text-meta text-muted-foreground sm:text-right">
-              <div className={cn(p.dueDate <= today && "font-medium text-foreground")}>
-                {p.dueDate <= today ? "Due now" : `Due ${formatRelativeDay(p.dueDate, today).toLowerCase()}`}
-              </div>
-              <div className="tabular-nums">Every {p.intervalDays} {p.intervalDays === 1 ? "day" : "days"}</div>
-            </div>
-          </li>
-        ))}
+        {sorted.map((p) => <PhraseRow key={p.id} p={p} focus={focus} today={today} />)}
       </ul>
       <p className="mt-4 text-meta text-muted-foreground">
         Schedule: {INTERVAL_LADDER.join(", ")} days after each successful recall. “Again” brings a phrase back tomorrow,

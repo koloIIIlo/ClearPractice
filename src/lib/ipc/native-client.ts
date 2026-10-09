@@ -81,6 +81,11 @@ export function createNativeClient(): IpcClient {
     importModelPack: () => command("import_model_pack", S.ModelPack.array()),
     getTranscriptionSetup: () => command("get_transcription_setup", S.TranscriptionSetup),
     getPreferences: () => command("get_preferences", S.Preferences),
+    listPhrases: () => command("list_phrases", S.PhraseCard.array()),
+    reviewPhrase: (phraseId, rating) => command("review_phrase", S.PhraseCard, { phraseId, rating }),
+    addPhrase: (phrase, sourceSessionId) => command("add_phrase", S.PhraseCard, { phrase, sourceSessionId: sourceSessionId ?? null }),
+    updatePhrase: (phraseId, phrase) => command("update_phrase", S.PhraseCard, { phraseId, phrase }),
+    deletePhrase: async (phraseId) => { await command("delete_phrase", z.null(), { phraseId }); },
     getDataLocation: () => command("get_data_location", S.DataLocation),
     moveDataFolder: (toDefault) => command("move_data_folder", z.string().nullable(), { toDefault }),
     onDataMoveProgress: (listener) =>

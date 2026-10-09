@@ -16,6 +16,15 @@ function respond<T>(schema: { parse: (v: unknown) => T }, value: unknown): Promi
 
 const includes = (hay: string, needle: string) => hay.toLowerCase().includes(needle.toLowerCase());
 
+function cleanPhrase(input: S.PhraseInput) {
+  return {
+    original: input.original.trim(),
+    expression: input.expression.trim(),
+    explanation: input.explanation.trim(),
+    examples: input.examples.map((e) => e.trim()).filter(Boolean),
+  };
+}
+
 export function createMockClient(): IpcClient {
   const phrases = structuredClone(data.phrases);
   const prompts = structuredClone(data.prompts);
@@ -240,6 +249,23 @@ export function createMockClient(): IpcClient {
       p.intervalDays = nextIntervalDays(p.intervalDays, rating);
       p.dueDate = addLocalDays(data.today(), p.intervalDays);
       return respond(S.PhraseCard, p);
+    },
+
+    addPhrase: (input, sourceSessionId) => {
+      const card: S.PhraseCard = { id: `ph-${Date.now()}`, ...cleanPhrase(input), dueDate: data.today(), intervalDays: 0, sourceSessionId: sourceSessionId ?? null };
+      phrases.push(card);
+      return respond(S.PhraseCard, card);
+    },
+    updatePhrase: (phraseId, input) => {
+      const p = phrases.find((x) => x.id === phraseId);
+      if (!p) return Promise.reject(new IpcError("not_found", "Phrase not found"));
+      Object.assign(p, cleanPhrase(input));
+      return respond(S.PhraseCard, p);
+    },
+    deletePhrase: async (phraseId) => {
+      const at = phrases.findIndex((x) => x.id === phraseId);
+      if (at < 0) throw new IpcError("not_found", "Phrase not found");
+      phrases.splice(at, 1);
     },
 
     getProgress: (view) => respond(S.ProgressSummary, data.progressFor(view)),

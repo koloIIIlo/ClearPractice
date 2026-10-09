@@ -10,6 +10,7 @@ import type {
   InputDevice,
   PhraseCard,
   PhraseRating,
+  PhraseInput,
   PracticePrompt,
   ProgressSummary,
   ProgressView,
@@ -216,6 +217,12 @@ export interface IpcClient {
 
   listPhrases(): Promise<PhraseCard[]>;
   reviewPhrase(phraseId: string, rating: PhraseRating): Promise<PhraseCard>;
+  /** New cards are due today (4.15). */
+  addPhrase(phrase: PhraseInput, sourceSessionId?: string | null): Promise<PhraseCard>;
+  /** Changes the text; the schedule and review history stay. */
+  updatePhrase(phraseId: string, phrase: PhraseInput): Promise<PhraseCard>;
+  /** Removes a card from practice; its review history is kept. */
+  deletePhrase(phraseId: string): Promise<void>;
 
   getProgress(view: ProgressView): Promise<ProgressSummary>;
   searchContent(query: string): Promise<SearchHit[]>;

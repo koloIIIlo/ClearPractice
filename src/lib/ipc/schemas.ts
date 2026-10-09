@@ -505,6 +505,8 @@ export const PhraseCard = z.object({
   sourceSessionId: Id.nullable(),
 });
 export type PhraseCard = z.infer<typeof PhraseCard>;
+/** What the user writes for a phrase card (4.15). */
+export type PhraseInput = { original: string; expression: string; explanation: string; examples: string[] };
 
 // ── Progress (§6 Progress) ───────────────────────────────────────────────────
 export const ProgressView = z.enum(["rehearsed", "unfamiliar", "real"]);

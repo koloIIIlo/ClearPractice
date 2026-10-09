@@ -17,7 +17,9 @@ type Result<T> = std::result::Result<T, String>;
 
 #[path = "library.rs"]
 pub mod library;
-const VERSION: i64 = 13;
+#[path = "phrases.rs"]
+pub mod phrases;
+const VERSION: i64 = 14;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
@@ -178,7 +180,10 @@ impl DatabaseOwner {
             if version < 12 {
                 migrate(&mut connection, include_str!("schema-v12.sql"))?;
             }
-            migrate(&mut connection, include_str!("schema-v13.sql"))?;
+            if version < 13 {
+                migrate(&mut connection, include_str!("schema-v13.sql"))?;
+            }
+            migrate(&mut connection, include_str!("schema-v14.sql"))?;
         }
         backfill_measures(&connection)?;
         connection
@@ -2087,7 +2092,7 @@ mod tests {
             .unwrap();
         {
             let conn = owner.connection.lock().unwrap();
-            conn.execute_batch("DROP INDEX reference_clips_source; DROP INDEX reference_clips_folder; ALTER TABLE reference_clips DROP COLUMN source_end_ms; ALTER TABLE reference_clips DROP COLUMN source_start_ms; ALTER TABLE reference_clips DROP COLUMN source_id; ALTER TABLE reference_clips DROP COLUMN folder_id; DROP INDEX clip_source_picks_source; DROP TABLE clip_source_picks; DROP TABLE clip_sources; DROP TABLE clip_folders; ALTER TABLE reference_clips DROP COLUMN description; ALTER TABLE reference_clips DROP COLUMN feature; DROP TABLE reference_clips; ALTER TABLE sessions DROP COLUMN ease; ALTER TABLE sessions DROP COLUMN takeaway; ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+            conn.execute_batch("DROP INDEX phrase_reviews_card; DROP INDEX phrase_cards_due; DROP TABLE phrase_reviews; DROP TABLE phrase_cards; DROP INDEX reference_clips_source; DROP INDEX reference_clips_folder; ALTER TABLE reference_clips DROP COLUMN source_end_ms; ALTER TABLE reference_clips DROP COLUMN source_start_ms; ALTER TABLE reference_clips DROP COLUMN source_id; ALTER TABLE reference_clips DROP COLUMN folder_id; DROP INDEX clip_source_picks_source; DROP TABLE clip_source_picks; DROP TABLE clip_sources; DROP TABLE clip_folders; ALTER TABLE reference_clips DROP COLUMN description; ALTER TABLE reference_clips DROP COLUMN feature; DROP TABLE reference_clips; ALTER TABLE sessions DROP COLUMN ease; ALTER TABLE sessions DROP COLUMN takeaway; ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
         }
         drop(owner);
         let upgraded = DatabaseOwner::open(&root.0).unwrap();
@@ -2097,7 +2102,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v13-")));
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v14-")));
         assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
     }
     fn api_result(take: &SavedRecording, run: &str, words: Option<Vec<(&str, u64, u64)>>) -> crate::audio::transcription::TranscriptionResult {

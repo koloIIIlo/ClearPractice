@@ -1054,6 +1054,56 @@ async fn fetch_link_audio(storage: State<'_, Arc<SessionStorage>>, work: State<'
     result
 }
 
+// ── Phrases (4.15) ───────────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PhraseInput {
+    original: String,
+    expression: String,
+    #[serde(default)]
+    explanation: String,
+    #[serde(default)]
+    examples: Vec<String>,
+}
+
+#[tauri::command]
+async fn list_phrases(storage: State<'_, Arc<SessionStorage>>) -> Result<Vec<storage::database::phrases::PhraseCard>, String> {
+    with_storage(&storage, |db| db.list_phrases()).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn review_phrase(storage: State<'_, Arc<SessionStorage>>, phrase_id: String, rating: String) -> Result<storage::database::phrases::PhraseCard, String> {
+    with_storage(&storage, move |db| db.review_phrase(&phrase_id, &rating, storage::database::phrases::today()))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn add_phrase(storage: State<'_, Arc<SessionStorage>>, phrase: PhraseInput, source_session_id: Option<String>) -> Result<storage::database::phrases::PhraseCard, String> {
+    with_storage(&storage, move |db| {
+        let text = storage::database::phrases::PhraseText { original: &phrase.original, expression: &phrase.expression, explanation: &phrase.explanation, examples: &phrase.examples };
+        db.add_phrase(&text, source_session_id.as_deref(), storage::database::phrases::today())
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn update_phrase(storage: State<'_, Arc<SessionStorage>>, phrase_id: String, phrase: PhraseInput) -> Result<storage::database::phrases::PhraseCard, String> {
+    with_storage(&storage, move |db| {
+        let text = storage::database::phrases::PhraseText { original: &phrase.original, expression: &phrase.expression, explanation: &phrase.explanation, examples: &phrase.examples };
+        db.update_phrase(&phrase_id, &text)
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn delete_phrase(storage: State<'_, Arc<SessionStorage>>, phrase_id: String) -> Result<(), String> {
+    with_storage(&storage, move |db| db.delete_phrase(&phrase_id)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
 // ── Clip library folders (4.4h) and import history (4.4i) ───────────────────
 
 #[tauri::command]
@@ -2009,6 +2059,11 @@ pub fn run() {
             download_link_tool,
             list_clips,
             get_clip_prosody,
+            list_phrases,
+            review_phrase,
+            add_phrase,
+            update_phrase,
+            delete_phrase,
             list_clip_folders,
             create_clip_folder,
             rename_clip_folder,
