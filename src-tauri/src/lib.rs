@@ -568,6 +568,41 @@ async fn delete_sessions_permanently(
     .map_err(|_| "Session storage failed.".to_string())?
 }
 
+/// Your prompts and favourite marks (4.13); bundled prompts come from the content pack.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PromptState {
+    user_prompts: Vec<storage::database::prompts::UserPrompt>,
+    favorites: Vec<storage::database::prompts::Favorite>,
+}
+
+#[tauri::command]
+async fn get_prompt_state(storage: State<'_, Arc<SessionStorage>>) -> Result<PromptState, String> {
+    with_storage(&storage, |db| Ok(PromptState { user_prompts: db.list_user_prompts()?, favorites: db.prompt_favorites()? }))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn add_user_prompt(storage: State<'_, Arc<SessionStorage>>, prompt: storage::database::prompts::PromptInput) -> Result<storage::database::prompts::UserPrompt, String> {
+    with_storage(&storage, move |db| db.add_user_prompt(&prompt)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn update_user_prompt(storage: State<'_, Arc<SessionStorage>>, prompt_id: String, prompt: storage::database::prompts::PromptInput) -> Result<storage::database::prompts::UserPrompt, String> {
+    with_storage(&storage, move |db| db.update_user_prompt(&prompt_id, &prompt)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn delete_user_prompt(storage: State<'_, Arc<SessionStorage>>, prompt_id: String) -> Result<(), String> {
+    with_storage(&storage, move |db| db.delete_user_prompt(&prompt_id)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn set_prompt_favorite(storage: State<'_, Arc<SessionStorage>>, prompt_id: String, favorite: bool) -> Result<(), String> {
+    with_storage(&storage, move |db| db.set_prompt_favorite(&prompt_id, favorite)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
 #[tauri::command]
 async fn set_preferred_take(storage: State<'_, Arc<SessionStorage>>, session_id: String, preferred: Option<String>) -> Result<(), String> {
     with_storage(&storage, move |owner| owner.set_preferred_take(&session_id, preferred.as_deref()))
@@ -2167,6 +2202,11 @@ pub fn run() {
             move_take_to_trash,
             set_session_focus,
             set_preferred_take,
+            get_prompt_state,
+            add_user_prompt,
+            update_user_prompt,
+            delete_user_prompt,
+            set_prompt_favorite,
             choose_clip_file,
             get_clip_staging_path,
             discard_clip_staging,

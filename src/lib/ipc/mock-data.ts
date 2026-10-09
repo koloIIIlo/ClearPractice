@@ -98,7 +98,8 @@ const cond = (
   followUp = false,
 ) => ({ familiarity, preparationSeconds, targetSeconds, audience, followUp });
 
-export const prompts: PracticePrompt[] = PROMPTS;
+// A copy, so favourites and your own prompts never change the bundled pack.
+export const prompts: PracticePrompt[] = PROMPTS.map((p) => ({ ...p }));
 
 export const guides: Guide[] = GUIDES;
 

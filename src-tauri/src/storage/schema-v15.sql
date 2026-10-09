@@ -25,4 +25,23 @@ CREATE INDEX coaching_runs_payload ON coaching_runs(payload_sha256);
 -- Attempt comparison (4.14): which take felt clearer to you, your own
 -- judgement (a take's ID, or 'same'), kept apart from any measure.
 ALTER TABLE sessions ADD COLUMN preferred_take TEXT;
+-- Exercises (4.13): your own prompts and your favourite marks. Bundled
+-- prompts stay in the content pack; a mark without a row keeps its default.
+CREATE TABLE user_prompts (
+ id TEXT PRIMARY KEY,
+ text TEXT NOT NULL CHECK(length(trim(text)) BETWEEN 5 AND 500),
+ tags TEXT NOT NULL DEFAULT '[]',
+ familiarity TEXT NOT NULL CHECK(familiarity IN ('familiar','unfamiliar')),
+ preparation_seconds INTEGER NOT NULL CHECK(preparation_seconds BETWEEN 0 AND 600),
+ target_seconds INTEGER NOT NULL CHECK(target_seconds BETWEEN 10 AND 600),
+ audience TEXT,
+ follow_up INTEGER NOT NULL CHECK(follow_up IN (0,1)),
+ created_at_ms INTEGER NOT NULL,
+ deleted_at_ms INTEGER
+) STRICT;
+CREATE TABLE prompt_favorites (
+ prompt_id TEXT PRIMARY KEY,
+ favorite INTEGER NOT NULL CHECK(favorite IN (0,1)),
+ updated_at_ms INTEGER NOT NULL
+) STRICT;
 PRAGMA user_version=15;

@@ -98,6 +98,22 @@ export function createMockClient(): IpcClient {
       if (!p) throw new IpcError("not_found", "Prompt not found");
       p.favorite = favorite;
     },
+    addPrompt: async (input) => {
+      const prompt: S.PracticePrompt = { id: `user-prompt-${Date.now()}`, text: input.text.trim(), tags: [...new Set(input.tags)], conditions: { ...input.conditions }, favorite: false, source: "user" };
+      prompts.unshift(prompt);
+      return prompt;
+    },
+    updatePrompt: async (promptId, input) => {
+      const p = prompts.find((x) => x.id === promptId && x.source === "user");
+      if (!p) throw new IpcError("not_found", "This prompt no longer exists.");
+      Object.assign(p, { text: input.text.trim(), tags: [...new Set(input.tags)], conditions: { ...input.conditions } });
+      return p;
+    },
+    deletePrompt: async (promptId) => {
+      const at = prompts.findIndex((x) => x.id === promptId && x.source === "user");
+      if (at < 0) throw new IpcError("not_found", "This prompt no longer exists.");
+      prompts.splice(at, 1);
+    },
 
     listSessions: (filter = {}) =>
       respond(

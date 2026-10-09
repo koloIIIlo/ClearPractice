@@ -6,6 +6,7 @@ import { createMockClient } from "./mock-client";
 import * as S from "./schemas";
 import { buildProgress, buildTodayPlan } from "../today-plan";
 import { toLocalDate } from "../phrase-schedule";
+import { PROMPTS } from "@/content/prompts";
 
 async function command<T>(name: string, schema: { parse(value: unknown): T }, args?: Record<string, unknown>): Promise<T> {
   try {
@@ -83,6 +84,17 @@ export function createNativeClient(): IpcClient {
     importModelPack: () => command("import_model_pack", S.ModelPack.array()),
     getTranscriptionSetup: () => command("get_transcription_setup", S.TranscriptionSetup),
     getPreferences: () => command("get_preferences", S.Preferences),
+    // Bundled prompts with your favourite marks, then your own prompts (4.13).
+    listPrompts: async () => {
+      const state = await command("get_prompt_state", S.PromptState);
+      const marks = new Map(state.favorites.map((f) => [f.promptId, f.favorite]));
+      const mine: S.PracticePrompt[] = state.userPrompts.map((p) => ({ ...p, favorite: marks.get(p.id) ?? false, source: "user" }));
+      return [...mine, ...PROMPTS.map((p) => ({ ...p, favorite: marks.get(p.id) ?? p.favorite }))];
+    },
+    setPromptFavorite: async (promptId, favorite) => { await command("set_prompt_favorite", z.null(), { promptId, favorite }); },
+    addPrompt: async (prompt) => ({ ...(await command("add_user_prompt", S.PromptState.shape.userPrompts.element, { prompt })), favorite: false, source: "user" as const }),
+    updatePrompt: async (promptId, prompt) => ({ ...(await command("update_user_prompt", S.PromptState.shape.userPrompts.element, { promptId, prompt })), favorite: false, source: "user" as const }),
+    deletePrompt: async (promptId) => { await command("delete_user_prompt", z.null(), { promptId }); },
     listPhrases: () => command("list_phrases", S.PhraseCard.array()),
     // The status line from your real settings, not sample data (4.12).
     getServiceStatus: async () => {

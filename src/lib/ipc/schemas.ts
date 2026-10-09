@@ -78,6 +78,13 @@ export const PracticePrompt = z.object({
   source: z.enum(["bundled", "user"]),
 });
 export type PracticePrompt = z.infer<typeof PracticePrompt>;
+/** What you write for your own prompt (4.13). */
+export type PromptInput = { text: string; tags: PromptTag[]; conditions: TaskConditions };
+/** Your prompts and favourite marks, stored natively; bundled prompts come from the content pack. */
+export const PromptState = z.object({
+  userPrompts: z.array(z.object({ id: Id, text: z.string().min(1), tags: z.array(PromptTag), conditions: TaskConditions }).strict()),
+  favorites: z.array(z.object({ promptId: Id, favorite: z.boolean() }).strict()),
+}).strict();
 
 export const GuideSection = z.object({ heading: z.string(), paragraphs: z.array(z.string()).min(1) });
 export const Guide = z.object({

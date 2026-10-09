@@ -11,6 +11,7 @@ import type {
   PhraseCard,
   PhraseRating,
   PhraseInput,
+  PromptInput,
   PracticePrompt,
   ProgressSummary,
   ProgressView,
@@ -92,6 +93,10 @@ export interface IpcClient {
   listPrompts(): Promise<PracticePrompt[]>;
   listGuides(): Promise<Guide[]>;
   setPromptFavorite(promptId: string, favorite: boolean): Promise<void>;
+  /** Your own prompts (4.13). Sessions keep the text they used when a prompt changes. */
+  addPrompt(prompt: PromptInput): Promise<PracticePrompt>;
+  updatePrompt(promptId: string, prompt: PromptInput): Promise<PracticePrompt>;
+  deletePrompt(promptId: string): Promise<void>;
 
   listSessions(filter?: SessionFilter): Promise<SessionSummary[]>;
   getSession(sessionId: string): Promise<SessionDetail>;

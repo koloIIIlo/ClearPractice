@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { BookOpen, Heart, Search } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { BookOpen, Heart, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { EmptyState, Page, PageHeader, QueryView } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +10,9 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useExercises, useGuides, usePrompts, useSetPromptFavorite } from "@/lib/ipc/queries";
 import { PromptTag, type PracticePrompt } from "@/lib/ipc/schemas";
 import { cn } from "@/lib/utils";
+import { useIpc } from "@/lib/ipc";
 import { TAG_LABELS, describeDemands } from "./describe";
+import { PromptForm } from "./PromptForm";
 
 type Tab = "exercises" | "prompts" | "guides";
 
@@ -93,6 +97,18 @@ const FAMILIARITY = [
   { value: "unfamiliar", label: "Unfamiliar" },
 ] as const;
 
+const PREPARATION = [
+  { value: "none", label: "No preparation", test: (s: number) => s === 0 },
+  { value: "short", label: "Up to 15 s", test: (s: number) => s > 0 && s <= 15 },
+  { value: "long", label: "30 s or more", test: (s: number) => s >= 30 },
+] as const;
+
+const DEMANDS = [
+  { value: "audience", label: "Named audience" },
+  { value: "followup", label: "Follow-up question" },
+  { value: "mine", label: "Your prompts" },
+] as const;
+
 function PromptCollection() {
   const [params, setParams] = useSearchParams();
   const prompts = usePrompts();
@@ -102,7 +118,10 @@ function PromptCollection() {
   const tags = params.getAll("tag");
   const familiarity = params.get("familiarity") ?? "";
   const favoritesOnly = params.get("fav") === "1";
+  const prep = params.get("prep") ?? "";
+  const demands = params.getAll("demand");
   const highlight = params.get("prompt");
+  const [adding, setAdding] = useState(false);
 
   const update = (fn: (p: URLSearchParams) => void) =>
     setParams(
@@ -117,7 +136,11 @@ function PromptCollection() {
     (!q || p.text.toLowerCase().includes(q.toLowerCase())) &&
     (tags.length === 0 || tags.some((t) => p.tags.includes(t as PracticePrompt["tags"][number]))) &&
     (!familiarity || p.conditions.familiarity === familiarity) &&
-    (!favoritesOnly || p.favorite);
+    (!favoritesOnly || p.favorite) &&
+    (!prep || !!PREPARATION.find((x) => x.value === prep)?.test(p.conditions.preparationSeconds)) &&
+    (!demands.includes("audience") || !!p.conditions.audience) &&
+    (!demands.includes("followup") || p.conditions.followUp) &&
+    (!demands.includes("mine") || p.source === "user");
 
   return (
     <div className="space-y-4">
@@ -152,7 +175,45 @@ function PromptCollection() {
         >
           <Heart aria-hidden className={cn(favoritesOnly && "fill-current")} /> Favorites
         </Button>
+        <Button className="ml-auto" variant="outline" disabled={adding} onClick={() => setAdding(true)}>
+          <Plus aria-hidden /> Add your own prompt
+        </Button>
       </div>
+
+      <div className="flex flex-wrap gap-3">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          aria-label="Preparation time"
+          value={prep}
+          onValueChange={(v) => update((p) => (v ? p.set("prep", v) : p.delete("prep")))}
+        >
+          {PREPARATION.map((x) => (
+            <ToggleGroupItem key={x.value} value={x.value} size="sm" className="h-9 px-3">
+              {x.label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+        <ToggleGroup
+          type="multiple"
+          variant="outline"
+          aria-label="Task demands"
+          value={demands}
+          onValueChange={(v) =>
+            update((p) => {
+              p.delete("demand");
+              v.forEach((d) => p.append("demand", d));
+            })
+          }
+        >
+          {DEMANDS.map((x) => (
+            <ToggleGroupItem key={x.value} value={x.value} size="sm" className="h-9 px-3">
+              {x.label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </div>
+
 
       <ToggleGroup
         type="multiple"
@@ -174,50 +235,76 @@ function PromptCollection() {
         ))}
       </ToggleGroup>
 
+      {adding && <PromptForm onDone={() => setAdding(false)} />}
+
       <QueryView query={prompts}>
         {(list) => {
           const shown = list.filter(matches);
           if (shown.length === 0)
             return (
               <EmptyState title="No prompts match these filters">
-                Clear a filter, or add your own prompt (coming in a later build).
+                Clear a filter, or add your own prompt.
               </EmptyState>
             );
           return (
             <ul className="divide-y rounded-panel border bg-card">
               {shown.map((p) => (
-                <li
-                  key={p.id}
-                  className={cn("flex flex-wrap items-start gap-3 px-4 py-3", p.id === highlight && "bg-secondary")}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p>{p.text}</p>
-                    <p className="mt-1 text-meta text-muted-foreground">
-                      {describeDemands(p.conditions).join(" · ")} ·{" "}
-                      {p.tags.map((t) => TAG_LABELS[t]).join(", ")}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={p.favorite ? "Remove from favorites" : "Add to favorites"}
-                    aria-pressed={p.favorite}
-                    onClick={() => setFavorite.mutate({ promptId: p.id, favorite: !p.favorite })}
-                  >
-                    <Heart aria-hidden className={cn(p.favorite && "fill-primary text-primary")} />
-                  </Button>
-                  <Button variant="outline" size="sm" asChild>
-                    <Link to={`/practice/ex-repeat?prompt=${p.id}`} state={{ section: "exercises" }}>
-                      Practise
-                    </Link>
-                  </Button>
-                </li>
+                <PromptRow key={p.id} p={p} highlight={p.id === highlight} onFavorite={() => setFavorite.mutate({ promptId: p.id, favorite: !p.favorite })} />
               ))}
             </ul>
           );
         }}
       </QueryView>
     </div>
+  );
+}
+
+function PromptRow({ p, highlight, onFavorite }: { p: PracticePrompt; highlight: boolean; onFavorite: () => void }) {
+  const ipc = useIpc();
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+  const remove = useMutation({
+    mutationFn: () => ipc.deletePrompt(p.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["prompts"] }),
+  });
+  if (editing) return <li className="p-2"><PromptForm prompt={p} onDone={() => setEditing(false)} /></li>;
+  const tags = p.tags.map((t) => TAG_LABELS[t]).join(", ");
+  return (
+    <li className={cn("flex flex-wrap items-center gap-2 px-4 py-3", highlight && "bg-secondary")}>
+      <div className="min-w-0 flex-1">
+        <p>{p.text}</p>
+        <p className="mt-1 text-meta text-muted-foreground">
+          {p.source === "user" && <span className="font-medium text-foreground">Your prompt · </span>}
+          {describeDemands(p.conditions).join(" · ")}
+          {tags && ` · ${tags}`}
+        </p>
+        {confirm && (
+          <p className="mt-2 flex flex-wrap items-center gap-2 text-meta">
+            Remove this prompt? Sessions that used it keep their text.
+            <Button size="sm" variant="destructive" disabled={remove.isPending} onClick={() => remove.mutate()}>Remove</Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirm(false)}>Keep</Button>
+          </p>
+        )}
+        {remove.error && <p role="alert" className="text-meta text-destructive">{remove.error.message}</p>}
+      </div>
+      <div className="flex items-center gap-1">
+        {p.source === "user" && (
+          <>
+            <Button variant="ghost" size="icon-sm" aria-label={`Edit ${p.text}`} onClick={() => setEditing(true)}><Pencil aria-hidden /></Button>
+            <Button variant="ghost" size="icon-sm" aria-label={`Remove ${p.text}`} onClick={() => setConfirm(true)}><Trash2 aria-hidden /></Button>
+          </>
+        )}
+        <Button variant="ghost" size="icon-sm" aria-label={p.favorite ? "Remove from favorites" : "Add to favorites"} aria-pressed={p.favorite} onClick={onFavorite}>
+          <Heart aria-hidden className={cn(p.favorite && "fill-primary text-primary")} />
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link to={`/practice/ex-repeat?prompt=${p.id}`} state={{ section: "exercises" }}>
+            Practise
+          </Link>
+        </Button>
+      </div>
+    </li>
   );
 }
 
