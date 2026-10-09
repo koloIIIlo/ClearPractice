@@ -66,6 +66,8 @@ E (environment) → **M0 Feasibility** (audio, Whisper, text API spike; optional
 
 **Later the same afternoon:** follow-up questions after a first answer (written and offline, or from the AI after its own preview; labelled a simulation, 5.11); a Local LLM mode for a llama.cpp-compatible server on this computer only, with Test connection and contract tests (5.4); guard tests that the app never logs (5.12); https links open in the system browser and the opener permission is https-only (6.1); Settings → Data and backups → Space used with a Clear cache that removes only rebuildable files (6.6); Settings → About → diagnostic report shown in full before saving, without personal content (6.7); every remaining browser-default checkbox, radio and number field replaced with styled controls. Tests: Rust 117 passed (14 hardware tests ignored), Vitest 132 in 48 files.
 
+**End of the 9 October session:** the shared budget now shows billed, still-open and uncertain spending separately, with your own warning level under the fixed USD 5 stop (3.17); interrupted takes are announced on every screen until recovered or discarded (6.3); Windows high-contrast styles and an accessibility scan of 22 screens (no unnamed controls, one main heading each, visible focus; 6.4); installer settings for the offline WebView2 installer and a per-user install (6.2, not yet built). Tests: Rust 117 passed (14 hardware tests ignored), Vitest 134 in 49 files, typecheck and production build clean. **Next:** rebuild and recheck (schema v15), see the plan's Next actions.
+
 ## 5. Answers and decisions so far
 
 | Topic | Answer / decision |
