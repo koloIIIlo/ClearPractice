@@ -323,7 +323,7 @@ function CoachingPanel({ session, review }: { session: SessionDetail; review: At
                     <dd className="rounded-md bg-muted p-3 whitespace-pre-wrap">{text}</dd>
                   </div>
                   <p className="text-meta text-muted-foreground">
-                    ≈ {Math.ceil(text.length / 4)} tokens. Temporary redaction arrives with coaching in milestone 5.
+                    ≈ {Math.ceil(text.length / 4)} tokens. In the desktop app you can hide words (names, places) before anything is sent.
                   </p>
                 </dl>
               </SheetContent>
