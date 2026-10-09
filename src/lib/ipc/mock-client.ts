@@ -6,6 +6,7 @@ import { addLocalDays, nextIntervalDays } from "@/lib/phrase-schedule";
 import { IpcError, type IpcClient } from "./client";
 import * as data from "./mock-data";
 import * as S from "./schemas";
+import { searchLibrary } from "../search";
 
 const LATENCY_MS = 120;
 
@@ -327,15 +328,7 @@ export function createMockClient(): IpcClient {
         ...data.sessions
           .filter((s) => includes(s.title, q) || includes(s.notes, q) || includes(s.prompt, q))
           .map((s) => ({ kind: "session", id: s.id, title: s.title, excerpt: s.notes || s.prompt, href: `/sessions/${s.id}` })),
-        ...phrases
-          .filter((p) => includes(p.expression, q) || includes(p.original, q))
-          .map((p) => ({ kind: "phrase", id: p.id, title: p.expression, excerpt: p.explanation, href: `/phrases?focus=${p.id}` })),
-        ...prompts
-          .filter((p) => includes(p.text, q))
-          .map((p) => ({ kind: "prompt", id: p.id, title: p.text, excerpt: null, href: `/exercises?prompt=${p.id}` })),
-        ...data.guides
-          .filter((g) => includes(g.title, q) || includes(g.summary, q))
-          .map((g) => ({ kind: "guide", id: g.id, title: g.title, excerpt: g.summary, href: `/exercises?tab=guides&guide=${g.id}` })),
+        ...searchLibrary(q, phrases, prompts, data.guides),
       ];
       return respond(S.SearchHit.array(), hits);
     },

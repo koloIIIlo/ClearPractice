@@ -6,6 +6,7 @@ import { createMockClient } from "./mock-client";
 import * as S from "./schemas";
 import { buildProgress, buildTodayPlan } from "../today-plan";
 import { schedule } from "../scheduler";
+import { searchLibrary } from "../search";
 import { toLocalDate } from "../phrase-schedule";
 import { PROMPTS } from "@/content/prompts";
 
@@ -175,13 +176,15 @@ export function createNativeClient(): IpcClient {
     getTranscriptionPreference: () => command("get_transcription_preference", S.TranscriptionPreference),
     setTranscriptionPreference: (preference) => command("set_transcription_preference", S.TranscriptionPreference, { preference }),
     chooseTranscriptionSetup: () => command("choose_transcription_setup", S.TranscriptionSetup),
-    // Sessions come from SQLite; prompts, guides and phrases are still sample curriculum (M4).
+    // Sessions from the native full-text index; your phrases, all prompts and the guides' text here (3.13).
     searchContent: async (query) => {
-      const [sessions, curriculum] = await Promise.all([
+      const [sessions, phrases, prompts, guides] = await Promise.all([
         command("search_content", S.SearchHit.array(), { query }),
-        preview.searchContent(query),
+        command("list_phrases", S.PhraseCard.array()).catch(() => []),
+        client.listPrompts().catch(() => []),
+        preview.listGuides().catch(() => []),
       ]);
-      return [...sessions, ...curriculum.filter((hit) => hit.kind !== "session")];
+      return [...sessions, ...searchLibrary(query, phrases, prompts, guides)];
     },
     getAttemptTranscript: (attemptId) => command("get_attempt_transcript", S.AttemptTranscript, { attemptId }),
     saveTranscriptCorrection: (attemptId, parentRevisionId, text) => command("save_transcript_correction", S.Id, { attemptId, parentRevisionId, text }),
