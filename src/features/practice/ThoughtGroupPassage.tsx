@@ -1,5 +1,7 @@
-import { useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Eye, EyeOff, Square, Volume2 } from "lucide-react";
+import { NativeSelect } from "@/components/ui/native-select";
+import { offlineEnglishVoices, speakGroups } from "@/lib/speech";
 import { Panel } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -27,6 +29,25 @@ export function passagePrompt(passage: Passage): PracticePrompt {
 export function ThoughtGroupPassage({ passage, locked, onChoose }: { passage: Passage; locked: boolean; onChoose: (id: string) => void }) {
   const [hidden, setHidden] = useState(false);
   const groups = thoughtGroups(passage.text);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>(() => offlineEnglishVoices());
+  const [voiceName, setVoiceName] = useState<string | null>(null);
+  const [speaking, setSpeaking] = useState<number | null>(null);
+  const stop = useRef<(() => void) | null>(null);
+  // Windows loads its voices asynchronously.
+  useEffect(() => {
+    const synth = globalThis.speechSynthesis;
+    if (!synth) return;
+    const load = () => setVoices(offlineEnglishVoices(synth));
+    load();
+    synth.addEventListener?.("voiceschanged", load);
+    return () => { synth.removeEventListener?.("voiceschanged", load); stop.current?.(); };
+  }, []);
+  useEffect(() => () => stop.current?.(), [passage.id]);
+  const voice = voices.find((v) => v.name === voiceName) ?? voices[0];
+  const listen = () => {
+    if (!voice) return;
+    stop.current = speakGroups(groups, { voice, onGroup: setSpeaking, onEnd: () => { setSpeaking(null); stop.current = null; } });
+  };
   return (
     <Panel className="space-y-4" aria-labelledby="passage-heading">
       <div className="flex flex-wrap items-end gap-3">
@@ -41,7 +62,20 @@ export function ThoughtGroupPassage({ passage, locked, onChoose }: { passage: Pa
             </SelectContent>
           </Select>
         </div>
-        <Button variant="outline" onClick={() => setHidden((h) => !h)}>
+        {!hidden && (speaking === null ? (
+          <Button variant="outline" disabled={!voice || locked} onClick={listen}><Volume2 aria-hidden /> Listen</Button>
+        ) : (
+          <Button variant="outline" onClick={() => stop.current?.()}><Square aria-hidden /> Stop</Button>
+        ))}
+        {!hidden && voices.length > 1 && (
+          <div className="space-y-1">
+            <Label htmlFor="passage-voice">Voice</Label>
+            <NativeSelect id="passage-voice" value={voice?.name} onChange={(e) => setVoiceName(e.target.value)}>
+              {voices.map((v) => <option key={v.name} value={v.name}>{v.name.replace(/^Microsoft /, "").replace(/ - .*$/, "")}</option>)}
+            </NativeSelect>
+          </div>
+        )}
+        <Button variant="outline" onClick={() => { stop.current?.(); setHidden((h) => !h); }}>
           {hidden ? <><Eye aria-hidden /> Show the text again</> : <><EyeOff aria-hidden /> Hide the text and explain</>}
         </Button>
       </div>
@@ -56,12 +90,13 @@ export function ThoughtGroupPassage({ passage, locked, onChoose }: { passage: Pa
       ) : (
         <>
           <p className="text-meta text-muted-foreground">
-            1. Read it aloud, pausing briefly at each mark. 2. Hide the text. 3. Record yourself explaining it. ({wordCount(passage.text)} words, {groups.length} groups)
+            1. Listen, or read it aloud yourself, pausing briefly at each mark. 2. Hide the text. 3. Record yourself explaining it. ({wordCount(passage.text)} words, {groups.length} groups)
           </p>
+          {!voice && <p className="text-meta text-muted-foreground">Listen needs an English voice installed on this computer (Windows Settings → Time &amp; language → Speech). Online voices are never used.</p>}
           <p className="text-lg leading-relaxed" aria-label={`Passage in ${groups.length} thought groups`}>
             {groups.map((g, i) => (
               <span key={i}>
-                <span className="rounded bg-secondary/60 px-1">{g}</span>
+                <span className={speaking === i ? "rounded bg-primary px-1 text-primary-foreground" : "rounded bg-secondary/60 px-1"}>{g}</span>
                 {i < groups.length - 1 && <span aria-hidden className="mx-1.5 text-muted-foreground">/</span>}{" "}
               </span>
             ))}
