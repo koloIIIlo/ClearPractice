@@ -53,6 +53,8 @@ export function createMockClient(): IpcClient {
     requestTakeCoaching: async () => { throw new IpcError("desktop_required", "AI feedback on takes is available in the desktop app."); },
     stopTakeCoaching: async () => {},
     listTakeCoaching: async () => [],
+    previewFollowUp: async () => { throw new IpcError("desktop_required", "AI follow-up questions are available in the desktop app."); },
+    requestFollowUp: async () => { throw new IpcError("desktop_required", "AI follow-up questions are available in the desktop app."); },
     getServiceStatus: () =>
       respond(S.ServiceStatus, {
         transcription: { mode: "local", model: "large-v3-turbo-q5_0", state: "needs_setup" },

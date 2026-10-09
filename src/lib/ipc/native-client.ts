@@ -241,6 +241,8 @@ export function createNativeClient(): IpcClient {
     requestTakeCoaching: (attemptId, requestId, payloadSha256) => command("request_take_coaching", S.CoachingRun, { attemptId, requestId, payloadSha256 }),
     stopTakeCoaching: async (requestId) => { await invoke("cancel_api_transcription", { requestId }); },
     listTakeCoaching: (attemptId) => command("list_take_coaching", S.CoachingRun.array(), { attemptId }),
+    previewFollowUp: (attemptId, model) => command("preview_follow_up", S.CoachingPreview, { attemptId, model }),
+    requestFollowUp: (attemptId, requestId, payloadSha256) => command("request_follow_up", S.FollowUpQuestion, { attemptId, requestId, payloadSha256 }),
     storeApiKey: (key) => command("store_api_key", S.CredentialStatus, { key }),
     removeApiKey: () => command("remove_api_key", S.CredentialStatus),
     listInputDevices: () => command("list_input_devices", S.InputDevice.array()),

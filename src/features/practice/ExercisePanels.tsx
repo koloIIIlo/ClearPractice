@@ -5,6 +5,7 @@ import { Panel } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ReferenceClips } from "./ReferenceClips";
@@ -56,11 +57,13 @@ export function RepeatFocus({ sessionId, takeCount, locked, native }: { sessionI
       )}
       <fieldset disabled={locked || save.isPending} className="space-y-2">
         <legend className="sr-only">Focus for the next take</legend>
-        {REPEAT_FOCUSES.map((f) => (
-          <label key={f} className="flex min-h-9 items-center gap-2">
-            <input type="radio" name="repeat-focus" checked={focus === f} onChange={() => save.mutate(f)} /> {f}
-          </label>
-        ))}
+        <RadioGroup value={REPEAT_FOCUSES.includes(focus as never) ? focus! : ""} onValueChange={(f) => save.mutate(f)} className="gap-1">
+          {REPEAT_FOCUSES.map((f, i) => (
+            <Label key={f} htmlFor={`repeat-focus-${i}`} className="flex min-h-9 items-center gap-2 font-normal">
+              <RadioGroupItem id={`repeat-focus-${i}`} value={f} /> {f}
+            </Label>
+          ))}
+        </RadioGroup>
         <form
           className="flex flex-wrap items-center gap-2"
           onSubmit={(e) => {

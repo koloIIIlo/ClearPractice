@@ -24,6 +24,7 @@ import { useIpc } from "@/lib/ipc";
 import type { ExerciseDefinition, PhraseCard, PracticePrompt } from "@/lib/ipc/schemas";
 import { ExpressionPanel, expressionPrompt, ImitationPanel, RepeatFocus } from "./ExercisePanels";
 import { SequenceBar } from "./SequenceBar";
+import { FollowUpPanel } from "./FollowUpPanel";
 import { cn } from "@/lib/utils";
 import { describeDemands } from "@/features/exercises/describe";
 import { useRecorder, type Recorder } from "./recorder";
@@ -194,7 +195,10 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
         />
       )}
       {exercise.type === "imitate" && <ImitationPanel sessionId={sessionId} hasTake={rec.takes.length > 0} locked={locked} native={native} lastTakeAssetId={rec.takes.at(-1)?.asset.assetId} />}
-      {exercise.type === "repeat" && <RepeatFocus sessionId={sessionId} takeCount={rec.takes.length} locked={locked} native={native} />}
+      {exercise.type === "repeat" && (
+        <FollowUpPanel prompt={prompt} sessionId={sessionId} lastTakeId={rec.takes.at(-1)?.asset.assetId} takeCount={rec.takes.length} native={native} locked={locked} />
+      )}
+      {exercise.type === "repeat" && !prompt.conditions.followUp && <RepeatFocus sessionId={sessionId} takeCount={rec.takes.length} locked={locked} native={native} />}
 
       {!passage && !phrase && exercise.type !== "imitate" && <fieldset disabled={locked} className="grid gap-3 sm:grid-cols-3">
         <legend className="mb-2 text-meta font-medium">Outline (optional, up to three keywords)</legend>

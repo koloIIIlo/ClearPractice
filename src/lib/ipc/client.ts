@@ -67,6 +67,7 @@ import type {
   FeedbackResult,
   CoachingRun,
   TakeCoachingPreview,
+  FollowUpQuestion,
 } from "./schemas";
 
 export interface SessionFilter {
@@ -272,6 +273,9 @@ export interface IpcClient {
   /** Stops waiting for a sent request; a dispatched one keeps its possible charge. */
   stopTakeCoaching(requestId: string): Promise<void>;
   listTakeCoaching(attemptId: string): Promise<CoachingRun[]>;
+  /** An AI follow-up question after a take (5.11): a separate request, a simulation. */
+  previewFollowUp(attemptId: string, model: CoachingModel): Promise<CoachingPreview>;
+  requestFollowUp(attemptId: string, requestId: string, payloadSha256: string): Promise<FollowUpQuestion>;
 }
 
 /** A command failed in a way the UI should explain in context (§14). */

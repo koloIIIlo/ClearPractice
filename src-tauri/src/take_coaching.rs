@@ -53,6 +53,19 @@ pub fn build(input: &TakeInput, parts: &[SentenceInfo], hide: &[String]) -> Resu
     Ok(TakeText { attempt_id: input.attempt_id.clone(), revision_id: input.revision_id.clone(), text, transcript, parts: parts.len() })
 }
 
+/// The text of a follow-up request (5.11): the task, topic and the take's
+/// transcript only. No measures, nothing else from the session.
+pub fn follow_up_text(input: &TakeInput) -> Result<TakeText> {
+    let text = format!(
+        "Task: {}\nTopic: {}\n\nThe learner's answer (automatic transcription{}):\n{}",
+        input.prompt.as_deref().unwrap_or("not recorded").trim(),
+        match input.familiarity.as_deref() { Some("unfamiliar") => "unfamiliar", Some("familiar") => "familiar", _ => "not recorded" },
+        if input.corrected { ", corrected by the learner" } else { "" },
+        input.text.trim()
+    );
+    Ok(TakeText { attempt_id: input.attempt_id.clone(), revision_id: input.revision_id.clone(), text, transcript: input.text.trim().to_string(), parts: 0 })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

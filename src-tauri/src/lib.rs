@@ -1629,6 +1629,58 @@ async fn request_take_coaching(
     .map_err(|e| format!("The feedback arrived but could not be saved with the take ({e}). It is kept in the app's cache/coaching/{request_id} folder; nothing will be sent again."))
 }
 
+/// Prepares an AI follow-up question after a take (5.11, a simulation); nothing is sent.
+#[tauri::command]
+async fn preview_follow_up(
+    storage: State<'_, Arc<SessionStorage>>,
+    owner: State<'_, Arc<api::coaching::PreviewOwner>>,
+    attempt_id: String,
+    model: Option<api::coaching::CoachingModel>,
+) -> Result<api::coaching::Preview, String> {
+    let owner = owner.inner().clone();
+    with_storage(&storage, move |db| {
+        let input = db.take_coaching_input(&attempt_id)?;
+        owner.preview_follow_up(take_coaching::follow_up_text(&input)?, model.unwrap_or_default())
+    })
+    .await
+    .map_err(|_| "Preparing the request failed.".to_string())?
+}
+
+/// Sends an approved follow-up preview (Stop waiting as for feedback).
+#[tauri::command]
+async fn request_follow_up(
+    owner: State<'_, Arc<api::coaching::PreviewOwner>>,
+    accounting: State<'_, Arc<ApiAccounting>>,
+    inflight: State<'_, Arc<InflightApi>>,
+    attempt_id: String,
+    request_id: String,
+    payload_sha256: String,
+) -> Result<api::coaching::FollowUp, String> {
+    let owner = owner.inner().clone();
+    let accounting = accounting.inner().clone();
+    accounting.0.as_ref().map_err(Clone::clone)?;
+    let inflight = inflight.inner().clone();
+    let task = {
+        let (accounting, request_id, payload_sha256) = (accounting.clone(), request_id.clone(), payload_sha256.clone());
+        tauri::async_runtime::spawn(async move {
+            let budget = accounting.0.as_ref().map_err(Clone::clone)?;
+            owner.send_follow_up(budget, &accounting.1, &attempt_id, &request_id, &payload_sha256).await
+        })
+    };
+    let abort = task.inner().abort_handle();
+    if let Ok(mut map) = inflight.0.lock() {
+        map.insert(request_id.clone(), Box::new(move || abort.abort()));
+    }
+    let outcome = task.await;
+    if let Ok(mut map) = inflight.0.lock() {
+        map.remove(&request_id);
+    }
+    match outcome {
+        Ok(result) => result,
+        Err(_) => Err(api::audio::stopped(accounting.0.as_ref().map_err(Clone::clone)?, &request_id)),
+    }
+}
+
 /// A take's saved AI feedback, newest first.
 #[tauri::command]
 async fn list_take_coaching(storage: State<'_, Arc<SessionStorage>>, attempt_id: String) -> Result<Vec<storage::database::coaching_runs::CoachingRun>, String> {
@@ -2298,6 +2350,8 @@ pub fn run() {
             preview_take_coaching,
             request_take_coaching,
             list_take_coaching,
+            preview_follow_up,
+            request_follow_up,
             import_model_pack,
             save_transcript_correction,
             search_content,

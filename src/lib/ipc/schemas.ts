@@ -806,6 +806,12 @@ export const CoachingRun = z.object({
 }).strict().refine((v) => (v.estimatedCostMicroUsd === null) === (v.costUnavailableReason !== null), "Missing cost needs a reason");
 export type CoachingRun = z.infer<typeof CoachingRun>;
 
+/** A simulated listener's follow-up question (5.11), labelled as a simulation. */
+export const FollowUpQuestion = z.object({
+  question: z.string().min(1), why: z.string(), model: z.string(), estimatedCostMicroUsd: MicroUsd.nullable(),
+}).strict();
+export type FollowUpQuestion = z.infer<typeof FollowUpQuestion>;
+
 export const TakeCoachingPreview = z.object({
   preview: CoachingPreview,
   /** When this exact request was already answered for the take (asking again may be billed). */
