@@ -16,6 +16,7 @@ pub mod prosody;
 pub mod sources;
 pub mod storage;
 pub mod take_coaching;
+mod redaction_audit;
 pub mod transcribe;
 
 use audio::capture::{CaptureService, RecordingStatus, StartRequest};
