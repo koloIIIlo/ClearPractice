@@ -39,10 +39,10 @@ it("builds progress from real sessions, keeping rehearsed and unfamiliar apart a
     s("c", "unfamiliar", "2026-10-02T10:00:00Z"),
     s("d", "familiar", "2026-10-04T10:00:00Z", { status: "interrupted" as const }),
   ];
-  const rehearsed = buildProgress("rehearsed", details as never);
+  const rehearsed = buildProgress("rehearsed", details as never, { a: 131 });
   expect(rehearsed.completedSessions).toBe(2);
   expect(rehearsed.practiceMinutes).toBe(3);
-  expect(rehearsed.points.map((p) => [p.sessionId, p.ease, p.estimatedPaceWpm])).toEqual([["a", 3, null], ["b", null, null]]);
+  expect(rehearsed.points.map((p) => [p.sessionId, p.ease, p.estimatedPaceWpm])).toEqual([["a", 3, 131], ["b", null, null]]);
   expect(rehearsed.highlight).toEqual({ sessionId: "b", title: base.title, improvement: "Lead with the point.", listenerFeedback: null });
   expect(buildProgress("unfamiliar", details as never).points.map((p) => p.sessionId)).toEqual(["c"]);
   expect(buildProgress("real", details as never).completedSessions).toBe(0);

@@ -74,10 +74,11 @@ export function buildTodayPlan({ localDate, length, sessions, phrases, latest }:
 /**
  * Progress from real sessions (plan 4.16, first part): rehearsed and unfamiliar
  * practice are kept apart by each session's task conditions; ease is your own
- * rating. Pace stays unavailable (null, never 0) until it is read from each
- * session's transcript; real conversations arrive with 4.17.
+ * rating. Pace is the Estimated pace of the session's latest transcribed take
+ * that has one; otherwise unavailable (null, never 0). Real conversations
+ * arrive with 4.17.
  */
-export function buildProgress(view: ProgressView, details: SessionDetail[]): ProgressSummary {
+export function buildProgress(view: ProgressView, details: SessionDetail[], paces: Record<string, number | null> = {}): ProgressSummary {
   const familiarity = view === "rehearsed" ? "familiar" : view === "unfamiliar" ? "unfamiliar" : null;
   const subset = familiarity === null ? [] : details.filter((s) => s.status !== "interrupted" && s.attempts.length > 0 && s.conditions?.familiarity === familiarity);
   const ordered = [...subset].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
@@ -86,7 +87,7 @@ export function buildProgress(view: ProgressView, details: SessionDetail[]): Pro
     view,
     practiceMinutes: Math.round(subset.reduce((n, s) => n + s.durationMs, 0) / 60_000),
     completedSessions: subset.length,
-    points: ordered.map((s) => ({ date: s.localDate, sessionId: s.id, estimatedPaceWpm: null, ease: s.ease ?? null })),
+    points: ordered.map((s) => ({ date: s.localDate, sessionId: s.id, estimatedPaceWpm: paces[s.id] ?? null, ease: s.ease ?? null })),
     highlight: withTakeaway ? { sessionId: withTakeaway.id, title: withTakeaway.title, improvement: withTakeaway.takeaway!.trim(), listenerFeedback: null } : null,
   };
 }

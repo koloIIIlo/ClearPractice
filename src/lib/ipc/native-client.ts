@@ -109,7 +109,17 @@ export function createNativeClient(): IpcClient {
       const details = await Promise.all(
         sessions.filter((s) => s.status !== "interrupted" && s.attemptCount > 0).slice(0, 60).map((s) => command("get_session", S.SessionDetail, { sessionId: s.id }).catch(() => null)),
       );
-      return S.ProgressSummary.parse(buildProgress(view, details.filter((d): d is S.SessionDetail => d !== null)));
+      const kept = details.filter((d): d is S.SessionDetail => d !== null);
+      // Pace: the latest transcribed take with an Estimated pace (needs ≥15 s of timed speech).
+      const paces: Record<string, number | null> = {};
+      await Promise.all(kept.map(async (d) => {
+        for (const a of [...d.attempts].reverse()) {
+          const t = await command("get_attempt_transcript", S.AttemptTranscript, { attemptId: a.id }).catch(() => null);
+          const pace = t?.revision?.measures.paceWpm ?? null;
+          if (pace !== null) { paces[d.id] = Math.round(pace); return; }
+        }
+      }));
+      return S.ProgressSummary.parse(buildProgress(view, kept, paces));
     },
     // Today's plan from your own sessions and phrases plus the curriculum rotation (4.12).
     getTodayPlan: async (length) => {
