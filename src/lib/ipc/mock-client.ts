@@ -43,7 +43,7 @@ export function createMockClient(): IpcClient {
   return {
     recordingMode: "simulated",
     getApiKeyStatus: async () => S.CredentialStatus.parse({ provider: "OpenAI", present: false }),
-    getApiUsageSummary: async () => S.BudgetSummary.parse({ currency: "USD", month: "2026-10", stopMicroUsd: 5_000_000, warningMicroUsd: 4_000_000, countedMicroUsd: 0, coachingMicroUsd: 0, transcriptionMicroUsd: 0, uncertainMicroUsd: 0, remainingMicroUsd: 5_000_000, warning: false }),
+    getApiUsageSummary: async () => S.BudgetSummary.parse({ currency: "USD", month: "2026-10", stopMicroUsd: 5_000_000, warningMicroUsd: 4_000_000, countedMicroUsd: 0, coachingMicroUsd: 0, transcriptionMicroUsd: 0, uncertainMicroUsd: 0, settledMicroUsd: 0, reservedMicroUsd: 0, remainingMicroUsd: 5_000_000, warning: false }),
     storeApiKey: async () => { throw new IpcError("desktop_required", "API key storage is available in the desktop app."); },
     removeApiKey: async () => { throw new IpcError("desktop_required", "API key storage is available in the desktop app."); },
     previewCoachingRequest: async () => { throw new IpcError("desktop_required", "API previews are available in the desktop app."); },

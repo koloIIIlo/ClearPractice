@@ -107,6 +107,10 @@ pub struct BudgetSummary {
     pub coaching_micro_usd: u64,
     pub transcription_micro_usd: u64,
     pub uncertain_micro_usd: u64,
+    /// Settled from the provider's reported usage (3.17).
+    pub settled_micro_usd: u64,
+    /// Reserved for requests that are being prepared or are on their way.
+    pub reserved_micro_usd: u64,
     pub remaining_micro_usd: u64,
     pub warning: bool,
 }
@@ -128,7 +132,17 @@ fn summary(ledger: &Ledger, month: &str) -> Result<BudgetSummary> {
     let mut coaching = 0u64;
     let mut transcription = 0u64;
     let mut uncertain = 0u64;
+    let mut settled = 0u64;
+    let mut reserved = 0u64;
     for entry in ledger.entries.iter().filter(|e| e.month == month) {
+        let bucket = match entry.status {
+            Status::Settled => Some(&mut settled),
+            Status::Reserved | Status::Dispatched => Some(&mut reserved),
+            _ => None,
+        };
+        if let Some(bucket) = bucket {
+            *bucket = bucket.checked_add(amount(entry)).ok_or("API accounting overflow.")?;
+        }
         let subtotal = if entry.purpose == Purpose::Coaching {
             &mut coaching
         } else {
@@ -155,6 +169,8 @@ fn summary(ledger: &Ledger, month: &str) -> Result<BudgetSummary> {
         coaching_micro_usd: coaching,
         transcription_micro_usd: transcription,
         uncertain_micro_usd: uncertain,
+        settled_micro_usd: settled,
+        reserved_micro_usd: reserved,
         remaining_micro_usd: STOP.saturating_sub(counted),
         warning: counted >= WARN,
     })
@@ -557,6 +573,12 @@ mod tests {
             .unwrap();
         assert_eq!(owner.summary().unwrap().counted_micro_usd, 20);
         assert_eq!(owner.summary().unwrap().uncertain_micro_usd, 0);
+        // Billed, still open and uncertain are separate figures (3.17).
+        let summary = owner.summary().unwrap();
+        assert_eq!((summary.settled_micro_usd, summary.reserved_micro_usd), (20, 0));
+        owner.reserve("open", Purpose::Transcription, &hash, Some(quote(30))).unwrap();
+        let summary = owner.summary().unwrap();
+        assert_eq!((summary.settled_micro_usd, summary.reserved_micro_usd, summary.counted_micro_usd), (20, 30, 50));
     }
 
     #[test]

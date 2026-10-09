@@ -695,6 +695,7 @@ export const Preferences = z
     /** Local LLM (5.4): a server on this computer only. */
     localEndpoint: z.string().min(1),
     localModel: z.string(),
+    budgetWarningMicroUsd: z.number().int().min(100_000).max(5_000_000),
   })
   .strict();
 export type Preferences = z.infer<typeof Preferences>;
@@ -702,7 +703,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   recordingSounds: true, recordingShortcuts: true, inputDeviceId: null, sessionLength: "standard",
   coachingMode: "api", coachingModel: "gpt-6-luna", deliveryImpressions: false,
   onboarded: false, goals: [], goalNote: "", difficultyLanguage: null,
-  localEndpoint: "http://127.0.0.1:8080", localModel: "",
+  localEndpoint: "http://127.0.0.1:8080", localModel: "", budgetWarningMicroUsd: 4_000_000,
 };
 
 export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api"]), provider: AudioProvider }).strict();
@@ -763,6 +764,8 @@ export const BudgetSummary = z.object({
   coachingMicroUsd: MicroUsd,
   transcriptionMicroUsd: MicroUsd,
   uncertainMicroUsd: MicroUsd,
+  settledMicroUsd: MicroUsd,
+  reservedMicroUsd: MicroUsd,
   remainingMicroUsd: MicroUsd,
   warning: z.boolean(),
 }).strict();
