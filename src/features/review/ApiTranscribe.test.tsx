@@ -47,7 +47,8 @@ it("falls back to the stored provider, labels a repeat as a paid retranscription
   expect(client.requestApiTranscription).not.toHaveBeenCalled(); // a preview sends nothing
   expect(client.previewApiTranscription).toHaveBeenCalledWith("take-1", "assemblyai");
   expect(screen.getByText(/already transcribed with these settings.*Sending again is a new paid run/)).toBeInTheDocument();
-  expect(await screen.findByLabelText("Listen to exactly the audio that Send uploads")).toHaveAttribute("src", "http://asset.localhost/prepared.wav");
+  expect(await screen.findByRole("button", { name: "Play exactly the audio that Send uploads" })).toBeInTheDocument();
+  expect(document.querySelector("audio")).toHaveAttribute("src", "http://asset.localhost/prepared.wav");
   await user.click(screen.getByRole("button", { name: "Retranscribe · may be billed" }));
   expect(client.requestApiTranscription).toHaveBeenCalledTimes(1);
   expect(await screen.findByText("Um, so.")).toBeInTheDocument();

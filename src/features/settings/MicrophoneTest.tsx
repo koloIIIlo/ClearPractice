@@ -3,6 +3,7 @@ import { Mic } from "lucide-react";
 import { LiveWaveform, LEVEL_HISTORY, levelToHeight } from "@/components/live-waveform";
 import { Button } from "@/components/ui/button";
 import { useIpc } from "@/lib/ipc";
+import { AudioPlayer } from "@/components/audio-player";
 
 type Phase = "idle" | "recording" | "done" | "error";
 /** Below about −32 dBFS peak, speech is hard to transcribe reliably. */
@@ -86,7 +87,7 @@ export function MicrophoneTest({ deviceId }: { deviceId: string | null }) {
       )}
       {phase === "done" && url && (
         <div className="space-y-2">
-          <audio className="w-full" controls src={url} aria-label="Microphone test recording" />
+          <AudioPlayer src={url} label="the microphone test recording" className="max-w-xl" />
           <p role="status" className="text-meta">
             {peak < QUIET
               ? "This sounds very quiet. Move closer to the microphone or raise its input volume in Windows sound settings, then test again."

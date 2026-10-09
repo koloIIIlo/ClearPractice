@@ -63,6 +63,9 @@ pub fn arguments(url: &str, output_dir: &Path) -> Vec<String> {
         "--no-playlist".into(),
         "--no-progress".into(),
         "--no-warnings".into(),
+        // Titles and paths come back as UTF-8, whatever the console code page.
+        "--encoding".into(),
+        "utf-8".into(),
         "--match-filter".into(),
         "duration <= 900 & !is_live".into(),
         "-f".into(),
@@ -87,6 +90,25 @@ pub fn parse_output(stdout: &str) -> Result<(String, String, String, PathBuf)> {
     Ok((title, uploader, url, PathBuf::from(file)))
 }
 
+/// The file yt-dlp wrote into our own download folder. Found by listing the
+/// folder rather than trusting the printed path: on Windows that path can come
+/// back in another code page (for example a data folder with Cyrillic letters).
+pub fn downloaded_file(dir: &Path) -> Result<PathBuf> {
+    let found: Vec<PathBuf> = fs::read_dir(dir)
+        .map_err(|_| "Cannot read the download.")?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_file())
+        .filter(|p| p.file_stem().is_some_and(|s| s == "source"))
+        .filter(|p| p.extension().is_some_and(|e| ["m4a", "mp4", "mp3"].contains(&e.to_string_lossy().to_ascii_lowercase().as_str())))
+        .collect();
+    match found.as_slice() {
+        [one] => Ok(one.clone()),
+        [] => Err("No audio was downloaded. The video may be longer than 15 minutes, live, private, or not available as audio.".into()),
+        _ => Err("The download is not where it was expected.".into()),
+    }
+}
+
 /// Downloads the audio, stages it like an imported file, and removes the download.
 pub fn fetch(root: &Path, ytdlp: &Path, url: &str, cancel: &AtomicBool) -> Result<LinkAudio> {
     let url = validate_url(url)?;
@@ -95,7 +117,13 @@ pub fn fetch(root: &Path, ytdlp: &Path, url: &str, cancel: &AtomicBool) -> Resul
     crate::audio::prepare::contained(root, &dir)?;
     let result = (|| {
         let mut command = Command::new(ytdlp);
-        command.args(arguments(&url, &dir)).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        command
+            .args(arguments(&url, &dir))
+            .env("PYTHONIOENCODING", "utf-8")
+            .env("PYTHONUTF8", "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -121,12 +149,10 @@ pub fn fetch(root: &Path, ytdlp: &Path, url: &str, cancel: &AtomicBool) -> Resul
             let detail: String = String::from_utf8_lossy(&output.stderr).lines().rev().find(|l| l.contains("ERROR")).unwrap_or("").chars().take(200).collect();
             return Err(format!("yt-dlp could not get the audio. {detail}").trim().to_string());
         }
-        let (title, uploader, page, file) = parse_output(&stdout)?;
+        let (title, uploader, page, _printed) = parse_output(&stdout)?;
         // The file must be the one yt-dlp wrote into our folder.
-        let file = crate::audio::prepare::contained(root, &file).map_err(|_| "The download is not where it was expected.")?;
-        if !file.starts_with(crate::audio::prepare::contained(root, &dir)?) {
-            return Err("The download is not where it was expected.".into());
-        }
+        let file = downloaded_file(&dir)?;
+        crate::audio::prepare::contained(root, &file).map_err(|_| "The download is not where it was expected.")?;
         let source = format!("{}, \u{201c}{}\u{201d}, YouTube \u{2014} {}", if uploader.is_empty() { "Unknown channel" } else { &uploader }, title, page);
         let file_name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let meta = clips::StageMeta { origin: "link".into(), file_name, title: title.clone(), link: Some(page.clone()), credit: source.clone(), ..Default::default() };
@@ -268,6 +294,20 @@ mod tests {
         assert_eq!(expected_sha256(&sums), Some(hash));
         assert_eq!(expected_sha256("short  yt-dlp.exe\n"), None);
         assert_eq!(expected_sha256("nothing here"), None);
+    }
+
+    #[test]
+    fn finds_the_download_in_its_own_folder_even_under_a_non_latin_path() {
+        let root = crate::storage::recording::tests::TestRoot::new();
+        let dir = root.0.join("Хлам").join("dl-1");
+        fs::create_dir_all(&dir).unwrap();
+        assert!(downloaded_file(&dir).unwrap_err().contains("No audio"));
+        fs::write(dir.join("source.m4a.part"), b"partial").unwrap();
+        fs::write(dir.join("source.m4a"), b"audio").unwrap();
+        assert_eq!(downloaded_file(&dir).unwrap(), dir.join("source.m4a"));
+        fs::write(dir.join("source.mp3"), b"audio").unwrap();
+        assert!(downloaded_file(&dir).is_err(), "two candidates are refused");
+        assert!(arguments("https://youtu.be/abc", &dir).windows(2).any(|w| w == ["--encoding", "utf-8"]));
     }
 
     #[test]

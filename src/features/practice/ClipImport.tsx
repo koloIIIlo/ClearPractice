@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Circle, FileAudio, History, Link2, Loader2, Play, Scissors, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AudioPlayer, type AudioPlayerHandle } from "@/components/audio-player";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -362,8 +363,7 @@ const toProposal = (c: ClipCandidate): Proposal => ({ ...c, keep: true, descript
 export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceClip[]) => void; onCancel: () => void }) {
   const ipc = useIpc();
   const qc = useQueryClient();
-  const preview = useRef<HTMLAudioElement>(null);
-  const stopAt = useRef<number | null>(null);
+  const preview = useRef<AudioPlayerHandle>(null);
   const [staged, setStaged] = useState<ClipStaged | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [link, setLink] = useState("");
@@ -472,14 +472,8 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
       setBusy(null); setProgress(null);
     }
   };
-  const playSection = (from: number, to: number) => {
-    const audio = preview.current;
-    if (!audio) return;
-    audio.currentTime = from / 1000;
-    stopAt.current = to / 1000;
-    void audio.play().catch(() => {});
-  };
-  const here = (set: (v: string) => void) => preview.current && set(formatClockTenths(preview.current.currentTime * 1000));
+  const playSection = (from: number, to: number) => preview.current?.playRange(from, to);
+  const here = (set: (v: string) => void) => preview.current && set(formatClockTenths(preview.current.positionMs()));
 
   const saveOne = async () => {
     if (!staged) return;
@@ -585,16 +579,7 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
               {savedRanges.length > 0 && ` ${savedRanges.length} ${savedRanges.length === 1 ? "part is" : "parts are"} already saved and marked below.`}
             </p>
           )}
-          {url && (
-            <audio
-              ref={preview}
-              controls
-              src={url}
-              className="h-10 w-full"
-              aria-label="Preview the whole file"
-              onTimeUpdate={(e) => { if (stopAt.current !== null && e.currentTarget.currentTime >= stopAt.current) { e.currentTarget.pause(); stopAt.current = null; } }}
-            />
-          )}
+          {url && <AudioPlayer ref={preview} src={url} label="the whole file" />}
           <div className="space-y-1">
             <Label htmlFor="clip-source">Source and credit</Label>
             <Input id="clip-source" maxLength={500} placeholder="Speaker, talk, year, where you got it" value={source} onChange={(e) => setSource(e.target.value)} />

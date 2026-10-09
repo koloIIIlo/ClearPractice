@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileAudio, Library } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
 import type { ReferenceClip } from "@/lib/ipc/schemas";
+import { AudioPlayer } from "@/components/audio-player";
 import { ClipImport } from "./ClipImport";
 import { ClipLibrary } from "./ClipLibrary";
 
@@ -14,28 +14,11 @@ const SPEEDS = [0.75, 1, 1.25] as const;
 /** Plays one clip with pitch-preserving speed, its transcript and its credit. */
 function ClipPlayer({ clip }: { clip: ReferenceClip }) {
   const ipc = useIpc();
-  const audio = useRef<HTMLAudioElement>(null);
-  const [rate, setRate] = useState(1);
   const url = useQuery({ queryKey: ["clip-url", clip.id], queryFn: () => ipc.getClipPlaybackUrl(clip.id), staleTime: Infinity, retry: false });
-  useEffect(() => {
-    if (audio.current) {
-      audio.current.preservesPitch = true;
-      audio.current.playbackRate = rate;
-    }
-  }, [rate, url.data]);
   return (
     <div className="space-y-2">
       {url.error && <p role="alert" className="text-meta text-destructive">{url.error.message}</p>}
-      {url.data && (
-        <div className="flex flex-wrap items-center gap-3">
-          <audio ref={audio} controls src={url.data} className="h-10 w-full max-w-md" aria-label={`Play clip: ${clip.title}`} />
-          <span id={`speed-${clip.id}`} className="text-meta text-muted-foreground">Speed</span>
-          <Select value={String(rate)} onValueChange={(v) => setRate(Number(v))}>
-            <SelectTrigger size="sm" className="w-24" aria-labelledby={`speed-${clip.id}`}><SelectValue /></SelectTrigger>
-            <SelectContent>{SPEEDS.map((s) => <SelectItem key={s} value={String(s)}>{s}×</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-      )}
+      {url.data && <AudioPlayer src={url.data} label={`clip: ${clip.title}`} speeds={SPEEDS} />}
       {clip.transcript && (
         <details className="text-meta">
           <summary className="cursor-pointer">Transcript</summary>

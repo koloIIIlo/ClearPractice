@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { formatClock, formatLongDay, UI_LOCALE } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
 import type { AudioPreview, AudioProvider, AudioResult } from "@/lib/ipc/schemas";
+import { AudioPlayer } from "@/components/audio-player";
 
 export const API_LABELS: Record<AudioProvider, string> = { deepgram: "Deepgram Nova-3", assemblyai: "AssemblyAI Universal-3.5 Pro" };
 export const money = (micro: number) =>
@@ -94,7 +95,7 @@ export function ApiRequestFlow({ attemptId, provider, hasKey, keyHint, previewFn
             <code>{preview.audioSha256.slice(0, 12)}…</code>
           </p>
           {audioUrl && (
-            <audio controls preload="none" src={audioUrl} className="h-10 w-full max-w-md" aria-label="Listen to exactly the audio that Send uploads" />
+            <AudioPlayer src={audioUrl} label="exactly the audio that Send uploads" className="max-w-xl" />
           )}
           <p className="text-meta">
             Estimated charge: {money(preview.estimatedCostMicroUsd)} (list price checked {preview.priceDate}, billed per started minute).

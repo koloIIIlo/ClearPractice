@@ -48,7 +48,9 @@ it("imports a section of a local file with a title and credit, then plays it wit
   await user.type(screen.getByLabelText("Source and credit"), "Speaker, Talk title, 2024");
   await user.click(screen.getByRole("button", { name: "Save clip" }));
   expect(client.saveClip).toHaveBeenCalledWith({ stagingId: "stage-1", startMs: 60_000, endMs: 72_500, title: "keynote", source: "Speaker, Talk title, 2024", transcript: null, folderId: "folder-1" });
-  expect(await screen.findByLabelText("Play clip: Opening of the talk")).toHaveAttribute("src", "http://asset.localhost/clip.wav");
+  expect(await screen.findByRole("button", { name: "Play clip: Opening of the talk" })).toBeInTheDocument();
+  expect(document.querySelector("audio")).toHaveAttribute("src", "http://asset.localhost/clip.wav");
+  expect(screen.getByRole("slider", { name: "Position in clip: Opening of the talk" })).toBeInTheDocument();
   expect(screen.getByText("Source: Speaker, Talk title, 2024")).toBeInTheDocument();
   // Deleting happens in the library, after a confirmation.
   await user.click(screen.getByRole("button", { name: "Browse the library (1)" }));

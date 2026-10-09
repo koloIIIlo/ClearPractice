@@ -28,7 +28,8 @@ it("records five seconds, shows the live level, then offers playback with level 
   act(() => onLevel(status(0.003, 100)));
   expect(screen.getByRole("meter")).toBeInTheDocument();
   await act(async () => onFinished({ attemptId: "mic-test-1", durationMs: 5000, error: null }));
-  expect(screen.getByLabelText("Microphone test recording")).toHaveAttribute("src", "asset://mic-test");
+  expect(screen.getByRole("button", { name: "Play the microphone test recording" })).toBeInTheDocument();
+  expect(document.querySelector("audio")).toHaveAttribute("src", "asset://mic-test");
   expect(screen.getByRole("status")).toHaveTextContent("very quiet");
   expect(screen.getByText(/isn't saved to your sessions/)).toBeInTheDocument();
 
