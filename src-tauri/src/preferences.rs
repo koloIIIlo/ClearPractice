@@ -21,12 +21,20 @@ pub struct Preferences {
     pub coaching_model: CoachingModel,
     /// D-27: how delivery may come across to a listener; off by default.
     pub delivery_impressions: bool,
+    /// First-launch setup (4.19) finished or skipped.
+    pub onboarded: bool,
+    /// What you want to improve: clarity, hesitation, phrasing, confidence.
+    pub goals: Vec<String>,
+    pub goal_note: String,
+    /// Where the difficulty shows: "english" or "both" (also your strongest language).
+    pub difficulty_language: Option<String>,
 }
 
 impl Default for Preferences {
     fn default() -> Self {
         Self { recording_sounds: true, recording_shortcuts: true, input_device_id: None, session_length: "standard".into(),
-            coaching_mode: "api".into(), coaching_model: CoachingModel::default(), delivery_impressions: false }
+            coaching_mode: "api".into(), coaching_model: CoachingModel::default(), delivery_impressions: false,
+            onboarded: false, goals: Vec::new(), goal_note: String::new(), difficulty_language: None }
     }
 }
 
@@ -36,6 +44,17 @@ fn validate(mut p: Preferences) -> Result<Preferences, String> {
     }
     if !matches!(p.coaching_mode.as_str(), "api" | "off") {
         return Err("Unknown coaching mode.".into());
+    }
+    p.goals.dedup();
+    if p.goals.len() > 4 || p.goals.iter().any(|g| !matches!(g.as_str(), "clarity" | "hesitation" | "phrasing" | "confidence")) {
+        return Err("Choose goals from the list.".into());
+    }
+    p.goal_note = p.goal_note.trim().to_string();
+    if p.goal_note.chars().count() > 300 || p.goal_note.contains('\0') {
+        return Err("Keep your goal under 300 characters.".into());
+    }
+    if p.difficulty_language.as_deref().is_some_and(|l| !matches!(l, "english" | "both")) {
+        return Err("Unknown language choice.".into());
     }
     p.input_device_id = p.input_device_id.filter(|id| !id.trim().is_empty());
     if p.input_device_id.as_ref().is_some_and(|id| id.len() > 512) {
@@ -73,6 +92,9 @@ mod tests {
         assert_eq!(load(&db).unwrap(), chosen);
         assert!(save(&db, Preferences { session_length: "long".into(), ..Default::default() }).is_err());
         assert!(save(&db, Preferences { coaching_mode: "local".into(), ..Default::default() }).is_err());
+        assert!(save(&db, Preferences { goals: vec!["fluency score".into()], ..Default::default() }).is_err());
+        let goals = save(&db, Preferences { goals: vec!["clarity".into(), "hesitation".into()], goal_note: "  Explain designs at work ".into(), difficulty_language: Some("both".into()), onboarded: true, ..Default::default() }).unwrap();
+        assert_eq!((goals.goal_note.as_str(), goals.onboarded), ("Explain designs at work", true));
         // Older stored preferences without the coaching fields keep the defaults.
         db.set_setting(KEY, r#"{"recordingSounds":false,"recordingShortcuts":true,"inputDeviceId":null,"sessionLength":"short"}"#).unwrap();
         let old = load(&db).unwrap();

@@ -20,6 +20,19 @@ const bundled = (id: string, text: string, tags: PracticePrompt["tags"], conditi
   id, text, tags, conditions, favorite, source: "bundled",
 });
 
+/**
+ * The optional first-launch baseline (4.19, §5 First launch). Not part of the
+ * prompt pack; sessions recorded with it are tagged "baseline".
+ */
+export const BASELINE_PROMPT: PracticePrompt = {
+  id: "baseline",
+  text: "Describe something you would like to get better at and why.",
+  tags: ["daily_life"],
+  conditions: cond("familiar", 15, 60),
+  favorite: false,
+  source: "bundled",
+};
+
 export const PROMPTS: PracticePrompt[] = [
   // Everyday starters (kept from the first pack; ids are referenced by plans and history).
   bundled("p-habit", "Describe a habit you would like to change and why.", ["daily_life"], cond("familiar", 15, 60), true),

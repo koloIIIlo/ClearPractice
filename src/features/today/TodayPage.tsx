@@ -13,6 +13,7 @@ import { useTodayPlan } from "@/lib/ipc/queries";
 import type { SessionLength, TodayPlan } from "@/lib/ipc/schemas";
 import { RecordingLibrary } from "@/features/practice/RecordingLibrary";
 import { loadSequence, startSequence, stepUrl } from "@/features/practice/sequence";
+import { StagePanel } from "./StagePanel";
 
 const LENGTHS: { value: SessionLength; label: string; hint: string }[] = [
   { value: "standard", label: "About 13 minutes", hint: "Four short exercises" },
@@ -49,6 +50,7 @@ function TodayContent({
   onLengthChange: (l: SessionLength) => void;
 }) {
   const navigate = useNavigate();
+  const { preferences, update } = usePreferences();
   const totalMinutes = plan.steps.reduce((n, s) => n + s.minutes, 0);
   const firstRun = !plan.lastCompleted && !plan.resumable;
   // Today's sequence (4.10): start walks the plan step by step; a sequence in progress can be resumed.
@@ -68,6 +70,16 @@ function TodayContent({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="space-y-6">
+          {firstRun && !preferences.onboarded && (
+            <Panel className="flex flex-wrap items-center gap-3" aria-label="First-launch setup">
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">New here? Set up in four short steps.</p>
+                <p className="text-meta text-muted-foreground">Your goal, a microphone check, transcription and feedback choices, and an optional baseline. About three minutes.</p>
+              </div>
+              <Button asChild><Link to="/welcome">Start setup</Link></Button>
+              <Button variant="ghost" onClick={() => update({ onboarded: true })}>Not now</Button>
+            </Panel>
+          )}
           {firstRun ? (
             <EmptyState
               icon={Mic}
@@ -213,6 +225,7 @@ function TodayContent({
         </div>
 
         <aside className="space-y-6" aria-label="Recent">
+          <StagePanel plan={plan} />
           {plan.lastCompleted && (
             <Panel>
               <SectionTitle>Last session</SectionTitle>

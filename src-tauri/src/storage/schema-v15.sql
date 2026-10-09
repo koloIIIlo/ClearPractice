@@ -60,4 +60,14 @@ CREATE TABLE transfer_reviews (
  created_at_ms INTEGER NOT NULL,
  deleted_at_ms INTEGER
 ) STRICT;
+-- Progression (4.18, §7): each stage change, or your choice to stay or go
+-- easier, with the reason shown at the time. The app never advances by itself.
+CREATE TABLE progression_events (
+ id INTEGER PRIMARY KEY,
+ kind TEXT NOT NULL CHECK(kind IN ('advance','easier','stay')),
+ stage_from INTEGER NOT NULL CHECK(stage_from BETWEEN 1 AND 5),
+ stage_to INTEGER NOT NULL CHECK(stage_to BETWEEN 1 AND 5),
+ reason TEXT NOT NULL DEFAULT '',
+ created_at_ms INTEGER NOT NULL
+) STRICT;
 PRAGMA user_version=15;

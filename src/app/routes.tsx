@@ -12,6 +12,7 @@ import { ComparePage } from "@/features/review/ComparePage";
 import { PhrasesPage } from "@/features/phrases/PhrasesPage";
 import { ProgressPage } from "@/features/progress/ProgressPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { WelcomePage } from "@/features/onboarding/WelcomePage";
 import { AppShell } from "./AppShell";
 import { RouteError } from "./RouteError";
 import type { RouteHandle } from "./TopBar";
@@ -78,6 +79,7 @@ export const routes: RouteObject[] = [
           { path: "phrases", element: <PhrasesPage />, handle: crumb("Phrases") },
           { path: "progress", element: <ProgressPage />, handle: crumb("Progress") },
           { path: "settings/:section?", element: <SettingsPage />, handle: crumb("Settings") },
+          { path: "welcome", element: <WelcomePage />, handle: crumb("Welcome") },
           { path: "*", element: <RouteError />, loader: () => { throw new Response("Not found", { status: 404 }); } },
         ],
       },

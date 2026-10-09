@@ -619,6 +619,16 @@ async fn delete_transfer_review(storage: State<'_, Arc<SessionStorage>>, review_
 }
 
 #[tauri::command]
+async fn list_progression_events(storage: State<'_, Arc<SessionStorage>>) -> Result<Vec<storage::database::progression::ProgressionEvent>, String> {
+    with_storage(&storage, |db| db.list_progression_events()).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn record_progression(storage: State<'_, Arc<SessionStorage>>, kind: String, reason: String) -> Result<storage::database::progression::ProgressionEvent, String> {
+    with_storage(&storage, move |db| db.record_progression(&kind, &reason)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
 async fn set_preferred_take(storage: State<'_, Arc<SessionStorage>>, session_id: String, preferred: Option<String>) -> Result<(), String> {
     with_storage(&storage, move |owner| owner.set_preferred_take(&session_id, preferred.as_deref()))
         .await
@@ -2217,6 +2227,8 @@ pub fn run() {
             move_take_to_trash,
             set_session_focus,
             set_preferred_take,
+            list_progression_events,
+            record_progression,
             list_transfer_reviews,
             add_transfer_review,
             delete_transfer_review,

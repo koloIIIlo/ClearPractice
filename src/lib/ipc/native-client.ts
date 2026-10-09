@@ -5,6 +5,7 @@ import { IpcError, type IpcClient } from "./client";
 import { createMockClient } from "./mock-client";
 import * as S from "./schemas";
 import { buildProgress, buildTodayPlan } from "../today-plan";
+import { schedule } from "../scheduler";
 import { toLocalDate } from "../phrase-schedule";
 import { PROMPTS } from "@/content/prompts";
 
@@ -20,7 +21,7 @@ async function command<T>(name: string, schema: { parse(value: unknown): T }, ar
 /** Native history and recording; curriculum/analysis previews remain separate. */
 export function createNativeClient(): IpcClient {
   const preview = createMockClient();
-  return {
+  const client: IpcClient = {
     ...preview,
     recordingMode: "native",
     listSessions: (filter) => command("list_sessions", S.SessionSummary.array(), { filter: filter ?? null }),
@@ -96,6 +97,7 @@ export function createNativeClient(): IpcClient {
     updatePrompt: async (promptId, prompt) => ({ ...(await command("update_user_prompt", S.PromptState.shape.userPrompts.element, { promptId, prompt })), favorite: false, source: "user" as const }),
     deletePrompt: async (promptId) => { await command("delete_user_prompt", z.null(), { promptId }); },
     listTransferReviews: () => command("list_transfer_reviews", S.TransferReview.array()),
+    recordProgression: (kind, reason) => command("record_progression", S.ProgressionEvent, { kind, reason }),
     addTransferReview: (review) => command("add_transfer_review", S.TransferReview, { review }),
     deleteTransferReview: async (reviewId) => { await command("delete_transfer_review", z.null(), { reviewId }); },
     listPhrases: () => command("list_phrases", S.PhraseCard.array()),
@@ -138,14 +140,21 @@ export function createNativeClient(): IpcClient {
     },
     // Today's plan from your own sessions and phrases plus the curriculum rotation (4.12).
     getTodayPlan: async (length) => {
-      const [sessions, phrases, reviews] = await Promise.all([
+      const [sessions, phrases, reviews, events, prompts, preferences] = await Promise.all([
         command("list_sessions", S.SessionSummary.array(), { filter: null }),
         command("list_phrases", S.PhraseCard.array()),
         command("list_transfer_reviews", S.TransferReview.array()).catch(() => []),
+        command("list_progression_events", S.ProgressionEvent.array()).catch(() => []),
+        client.listPrompts().catch(() => PROMPTS),
+        command("get_preferences", S.Preferences).catch(() => S.DEFAULT_PREFERENCES),
       ]);
       const newest = sessions.find((s) => s.status === "completed") ?? sessions.find((s) => s.status !== "interrupted" && s.attemptCount > 0);
       const latest = newest ? await command("get_session", S.SessionDetail, { sessionId: newest.id }).catch(() => null) : null;
-      return S.TodayPlan.parse(buildTodayPlan({ localDate: toLocalDate(new Date()), length, sessions, phrases, latest, reviews }));
+      // The scheduler reads your recent sessions with takes (4.18).
+      const recentIds = sessions.filter((s) => s.status !== "interrupted" && s.attemptCount > 0).slice(0, 12).map((s) => s.id);
+      const recent = (await Promise.all(recentIds.map((id) => command("get_session", S.SessionDetail, { sessionId: id }).catch(() => null))))
+        .filter((d): d is S.SessionDetail => d !== null);
+      return S.TodayPlan.parse(buildTodayPlan({ localDate: toLocalDate(new Date()), length, sessions, phrases, latest, reviews, plan: schedule({ recent, events, prompts }), prompts, goals: preferences.goals }));
     },
     reviewPhrase: (phraseId, rating) => command("review_phrase", S.PhraseCard, { phraseId, rating }),
     addPhrase: (phrase, sourceSessionId) => command("add_phrase", S.PhraseCard, { phrase, sourceSessionId: sourceSessionId ?? null }),
@@ -262,6 +271,7 @@ export function createNativeClient(): IpcClient {
     getRecordingPlaybackUrl: async (assetId) => convertFileSrc(await command("get_recording_playback_path", S.Id, { assetId })),
     getRecordingWaveform: (assetId) => command("get_recording_waveform", S.WaveformPeaks, { assetId }),
   };
+  return client;
 }
 
 export function createAppClient(): IpcClient {

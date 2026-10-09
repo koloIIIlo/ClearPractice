@@ -14,6 +14,7 @@ import type {
   PromptInput,
   TransferInput,
   TransferReview,
+  ProgressionEvent,
   PracticePrompt,
   ProgressSummary,
   ProgressView,
@@ -99,6 +100,8 @@ export interface IpcClient {
   addPrompt(prompt: PromptInput): Promise<PracticePrompt>;
   /** Real-conversation reflections (4.17), newest first. */
   listTransferReviews(): Promise<TransferReview[]>;
+  /** Records your stage choice (4.18); the app never advances by itself. */
+  recordProgression(kind: ProgressionEvent["kind"], reason: string): Promise<ProgressionEvent>;
   addTransferReview(review: TransferInput): Promise<TransferReview>;
   deleteTransferReview(reviewId: string): Promise<void>;
   updatePrompt(promptId: string, prompt: PromptInput): Promise<PracticePrompt>;

@@ -99,6 +99,7 @@ export function createMockClient(): IpcClient {
       if (!p) throw new IpcError("not_found", "Prompt not found");
       p.favorite = favorite;
     },
+    recordProgression: async () => { throw new IpcError("desktop_required", "Stages are kept in the desktop app."); },
     listTransferReviews: async () => [...transferReviews].sort((a, b) => b.localDate.localeCompare(a.localDate) || b.createdAt.localeCompare(a.createdAt)),
     addTransferReview: async (input) => {
       if (input.situation.trim().length < 3) throw new IpcError("invalid", "Describe the situation in a few words.");

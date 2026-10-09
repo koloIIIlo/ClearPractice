@@ -31,7 +31,7 @@ import { LiveWaveform } from "@/components/live-waveform";
 import { RecordingLibrary, SavedAudio } from "./RecordingLibrary";
 import { MoveTakeToTrashButton } from "@/features/sessions/TrashPage";
 import { PASSAGES, type Passage } from "@/content/passages";
-import { CURRICULUM_VERSION } from "@/content/prompts";
+import { BASELINE_PROMPT, CURRICULUM_VERSION } from "@/content/prompts";
 import { passagePrompt, ThoughtGroupPassage } from "./ThoughtGroupPassage";
 
 export function StudioPage() {
@@ -54,7 +54,9 @@ export function StudioPage() {
               const passage = exercise.type === "thought_groups" ? (PASSAGES.find((p) => p.id === params.get("passage")) ?? PASSAGES[0]) : undefined;
               // Use a better expression practises a saved phrase (4.9).
               const phrase = exercise.type === "expression" && phraseList.length > 0 ? (phraseList.find((p) => p.id === params.get("phrase")) ?? phraseList[0]) : undefined;
-              const prompt = passage ? passagePrompt(passage) : phrase ? expressionPrompt(phrase) : (promptList.find((p) => p.id === params.get("prompt")) ?? promptList[0]);
+              const asked = params.get("prompt");
+              const prompt = passage ? passagePrompt(passage) : phrase ? expressionPrompt(phrase)
+                : asked === BASELINE_PROMPT.id ? BASELINE_PROMPT : (promptList.find((p) => p.id === asked) ?? promptList[0]);
               return <Studio key={`${exercise.id}-${prompt.id}`} exercise={exercise} prompt={prompt} passage={passage} phrase={phrase} phrases={phraseList} />;
             }}
             </QueryView>
@@ -109,6 +111,17 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
     }
     if (rec.phase === "saved" && lastTake) toast.success(`Take ${lastTake.ordinal} ${native ? "saved" : "simulated"}`);
   }, [rec.phase]);
+
+  // The first-launch baseline is tagged "baseline" once its first take is saved (4.19).
+  const tagged = useRef(false);
+  useEffect(() => {
+    if (prompt.id !== BASELINE_PROMPT.id || !native || tagged.current || rec.takes.length === 0) return;
+    tagged.current = true;
+    void ipc
+      .getSession(sessionId)
+      .then((s) => (s.tags.includes("baseline") ? undefined : ipc.updateSession(sessionId, { title: s.title, notes: s.notes, tags: [...s.tags, "baseline"], favorite: s.favorite })))
+      .catch(() => { tagged.current = false; });
+  }, [rec.takes.length]);
 
   const primary = () => {
     if (rec.phase === "recording") void rec.stopAndSave();

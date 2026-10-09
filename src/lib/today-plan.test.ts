@@ -35,6 +35,15 @@ it("rotates the focus daily and the new topic weekly, from real sessions and phr
   expect(buildTodayPlan({ ...args, localDate: "2026-10-04" }).weekly.realConversation.done).toBe(false);
 });
 
+it("cycles the daily focus through the focuses of your setup goals (4.19)", () => {
+  const plan = (localDate: string, goals: string[]) => buildTodayPlan({ localDate, length: "short", sessions: [], phrases: [], latest: null, goals });
+  const days = ["2026-10-09", "2026-10-10", "2026-10-11", "2026-10-12"];
+  const hesitation = days.map((d) => plan(d, ["hesitation"]).focus);
+  expect(new Set(hesitation)).toEqual(new Set([DAILY_FOCUSES[1], DAILY_FOCUSES[4]]));
+  expect(plan("2026-10-09", ["hesitation"]).focusReason).toMatch(/for your goals \(less hesitation\)/);
+  expect(plan("2026-10-09", []).focusReason).toMatch(/curriculum's daily rotation/);
+});
+
 it("builds progress from real sessions, keeping rehearsed and unfamiliar apart and pace unavailable, never 0 (4.16)", async () => {
   const { buildProgress } = await import("./today-plan");
   const base = structuredClone(sessions[0]);

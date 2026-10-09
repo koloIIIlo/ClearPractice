@@ -548,6 +548,13 @@ export const ProgressSummary = z.object({
 });
 export type ProgressSummary = z.infer<typeof ProgressSummary>;
 
+/** One stage choice (4.18): advance, go easier or stay, with the reason shown at the time. */
+export const ProgressionEvent = z.object({
+  kind: z.enum(["advance", "easier", "stay"]), stageFrom: z.number().int().min(1).max(5), stageTo: z.number().int().min(1).max(5),
+  reason: z.string(), createdAt: z.string(),
+}).strict();
+export type ProgressionEvent = z.infer<typeof ProgressionEvent>;
+
 export const TodayPlan = z.object({
   localDate: z.string(),
   focus: z.string(),
@@ -562,6 +569,12 @@ export const TodayPlan = z.object({
     newSituation: z.object({ promptId: Id, text: z.string(), familiarity: Familiarity, reason: z.string() }),
     realConversation: z.object({ task: z.string(), done: z.boolean() }),
   }),
+  /** The rules-based scheduler (4.18): your stage, any offer, and suggestions, each with a reason. */
+  progression: z.object({
+    stage: z.number().int().min(1).max(5), title: z.string(), demand: z.string(), evidence: z.string(),
+    offer: z.object({ stage: z.number().int().min(2).max(5), title: z.string(), reason: z.string() }).nullable(),
+  }).optional(),
+  suggestions: z.array(z.object({ text: z.string(), reason: z.string() })).optional(),
 });
 export type TodayPlan = z.infer<typeof TodayPlan>;
 
@@ -675,12 +688,17 @@ export const Preferences = z
     coachingMode: z.enum(["api", "off"]),
     coachingModel: CoachingModel,
     deliveryImpressions: z.boolean(),
+    onboarded: z.boolean(),
+    goals: z.array(z.enum(["clarity", "hesitation", "phrasing", "confidence"])).max(4),
+    goalNote: z.string().max(300),
+    difficultyLanguage: z.enum(["english", "both"]).nullable(),
   })
   .strict();
 export type Preferences = z.infer<typeof Preferences>;
 export const DEFAULT_PREFERENCES: Preferences = {
   recordingSounds: true, recordingShortcuts: true, inputDeviceId: null, sessionLength: "standard",
   coachingMode: "api", coachingModel: "gpt-6-luna", deliveryImpressions: false,
+  onboarded: false, goals: [], goalNote: "", difficultyLanguage: null,
 };
 
 export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api"]), provider: AudioProvider }).strict();

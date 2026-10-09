@@ -97,7 +97,7 @@ function SwitchRow({ id, label, hint, ...props }: { id: string; label: string; h
   );
 }
 
-function AudioSettings() {
+export function AudioSettings() {
   const devices = useInputDevices();
   const { preferences, update } = usePreferences();
   const list = devices.data ?? [];
@@ -345,6 +345,7 @@ function AboutSettings() {
       <p className="text-meta text-muted-foreground">
         No analytics, no account, and no network use except what you explicitly ask for.
       </p>
+      <Button variant="outline" className="w-fit" asChild><NavLink to="/welcome">Run the first-launch setup again</NavLink></Button>
     </Section>
   );
 }
