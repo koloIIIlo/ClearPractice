@@ -273,4 +273,37 @@ mod tests {
         .unwrap();
         assert_eq!(encoded, r#"{"provider":"OpenAI","present":true}"#);
     }
+
+    /// 5.5: a key is bound to the exact endpoint its slot names. Every API
+    /// address the adapters call must be the host of that provider's slot, so a
+    /// changed or new endpoint can never be sent an existing key; the local
+    /// model adapter never reads a key at all.
+    #[test]
+    fn every_called_endpoint_matches_the_key_slot_it_uses() {
+        let host = |slot: &str| slot.strip_prefix("ClearPractice/v1/https-").unwrap().to_string();
+        let openai = host(TARGET);
+        let deepgram = host(transcription_target("deepgram").unwrap());
+        let assemblyai = host(transcription_target("assemblyai").unwrap());
+        assert_eq!((openai.as_str(), deepgram.as_str(), assemblyai.as_str()), ("api.openai.com", "api.deepgram.com", "api.assemblyai.com"));
+        let called = |source: &str| -> Vec<String> {
+            source.match_indices("https://api.").map(|(at, _)| {
+                let rest = &source[at + "https://".len()..];
+                rest[..rest.find(['/', '"', '?']).unwrap_or(rest.len())].to_string()
+            }).collect()
+        };
+        let transport = include_str!("api/transport.rs");
+        let production = |text: &'static str| text.split("#[cfg(test)]").next().unwrap();
+        // The transport sends text only to OpenAI and audio only to the two hosts on its allow-list.
+        for h in called(production(transport)) {
+            assert!([&openai, &deepgram, &assemblyai].contains(&&h), "transport names {h}, which has no key slot");
+        }
+        for h in called(production(include_str!("api/audio.rs"))) {
+            assert!(h == deepgram || h == assemblyai, "audio adapter calls {h}, which has no key slot");
+        }
+        for h in called(production(include_str!("api/coaching.rs"))) {
+            assert_eq!(h, openai, "coaching previews name only OpenAI");
+        }
+        assert!(!include_str!("api/local_llm.rs").contains("credentials::"), "the local model never reads a key");
+        assert!(transcription_target("openai").is_err(), "no slot is shared between purposes");
+    }
 }
