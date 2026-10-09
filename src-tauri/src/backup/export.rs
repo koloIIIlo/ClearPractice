@@ -62,9 +62,71 @@ fn csv(field: &str) -> String {
     }
 }
 
-fn markdown(session: &Value) -> String {
+/// What one take adds to the export: its transcript view (with measures) and
+/// its latest AI feedback, both as the app shows them.
+struct TakeDetail {
+    ordinal: i64,
+    transcript: Value,
+    feedback: Option<Value>,
+}
+
+fn take_section(d: &TakeDetail) -> String {
+    let mut md = format!("\n### Take {}\n\n", d.ordinal);
+    let revision = &d.transcript["revision"];
+    if revision.is_null() {
+        md += "Not transcribed.\n";
+        return md;
+    }
+    let by = if text(&revision["source"]) == "api" { format!("cloud, {} {}", text(&revision["provider"]), text(&revision["modelId"])) } else { format!("this computer, {}", text(&revision["modelId"])) };
+    md += &format!("**As transcribed** ({by}; Estimated):\n\n> {}\n", text(&revision["text"]));
+    if let Some(correction) = d.transcript["correction"]["text"].as_str() {
+        md += &format!("\n**Your correction** (Your note):\n\n> {correction}\n");
+    }
+    let m = &revision["measures"];
+    let pace = m["paceWpm"].as_f64().map_or_else(|| format!("pace unavailable ({})", text(&m["paceUnavailableReason"])), |p| format!("{p:.0} words per minute"));
+    let pauses = m["voice"]["pauses"].as_array().or_else(|| m["pauses"].as_array()).map_or("pauses unavailable".to_string(), |p| format!("{} pauses over 0.7 s", p.len()));
+    let fillers = m["fillers"].as_array().cloned().unwrap_or_default();
+    let confirmed = fillers.iter().filter(|f| f["decision"] == "confirmed").count();
+    let dismissed = fillers.iter().filter(|f| f["decision"] == "dismissed").count();
+    md += &format!("\nMeasures (Estimated): {} words · {pace} · {pauses} · {} filler candidates ({confirmed} confirmed, {dismissed} dismissed by you)\n", m["wordCount"], fillers.len());
+    if let Some(f) = &d.feedback {
+        let fb = &f["feedback"];
+        md += &format!("\n**AI feedback** (AI suggestion; {} on {}):\n\n{}\n\n- One improvement: {}\n- Next attempt: {}\n", text(&f["model"]), text(&f["createdAt"]).get(..10).unwrap_or(""), text(&fb["summary"]), text(&fb["oneImprovement"]), text(&fb["nextAttempt"]));
+        for c in fb["corrections"].as_array().into_iter().flatten() {
+            md += &format!("- {}: “{}” → “{}”. {}\n", if text(&c["kind"]) == "style" { "Optional style" } else { "Clear error" }, text(&c["quote"]), text(&c["suggestion"]), text(&c["reason"]));
+        }
+        for p in fb["phrases"].as_array().into_iter().flatten() {
+            md += &format!("- Phrase you could use: “{}”{}\n", text(&p["expression"]), if text(&p["instead"]).is_empty() { String::new() } else { format!(" instead of “{}”", text(&p["instead"])) });
+        }
+        for n in fb["deliveryNotes"].as_array().into_iter().flatten() {
+            md += &format!("- How part {} may come across: {}\n", n["part"], text(&n["note"]));
+        }
+    }
+    md
+}
+
+fn markdown(session: &Value, details: &[TakeDetail]) -> String {
     let mut md = format!("# {}\n\n", text(&session["title"]));
     md += &format!("- Date: {}\n", text(&session["localDate"]));
+    if let Some(focus) = session["focus"].as_str() {
+        md += &format!("- Your focus: {focus}\n");
+    }
+    if let Some(ease) = session["ease"].as_i64() {
+        md += &format!("- How easy it felt (your rating, not a score): {ease} of 5\n");
+    }
+    if let Some(takeaway) = session["takeaway"].as_str() {
+        md += &format!("- Keep for next time: {takeaway}\n");
+    }
+    match session["preferredTake"].as_str() {
+        Some("same") => md += "- Which take felt clearer: about the same\n",
+        Some(id) => {
+            let ordinal = session["attempts"].as_array().into_iter().flatten().find(|a| a["id"] == id).map(|a| a["ordinal"].to_string());
+            if let Some(n) = ordinal {
+                md += &format!("- Which take felt clearer: take {n}\n");
+            }
+        }
+        None => {}
+    }
     if let Some(kind) = session["exerciseType"].as_str() {
         md += &format!("- Exercise: {kind}\n");
     }
@@ -110,21 +172,34 @@ fn markdown(session: &Value) -> String {
     }
     let notes = text(&session["notes"]);
     md += &format!("\n## Your note\n\n{}\n", if notes.is_empty() { "(none)" } else { notes });
-    md += "\n## Transcript\n\nNot available yet: transcription is not connected to saved sessions in this version.\n";
+    md += "\n## Takes in detail\n";
+    for d in details {
+        md += &take_section(d);
+    }
     md
 }
 
-fn measures(session: &Value) -> String {
-    let mut out = String::from("take,created_at,duration_ms,duration_source,audio_available,unavailable_reason\n");
-    for a in session["attempts"].as_array().into_iter().flatten() {
+/// One row per take. Empty means unavailable (never 0); the reason column says why.
+fn measures(session: &Value, details: &[TakeDetail]) -> String {
+    let mut out = String::from("take,created_at,duration_ms,duration_source,audio_available,unavailable_reason,words,pace_wpm,pace_unavailable_reason,pauses_over_700ms,filler_candidates,transcript_source\n");
+    for (a, d) in session["attempts"].as_array().into_iter().flatten().zip(details) {
         let reason = text(&a["audioUnavailableReason"]);
+        let r = &d.transcript["revision"];
+        let m = &r["measures"];
+        let opt = |v: Option<String>| v.unwrap_or_default();
         out += &format!(
-            "{},{},{},Measured,{},{}\n",
+            "{},{},{},Measured,{},{},{},{},{},{},{},{}\n",
             a["ordinal"],
             csv(text(&a["createdAt"])),
             a["durationMs"].as_i64().unwrap_or(0),
             reason.is_empty(),
-            csv(reason)
+            csv(reason),
+            opt(m["wordCount"].as_u64().map(|v| v.to_string())),
+            opt(m["paceWpm"].as_f64().map(|v| format!("{v:.0}"))),
+            csv(if r.is_null() { "not transcribed" } else { text(&m["paceUnavailableReason"]) }),
+            opt(m["voice"]["pauses"].as_array().or_else(|| m["pauses"].as_array()).map(|p| p.len().to_string()).filter(|_| !r.is_null())),
+            opt(m["fillers"].as_array().map(|f| f.len().to_string())),
+            csv(text(&r["source"]))
         );
     }
     out
@@ -147,9 +222,17 @@ pub fn export_session(owner: &DatabaseOwner, session_id: &str, target: &Path, no
     let result = (|| {
         let file = File::create(&partial).map_err(io_error)?;
         let mut zip = ZipWriter::new(BufWriter::with_capacity(1 << 16, file));
+        let details: Vec<TakeDetail> = session["attempts"].as_array().into_iter().flatten().map(|a| {
+            let id = text(&a["id"]);
+            TakeDetail {
+                ordinal: a["ordinal"].as_i64().unwrap_or(0),
+                transcript: owner.attempt_transcript_with_voice(id).unwrap_or(Value::Null),
+                feedback: owner.list_coaching_runs(id).ok().and_then(|runs| runs.into_iter().next()).and_then(|run| serde_json::to_value(run).ok()),
+            }
+        }).collect();
         let mut entries = vec![
-            add_bytes(&mut zip, "session.md", markdown(&session).as_bytes())?,
-            add_bytes(&mut zip, "measures.csv", measures(&session).as_bytes())?,
+            add_bytes(&mut zip, "session.md", markdown(&session, &details).as_bytes())?,
+            add_bytes(&mut zip, "measures.csv", measures(&session, &details).as_bytes())?,
         ];
         let mut unavailable = Vec::new();
         for a in session["attempts"].as_array().into_iter().flatten() {

@@ -352,9 +352,13 @@ fn session_export_is_readable_and_explains_unavailable_audio() {
     };
     let md = read(&mut zip, "session.md");
     assert!(md.contains("# Indexes, \"fast\" reads") && md.contains("Said it twice.") && md.contains("take-1.wav"));
+    assert!(md.contains("### Take 1\n\nNot transcribed."), "every take has its section, never a stale placeholder");
+    assert!(!md.contains("Not available yet"));
     let csv = read(&mut zip, "measures.csv");
     assert!(csv.starts_with("take,created_at,duration_ms,duration_source"));
     assert!(csv.contains(",1000,Measured,true,"));
+    assert!(csv.lines().next().unwrap().ends_with(",words,pace_wpm,pace_unavailable_reason,pauses_over_700ms,filler_candidates,transcript_source"));
+    assert!(csv.contains("not transcribed"), "missing measures are explained, never 0");
     let mut wav = Vec::new();
     zip.by_name("take-1.wav").unwrap().read_to_end(&mut wav).unwrap();
     assert_eq!(hex(Sha256::new_with_prefix(&wav)), hash_file(&root.0.join("recordings/take-a/audio.wav")).unwrap());
