@@ -1,5 +1,5 @@
+import { Logo } from "@/components/logo";
 import { Link, useLocation } from "react-router";
-import { AudioLines } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -48,7 +48,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" aria-label="Main navigation">
       <SidebarHeader className="h-14 justify-center border-b">
         <Link to="/" className="flex items-center gap-2 px-2 font-semibold tracking-tight">
-          <AudioLines aria-hidden className="size-5 shrink-0 text-primary" />
+          <Logo className="size-6" />
           <span className="truncate group-data-[collapsible=icon]:hidden">ClearPractice</span>
         </Link>
       </SidebarHeader>

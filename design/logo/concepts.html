@@ -1,0 +1,15 @@
+<!doctype html><meta charset="utf-8"><title>ClearPractice logo concepts</title>
+<style>
+body{margin:0;font:14px system-ui,sans-serif;background:#f6f7f4;color:#18251f}
+.row{display:flex;gap:28px;align-items:center;padding:20px 28px;border-bottom:1px solid #d6ded7}
+.row.dark{background:#111a16;color:#e6efe9}
+h2{width:150px;margin:0;font-size:15px}
+img{display:block}.side{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px}
+</style>
+<div id="rows"></div>
+<script>
+const items=[["a-voice-bubble.svg","A · Voice bubble"],["b-intonation.svg","B · Intonation line"],["c-wave-check.svg","C · Wave to check"]];
+const rows=document.getElementById("rows");
+for(const dark of [false,true])for(const [f,n] of items){const r=document.createElement("div");r.className="row"+(dark?" dark":"");
+r.innerHTML=`<h2>${n}</h2><img src="${f}" width="160"><img src="${f}" width="64"><img src="${f}" width="32"><img src="${f}" width="16"><span class="side"><img src="${f}" width="22">ClearPractice</span>`;rows.append(r);}
+</script>
