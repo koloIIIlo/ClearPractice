@@ -9,6 +9,7 @@ import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
 import type { ClipFolder, ReferenceClip } from "@/lib/ipc/schemas";
 import { cn } from "@/lib/utils";
+import { NativeSelect } from "@/components/ui/native-select";
 
 export type Feature = "emphasis" | "rhythm" | "endings";
 export const FEATURE_LABELS: Record<Feature, string> = { emphasis: "Emphasis", rhythm: "Phrase rhythm", endings: "Clear endings" };
@@ -100,10 +101,10 @@ function ClipRow({ clip, folders, chosen, checked, playing, onCheck, onPlay, onC
             </div>
             <div className="space-y-1">
               <Label htmlFor={`feature-${clip.id}`}>Listen for</Label>
-              <select id={`feature-${clip.id}`} className="h-9 w-full rounded-md border bg-background px-2 text-meta" value={feature} onChange={(e) => setFeature(e.target.value as Feature | "")}>
+              <NativeSelect id={`feature-${clip.id}`} compact className="w-full" value={feature} onChange={(e) => setFeature(e.target.value as Feature | "")}>
                 <option value="">Not set</option>
                 {(Object.keys(FEATURE_LABELS) as Feature[]).map((f) => <option key={f} value={f}>{FEATURE_LABELS[f]}</option>)}
-              </select>
+              </NativeSelect>
             </div>
           </div>
           <div className="space-y-1">
@@ -113,16 +114,16 @@ function ClipRow({ clip, folders, chosen, checked, playing, onCheck, onPlay, onC
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" size="sm" disabled={save.isPending || !title.trim()}>Save</Button>
             <Label htmlFor={`move-${clip.id}`} className="text-meta">Folder</Label>
-            <select
+            <NativeSelect
               id={`move-${clip.id}`}
-              className="h-9 rounded-md border bg-background px-2 text-meta"
+              compact
               value={clip.folderId ?? ""}
               disabled={move.isPending}
               onChange={(e) => move.mutate(e.target.value || null)}
             >
               <option value="">{clip.origin === "bundled" ? "VOA Learning English" : "Unfiled"}</option>
               {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-            </select>
+            </NativeSelect>
             {clip.origin === "user" && !confirmDelete && (
               <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmDelete(true)}><Trash2 aria-hidden /> Delete clip</Button>
             )}
@@ -256,24 +257,24 @@ export function ClipLibrary({ open, onOpenChange, chosenId, onChoose, onImport }
                 <Label htmlFor="clip-search" className="text-meta">Search</Label>
                 <div className="relative">
                   <Search aria-hidden className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input id="clip-search" className="h-9 pl-8" placeholder="Title, description, transcript or credit" value={filter.query} onChange={(e) => setFilter((f) => ({ ...f, query: e.target.value }))} />
+                  <Input id="clip-search" className="pl-8" placeholder="Title, description, transcript or credit" value={filter.query} onChange={(e) => setFilter((f) => ({ ...f, query: e.target.value }))} />
                 </div>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="clip-feature" className="text-meta">Listen for</Label>
-                <select id="clip-feature" className="h-9 rounded-md border bg-background px-2 text-meta" value={filter.feature} onChange={(e) => setFilter((f) => ({ ...f, feature: e.target.value as Feature | "any" }))}>
+                <NativeSelect id="clip-feature" value={filter.feature} onChange={(e) => setFilter((f) => ({ ...f, feature: e.target.value as Feature | "any" }))}>
                   <option value="any">Any feature</option>
                   {(Object.keys(FEATURE_LABELS) as Feature[]).map((f) => <option key={f} value={f}>{FEATURE_LABELS[f]}</option>)}
-                </select>
+                </NativeSelect>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="clip-sort" className="text-meta">Sort</Label>
-                <select id="clip-sort" className="h-9 rounded-md border bg-background px-2 text-meta" value={filter.sort} onChange={(e) => setFilter((f) => ({ ...f, sort: e.target.value as LibrarySort }))}>
+                <NativeSelect id="clip-sort" value={filter.sort} onChange={(e) => setFilter((f) => ({ ...f, sort: e.target.value as LibrarySort }))}>
                   <option value="newest">Newest first</option>
                   <option value="title">Title A–Z</option>
                   <option value="shortest">Shortest first</option>
                   <option value="longest">Longest first</option>
-                </select>
+                </NativeSelect>
               </div>
               <Button variant="outline" onClick={onImport}><FileAudio aria-hidden /> Import clips…</Button>
             </div>
@@ -309,9 +310,9 @@ export function ClipLibrary({ open, onOpenChange, chosenId, onChoose, onImport }
               <div className="flex flex-wrap items-center gap-2 rounded-md bg-secondary/50 p-2 text-meta" role="group" aria-label="Selected clips">
                 {checked.size} selected
                 <Label htmlFor="move-selected" className="text-meta">Move to</Label>
-                <select
+                <NativeSelect
                   id="move-selected"
-                  className="h-9 rounded-md border bg-background px-2 text-meta"
+                  compact
                   value=""
                   disabled={moveChecked.isPending}
                   onChange={(e) => e.target.value && moveChecked.mutate(e.target.value === "-" ? null : e.target.value)}
@@ -319,7 +320,7 @@ export function ClipLibrary({ open, onOpenChange, chosenId, onChoose, onImport }
                   <option value="">Choose a folder…</option>
                   <option value="-">No folder</option>
                   {folderList.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                </select>
+                </NativeSelect>
                 <Button variant="ghost" size="sm" onClick={() => setChecked(new Set())}>Clear selection</Button>
               </div>
             )}

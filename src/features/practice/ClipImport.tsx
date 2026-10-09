@@ -16,6 +16,7 @@ import { money } from "@/features/review/ApiTranscribe";
 import { formatClockTenths, parseClock } from "@/features/review/waveform";
 import { API_LABELS, ApiRequestFlow } from "@/features/review/ApiTranscribe";
 import type { AudioProvider } from "@/lib/ipc/schemas";
+import { NativeSelect } from "@/components/ui/native-select";
 
 type Proposal = ClipCandidate & { keep: boolean; description: string; feature: Feature | null; suggested: boolean; reason?: string; savedAs?: string };
 
@@ -90,11 +91,11 @@ function FolderChoice({ value, onChange, suggested }: { value: string; onChange:
   return (
     <div className="flex flex-wrap items-center gap-2 text-meta">
       <Label htmlFor="save-folder" className="text-meta">Save to folder</Label>
-      <select id="save-folder" className="h-9 rounded-md border bg-background px-2 text-meta" value={value} onChange={(e) => onChange(e.target.value)}>
+      <NativeSelect id="save-folder" compact value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">No folder</option>
         {suggested.trim() && !folders.data?.some((f) => f.name.toLowerCase() === suggested.trim().toLowerCase()) && <option value={`new:${suggested.trim()}`}>New folder: {suggested.trim()}</option>}
         {folders.data?.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-      </select>
+      </NativeSelect>
     </div>
   );
 }
@@ -242,9 +243,9 @@ function AiPick({ stagingId, active, settings, onSettings, onPicked }: {
     <div className="space-y-3 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2 text-meta">
         <Label htmlFor="pick-model" className="text-meta">AI model</Label>
-        <select id="pick-model" className="h-9 rounded-md border bg-background px-2 text-meta" value={model} disabled={working} onChange={(e) => change({ model: e.target.value as CoachingModel })}>
+        <NativeSelect id="pick-model" compact value={model} disabled={working} onChange={(e) => change({ model: e.target.value as CoachingModel })}>
           {COACHING_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} · {m.note}</option>)}
-        </select>
+        </NativeSelect>
         <Label htmlFor="pick-wanted" className="text-meta">Up to</Label>
         <Input id="pick-wanted" type="number" min={1} max={20} className="h-9 w-16" value={wanted} disabled={working} onChange={(e) => change({ wanted: Math.max(1, Math.min(20, Number(e.target.value) || 1)) })} />
         <span>clips</span>
@@ -330,9 +331,9 @@ function AiNaming({ proposals, onNames }: { proposals: Proposal[]; onNames: (nam
     <div className="space-y-2 rounded-md border p-2">
       <div className="flex flex-wrap items-center gap-2">
         <Label htmlFor="naming-model" className="text-meta">AI model</Label>
-        <select id="naming-model" className="h-9 rounded-md border bg-background px-2 text-meta" value={model} disabled={busy} onChange={(e) => { setModel(e.target.value as CoachingModel); setPreview(null); }}>
+        <NativeSelect id="naming-model" compact value={model} disabled={busy} onChange={(e) => { setModel(e.target.value as CoachingModel); setPreview(null); }}>
           {COACHING_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} · {m.note}</option>)}
-        </select>
+        </NativeSelect>
         <Button variant="outline" size="sm" disabled={busy} onClick={() => void prepare()}>Suggest titles with AI…</Button>
       </div>
       {preview && (
@@ -521,19 +522,18 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
       {!staged && <ImportHistory disabled={!!busy} onOpen={(opened) => void openFromHistory(opened)} />}
 
       {/* 1. Where the audio comes from */}
-      <div className="flex flex-wrap items-end gap-3">
-        <Button variant="outline" disabled={!!busy} onClick={() => void chooseFile()}>
+      {/* One line, one height: file button, "or", link field and its button. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="outline" className="shrink-0" disabled={!!busy} onClick={() => void chooseFile()}>
           <FileAudio aria-hidden /> {staged ? "Choose another file…" : "Choose an audio file…"}
         </Button>
-        <span className="pb-2 text-meta text-muted-foreground">or</span>
-        <div className="min-w-64 flex-1 space-y-1">
-          <Label htmlFor="clip-link">YouTube link</Label>
-          <div className="flex gap-2">
-            <Input id="clip-link" placeholder="https://www.youtube.com/watch?v=…" value={link} onChange={(e) => setLink(e.target.value)} disabled={!!busy || !tool.data?.available} />
-            <Button variant="outline" disabled={!!busy || !tool.data?.available || !link.trim()} onClick={() => void fetchLink()}>
-              <Link2 aria-hidden /> Get audio
-            </Button>
-          </div>
+        <span className="text-meta text-muted-foreground">or</span>
+        <div className="flex min-w-64 flex-1 items-center gap-2">
+          <Label htmlFor="clip-link" className="sr-only">YouTube link</Label>
+          <Input id="clip-link" placeholder="Paste a YouTube link" value={link} onChange={(e) => setLink(e.target.value)} disabled={!!busy || !tool.data?.available} />
+          <Button variant="outline" className="shrink-0" disabled={!!busy || !tool.data?.available || !link.trim()} onClick={() => void fetchLink()}>
+            <Link2 aria-hidden /> Get audio
+          </Button>
         </div>
       </div>
       {tool.data && !tool.data.available && (
@@ -697,15 +697,15 @@ export function ClipImport({ onSaved, onCancel }: { onSaved: (clips: ReferenceCl
                           value={p.description}
                           onChange={(e) => setProposals((all) => all!.map((q, j) => (j === i ? { ...q, description: e.target.value } : q)))}
                         />
-                        <select
+                        <NativeSelect
                           aria-label={`Feature of clip ${i + 1}`}
-                          className="h-9 rounded-md border bg-background px-2 text-meta"
+                          compact
                           value={p.feature ?? ""}
                           onChange={(e) => setProposals((all) => all!.map((q, j) => (j === i ? { ...q, feature: (e.target.value || null) as Feature | null } : q)))}
                         >
                           <option value="">Feature…</option>
                           {(Object.keys(FEATURE_LABELS) as Feature[]).map((f) => <option key={f} value={f}>{FEATURE_LABELS[f]}</option>)}
-                        </select>
+                        </NativeSelect>
                         {p.suggested && <span className="text-meta text-muted-foreground">AI suggestion · edit freely</span>}
                       </div>
                       {p.reason && <p className="text-meta text-muted-foreground">Why: {p.reason}</p>}

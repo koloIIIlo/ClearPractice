@@ -18,6 +18,10 @@ type Result<T> = std::result::Result<T, String>;
 
 const POINTER: &str = "data-location.json";
 const MARKER: &str = "clearpractice-data.json";
+/// Folders whose audio the interface plays (mirrors the asset scope in
+/// tauri.conf.json, which only covers the default folder).
+pub const PLAYABLE_DIRS: [&str; 5] = ["recordings", "clips", "cache/mic-test/recordings", "cache/inference", "cache/clip-staging"];
+
 /// Profile folders that move. `cache/` is rebuilt as needed and stays behind.
 pub const MOVED_DIRS: [&str; 10] = ["database", "recordings", "recovery", "clips", "imports", "models", "sources", "accounting", "tools", "restore-rollback"];
 

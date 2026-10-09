@@ -132,7 +132,7 @@ export function AudioPlayer({ src, label, speeds, className, ref }: {
         </span>
         {speeds && (
           <Select value={String(rate)} onValueChange={(v) => setRate(Number(v))}>
-            <SelectTrigger size="sm" className="w-20" aria-label={`Speed of ${label}`}><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-20" aria-label={`Speed of ${label}`}><SelectValue /></SelectTrigger>
             <SelectContent>{speeds.map((s) => <SelectItem key={s} value={String(s)}>{s}×</SelectItem>)}</SelectContent>
           </Select>
         )}

@@ -1676,6 +1676,24 @@ async fn restore_backup(
     .map_err(|_| "Restore failed.".to_string())?
 }
 
+/// The asset scope in tauri.conf.json covers the default data folder only. A
+/// data folder chosen by the user (2.25) gets the same audio folders, so its
+/// recordings and clips can be played. Only these folders, never the whole root.
+fn allow_audio_playback(app: &tauri::AppHandle, root: &std::path::Path) {
+    let scope = app.asset_protocol_scope();
+    let mut roots = vec![root.to_path_buf()];
+    if let Ok(canonical) = std::fs::canonicalize(root) {
+        // Windows canonical paths carry a \\?\ prefix that requested paths do not.
+        let plain = canonical.to_string_lossy().trim_start_matches(r"\\?\").to_string();
+        roots.push(std::path::PathBuf::from(plain));
+    }
+    for base in roots {
+        for dir in data_location::PLAYABLE_DIRS {
+            let _ = scope.allow_directory(base.join(dir), true);
+        }
+    }
+}
+
 /// Where the data lives (2.25).
 struct DataLocation {
     default: std::path::PathBuf,
@@ -1832,6 +1850,9 @@ pub fn run() {
             std::fs::create_dir_all(&default)?;
             let location = data_location::resolve(&default);
             let root = location.root.clone();
+            if root != default {
+                allow_audio_playback(app.handle(), &root);
+            }
             app.manage(Arc::new(DataLocation { default, resolved: location }));
             app_paths::prepare_app_data(&root)?;
             let rollback = backup::roll_back(&root);
