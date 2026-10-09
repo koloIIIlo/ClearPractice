@@ -94,13 +94,28 @@ pub fn resample_staged(root: &Path, staging_id: &str, cancel: &AtomicBool) -> Re
     let frames = u64::from(u32::from_le_bytes([header[40], header[41], header[42], header[43]])) / 2;
     let target = prepare::expected_frames(frames, rate);
     let path = dir.join("speech-16k.wav");
-    let mut output = BufWriter::new(File::create(&path).map_err(|_| "Cannot prepare the recording for transcription.")?);
-    output
-        .write_all(&crate::storage::recording::wav_header(prepare::RATE, (target * 2) as u32))
-        .map_err(|_| "Cannot prepare the recording for transcription.")?;
-    prepare::convert(&mut input, &mut output, rate, frames, cancel)?;
-    output.flush().map_err(|_| "Cannot prepare the recording for transcription.")?;
-    Ok((path, target * 1000 / u64::from(prepare::RATE)))
+    let duration_ms = target * 1000 / u64::from(prepare::RATE);
+    // Made once per staged recording: transcribing, measuring and the cloud
+    // preview all reuse it. A complete copy has exactly the expected size.
+    if fs::metadata(&path).is_ok_and(|m| m.len() == 44 + target * 2) {
+        return Ok((path, duration_ms));
+    }
+    let part = dir.join("speech-16k.wav.part");
+    let written = (|| {
+        let mut output = BufWriter::new(File::create(&part).map_err(|_| "Cannot prepare the recording for transcription.")?);
+        output
+            .write_all(&crate::storage::recording::wav_header(prepare::RATE, (target * 2) as u32))
+            .map_err(|_| "Cannot prepare the recording for transcription.")?;
+        prepare::convert(&mut input, &mut output, rate, frames, cancel)?;
+        output.flush().map_err(|_| "Cannot prepare the recording for transcription.")?;
+        drop(output);
+        fs::rename(&part, &path).map_err(|_| "Cannot prepare the recording for transcription.".to_string())
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&part);
+    }
+    written?;
+    Ok((path, duration_ms))
 }
 
 /// Transcribes a staged file with the verified local worker. `progress` gets
@@ -184,7 +199,6 @@ pub fn transcribe_local(
     outcome?;
     let raw = fs::read(dir.join("raw.json")).map_err(|_| "Whisper did not produce a transcript.")?;
     let _ = fs::remove_file(dir.join("raw.json"));
-    let _ = fs::remove_file(&audio);
     let (_, segments) = whisper::segments(&raw, duration_ms)?;
     Ok(segments
         .into_iter()
@@ -330,9 +344,7 @@ pub fn measure_staged(root: &Path, staging_id: &str, cancel: &AtomicBool, progre
     let segments: Vec<(String, u64, u64)> = serde_json::from_slice(&transcript).map_err(|_| "The transcript is damaged. Transcribe again.")?;
     progress(MeasureStage::PreparingAudio);
     let (path, _) = resample_staged(root, staging_id, cancel)?;
-    let bytes = fs::read(&path).map_err(|_| "The prepared audio is unavailable.");
-    let _ = fs::remove_file(&path);
-    let bytes = bytes?;
+    let bytes = fs::read(&path).map_err(|_| "The prepared audio is unavailable.")?;
     let samples: Vec<f32> = bytes.get(44..).unwrap_or(&[]).chunks_exact(2).map(|p| f32::from(i16::from_le_bytes([p[0], p[1]])) / 32768.0).collect();
     drop(bytes);
     let last = std::sync::atomic::AtomicU8::new(0);

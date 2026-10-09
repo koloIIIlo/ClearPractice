@@ -76,6 +76,7 @@ export function createNativeClient(): IpcClient {
     restoreBackup: (stagingId) => command("restore_backup", S.RestoreOutcome, { stagingId }),
     exportSession: (sessionId) => command("export_session", S.ExportSummary.nullable(), { sessionId }),
     getTakeProsody: (attemptId) => command("get_take_prosody", S.IntonationContour, { attemptId }),
+    getClipProsody: (clipId) => command("get_clip_prosody", S.IntonationContour, { clipId }),
     listModelPacks: () => command("list_model_packs", S.ModelPack.array()),
     importModelPack: () => command("import_model_pack", S.ModelPack.array()),
     getTranscriptionSetup: () => command("get_transcription_setup", S.TranscriptionSetup),

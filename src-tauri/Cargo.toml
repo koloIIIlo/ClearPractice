@@ -52,3 +52,9 @@ strip = true
 # digest implementation optimized in development too; do not skip verification.
 [profile.dev.package.sha2]
 opt-level = 3
+
+# Dependencies compile once, so optimise them in development too: audio
+# decoding (symphonia) and resampling (rubato/rustfft) of a 15-minute import
+# are many times slower unoptimised. The app's own crate stays quick to rebuild.
+[profile.dev.package."*"]
+opt-level = 2

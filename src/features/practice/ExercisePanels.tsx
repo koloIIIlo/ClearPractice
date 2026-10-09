@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { ReferenceClips } from "./ReferenceClips";
 import { useIpc } from "@/lib/ipc";
-import type { PhraseCard, PracticePrompt } from "@/lib/ipc/schemas";
+import type { PhraseCard, PracticePrompt, ReferenceClip } from "@/lib/ipc/schemas";
+import { ImitationOverlay } from "./ImitationOverlay";
 
 // ── Repeat an answer (4.6) ───────────────────────────────────────────────────
 
@@ -183,9 +184,10 @@ export const IMITATION_FEATURES = ["Emphasis: which word carries the stress", "P
  * one feature to listen for (stored as the session focus), then record. The
  * contour overlay (P.5) comes later; comparison is by ear.
  */
-export function ImitationPanel({ sessionId, hasTake, locked, native }: { sessionId: string; hasTake: boolean; locked: boolean; native: boolean }) {
+export function ImitationPanel({ sessionId, hasTake, locked, native, lastTakeAssetId }: { sessionId: string; hasTake: boolean; locked: boolean; native: boolean; lastTakeAssetId?: string }) {
   const ipc = useIpc();
   const [feature, setFeature] = useState<string | null>(null);
+  const [clip, setClip] = useState<ReferenceClip | null>(null);
   const save = useMutation({ mutationFn: (value: string) => (native && hasTake ? ipc.setSessionFocus(sessionId, value) : Promise.resolve()) });
   // A feature chosen before the first take is stored once that take creates the session.
   const { mutate } = save;
@@ -203,12 +205,14 @@ export function ImitationPanel({ sessionId, hasTake, locked, native }: { session
           </label>
         ))}
       </fieldset>
-      <ReferenceClips locked={locked} native={native} />
+      <ReferenceClips locked={locked} native={native} onSelect={setClip} />
       <p role="note" className="rounded-lg border border-dashed px-3 py-2 text-meta text-muted-foreground">
         Listen to the clip once or twice, then record your repetition with the clip stopped, so only your voice is recorded. Compare the two by
         listening, not by looking at waveforms.
       </p>
       {feature && <p className="text-meta" aria-live="polite">Listening for: {feature}.{hasTake ? "" : " It is saved with the session after your first take."}</p>}
+      {/* After listening (P.5): both pitch lines, for the feature you chose. */}
+      {native && clip && lastTakeAssetId && !locked && <ImitationOverlay key={`${clip.id}-${lastTakeAssetId}`} clip={clip} takeAssetId={lastTakeAssetId} />}
     </Panel>
   );
 }

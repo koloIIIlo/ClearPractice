@@ -43,8 +43,8 @@ export function SettingsPage() {
   return (
     <Page>
       <PageHeader title="Settings" />
-      <div className="grid gap-6 md:grid-cols-[12rem_minmax(0,1fr)]">
-        <nav aria-label="Settings sections">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-[12rem_minmax(0,1fr)]">
+        <nav aria-label="Settings sections" className="min-w-0">
           <ul className="flex gap-1 overflow-x-auto md:flex-col">
             {SECTIONS.map((s) => (
               <li key={s.id}>
@@ -62,7 +62,7 @@ export function SettingsPage() {
             ))}
           </ul>
         </nav>
-        <div className="max-w-2xl space-y-6">
+        <div className="min-w-0 max-w-2xl space-y-6">
           {current === "audio" && <AudioSettings />}
           {current === "practice" && <PracticeSettings />}
           {current === "appearance" && <AppearanceSettings />}
@@ -117,27 +117,29 @@ function AudioSettings() {
     <Section title="Microphone" description="The microphone is on only during a test or a recording.">
       <div className="space-y-1">
         <Label htmlFor="mic">Input device</Label>
-        <Select value={selected} onValueChange={(id) => update({ inputDeviceId: list.find((d) => d.id === id)?.isDefault ? null : id })} disabled={devices.isPending}>
-          <SelectTrigger id="mic" className="h-10 w-full">
-            <SelectValue placeholder={devices.isPending ? "Looking for devices…" : "No microphone found"} />
-          </SelectTrigger>
-          <SelectContent>
-            {list.map((d) => (
-              <SelectItem key={d.id} value={d.id} disabled={!d.available}>
-                {d.name}
-                {d.isDefault && " (system default)"}
-                {!d.available && " · unavailable"}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select value={selected} onValueChange={(id) => update({ inputDeviceId: list.find((d) => d.id === id)?.isDefault ? null : id })} disabled={devices.isPending}>
+            <SelectTrigger id="mic" className="min-w-0 flex-1">
+              <SelectValue placeholder={devices.isPending ? "Looking for devices…" : "No microphone found"} />
+            </SelectTrigger>
+            <SelectContent>
+              {list.map((d) => (
+                <SelectItem key={d.id} value={d.id} disabled={!d.available}>
+                  {d.name}
+                  {d.isDefault && " (system default)"}
+                  {!d.available && " · unavailable"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="icon" title="Refresh microphones" aria-label={devices.isFetching ? "Looking for microphones…" : "Refresh microphones"} disabled={devices.isFetching} onClick={() => void devices.refetch()}>
+            <RefreshCw aria-hidden className={devices.isFetching ? "animate-spin" : undefined} />
+          </Button>
+        </div>
         {preferences.inputDeviceId && !saved && devices.isSuccess && (
           <p className="text-meta text-muted-foreground">The microphone you chose isn't connected, so the Windows default is used.</p>
         )}
         {devices.error && <p role="alert" className="text-meta text-destructive">{devices.error.message}</p>}
-        <Button variant="ghost" size="sm" disabled={devices.isFetching} onClick={() => void devices.refetch()}>
-          <RefreshCw aria-hidden className={devices.isFetching ? "animate-spin" : undefined} /> {devices.isFetching ? "Looking for microphones…" : "Refresh microphones"}
-        </Button>
       </div>
       <MicrophoneTest deviceId={selected || null} />
       <SwitchRow id="rec-sounds" label="Recording sounds" hint="A short tone when recording starts and stops." checked={preferences.recordingSounds} onCheckedChange={(on) => update({ recordingSounds: on })} />

@@ -179,6 +179,8 @@ export interface IpcClient {
   setTranscriptionPreference(preference: TranscriptionPreference): Promise<TranscriptionPreference>;
   listModelPacks(): Promise<ModelPack[]>;
   getTakeProsody(attemptId: string): Promise<IntonationContour>;
+  /** A reference clip's pitch line (P.6), measured once and kept. */
+  getClipProsody(clipId: string): Promise<IntonationContour>;
   /** Opens the native picker; installs a known pack only after size and checksum match. */
   importModelPack(): Promise<ModelPack[]>;
   /** Opens the native file picker and verifies the Whisper runtime and model before storing the setup. */

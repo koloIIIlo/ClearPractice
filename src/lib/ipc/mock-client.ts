@@ -185,6 +185,7 @@ export function createMockClient(): IpcClient {
     exportSession: async () => { throw new IpcError("desktop_required", "Export is available in the desktop app."); },
     listModelPacks: async () => [],
     getTakeProsody: async () => { throw new IpcError("desktop_required", "Intonation runs in the desktop app."); },
+    getClipProsody: async () => { throw new IpcError("desktop_required", "Intonation runs in the desktop app."); },
     importModelPack: async () => { throw new IpcError("desktop_required", "Model packs are managed in the desktop app."); },
     getPreferences: async () => ({ ...preferences }),
     getDataLocation: async () => ({ current: "%LOCALAPPDATA%\\com.clearpractice.app", default: "%LOCALAPPDATA%\\com.clearpractice.app", custom: false, problem: null, previous: null, previousBytes: 0 }),

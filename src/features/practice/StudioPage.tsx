@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
-import { CheckCircle2, Circle, Info, Loader2, Mic, Square } from "lucide-react";
+import { CheckCircle2, Circle, Info, Loader2, Mic, RefreshCw, Square } from "lucide-react";
 import { toast } from "sonner";
 import { Page, Panel, QueryView } from "@/components/page";
 import {
@@ -180,7 +180,7 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
           onChoose={(id) => navigate(`/practice/${exercise.id}?phrase=${id}`, { replace: true })}
         />
       )}
-      {exercise.type === "imitate" && <ImitationPanel sessionId={sessionId} hasTake={rec.takes.length > 0} locked={locked} native={native} />}
+      {exercise.type === "imitate" && <ImitationPanel sessionId={sessionId} hasTake={rec.takes.length > 0} locked={locked} native={native} lastTakeAssetId={rec.takes.at(-1)?.asset.assetId} />}
       {exercise.type === "repeat" && <RepeatFocus sessionId={sessionId} takeCount={rec.takes.length} locked={locked} native={native} />}
 
       {!passage && !phrase && exercise.type !== "imitate" && <fieldset disabled={locked} className="grid gap-3 sm:grid-cols-3">
@@ -203,16 +203,20 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
 
       <div className="space-y-1">
         <Label htmlFor="studio-microphone">Microphone</Label>
-        <Select value={selectedDevice} onValueChange={setDeviceId} disabled={locked || devices.isPending}>
-          <SelectTrigger id="studio-microphone" className="h-10 w-full">
-            <SelectValue placeholder={devices.isPending ? "Looking for microphones…" : "No microphone found"} />
-          </SelectTrigger>
-          <SelectContent>
-            {devices.data?.map((device) => <SelectItem key={device.id} value={device.id} disabled={!device.available}>{device.name}{device.isDefault ? " (system default)" : ""}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Select value={selectedDevice} onValueChange={setDeviceId} disabled={locked || devices.isPending}>
+            <SelectTrigger id="studio-microphone" className="min-w-0 flex-1">
+              <SelectValue placeholder={devices.isPending ? "Looking for microphones…" : "No microphone found"} />
+            </SelectTrigger>
+            <SelectContent>
+              {devices.data?.map((device) => <SelectItem key={device.id} value={device.id} disabled={!device.available}>{device.name}{device.isDefault ? " (system default)" : ""}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="icon" title="Refresh microphones" aria-label={devices.isFetching ? "Looking for microphones…" : "Refresh microphones"} disabled={locked || devices.isFetching} onClick={() => void devices.refetch()}>
+            <RefreshCw aria-hidden className={devices.isFetching ? "animate-spin" : undefined} />
+          </Button>
+        </div>
         {devices.error && <p role="alert" className="text-meta text-destructive">{devices.error.message}</p>}
-        <Button variant="ghost" disabled={locked || devices.isFetching} onClick={() => void devices.refetch()}>{devices.isFetching ? "Looking for microphones…" : "Refresh microphones"}</Button>
       </div>
       {rec.error && <p role="alert" className="rounded-lg border p-3 text-destructive">{rec.error}</p>}
 

@@ -652,6 +652,7 @@ async fn save_clip(
             let _ = clips::remove_files(owner.root(), &clip.id);
             return Err(error);
         }
+        measure_clips_later(owner.root().to_path_buf(), std::slice::from_ref(&clip));
         Ok(clip)
     })
     .await
@@ -846,11 +847,14 @@ async fn preview_split_transcription(
     provider: api::audio::AudioProvider,
 ) -> Result<api::audio::AudioPreview, String> {
     let owner = owner.inner().clone();
-    with_storage(&storage, move |db| {
-        let (path, duration_ms) = clipsplit::resample_staged(db.root(), &staging_id, &std::sync::atomic::AtomicBool::new(false))?;
+    // Preparing the audio takes a while for long recordings; it runs without
+    // holding storage, and the 16 kHz copy is reused once made.
+    let root = storage.with(|db| Ok(db.root().to_path_buf()))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let (path, duration_ms) = clipsplit::resample_staged(&root, &staging_id, &std::sync::atomic::AtomicBool::new(false))?;
         let bytes = std::fs::metadata(&path).map_err(|_| "The prepared audio is unavailable.")?.len();
         let sha = storage::recording::hash_file(&path)?;
-        let source = storage::recording::hash_file(&clips::staging_dir(db.root(), &staging_id)?.join("full.wav"))?;
+        let source = storage::recording::hash_file(&clips::staging_dir(&root, &staging_id)?.join("full.wav"))?;
         owner.preview_prepared(path, &staging_id, duration_ms, bytes, sha, source, provider)
     })
     .await
@@ -934,6 +938,7 @@ async fn save_clip_sections(storage: State<'_, Arc<SessionStorage>>, staging_id:
     }
     with_storage(&storage, move |owner| {
         let from = clips::read_meta(owner.root(), &staging_id).ok().and_then(|m| m.source_id);
+        let audio = clips::load_staged(owner.root(), &staging_id)?;
         let mut saved = Vec::new();
         for section in &sections {
             let details = clips::ClipDetails {
@@ -943,7 +948,7 @@ async fn save_clip_sections(storage: State<'_, Arc<SessionStorage>>, staging_id:
                 description: section.description.as_deref(),
                 feature: section.feature.as_deref(),
             };
-            let mut clip = clips::commit(owner.root(), &staging_id, section.start_ms, section.end_ms, &details, "user", true)?;
+            let mut clip = clips::commit_from(owner.root(), &audio, section.start_ms, section.end_ms, &details, "user")?;
             clip.folder_id = folder_id.clone();
             if from.is_some() {
                 (clip.source_id, clip.source_start_ms, clip.source_end_ms) = (from.clone(), Some(section.start_ms), Some(section.end_ms));
@@ -955,6 +960,7 @@ async fn save_clip_sections(storage: State<'_, Arc<SessionStorage>>, staging_id:
             saved.push(clip);
         }
         clips::discard_staging(owner.root(), &staging_id);
+        measure_clips_later(owner.root().to_path_buf(), &saved);
         Ok(saved)
     })
     .await
@@ -1101,6 +1107,30 @@ async fn update_clip_source(storage: State<'_, Arc<SessionStorage>>, source_id: 
 #[tauri::command]
 async fn delete_clip_source(storage: State<'_, Arc<SessionStorage>>, source_id: String) -> Result<(), String> {
     with_storage(&storage, move |db| sources::delete(db, db.root(), &source_id)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+/// Measures the pitch lines of newly saved clips in the background (P.6).
+fn measure_clips_later(root: std::path::PathBuf, saved: &[clips::Clip]) {
+    let todo: Vec<(String, String)> = saved.iter().map(|c| (c.id.clone(), c.sha256.clone())).collect();
+    std::thread::spawn(move || {
+        for (id, sha) in todo {
+            let _ = clips::clip_contour(&root, &id, &sha);
+        }
+    });
+}
+
+/// A reference clip's pitch and loudness contour (P.6), for the imitation overlay (P.5).
+#[tauri::command]
+async fn get_clip_prosody(storage: State<'_, Arc<SessionStorage>>, clip_id: String) -> Result<prosody::Contour, String> {
+    let (root, clip) = with_storage(&storage, move |db| {
+        let clip = db.list_clips()?.into_iter().find(|c| c.id == clip_id).ok_or("This clip is no longer available.")?;
+        Ok((db.root().to_path_buf(), clip))
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())??;
+    tauri::async_runtime::spawn_blocking(move || clips::clip_contour(&root, &clip.id, &clip.sha256))
+        .await
+        .map_err(|_| "Intonation analysis failed.".to_string())?
 }
 
 #[tauri::command]
@@ -1872,6 +1902,12 @@ pub fn run() {
                             clips::install_bundled(owner.root(), &pack, |id| owner.has_clip(id), |clip| owner.insert_clip(clip)).map(|_| ())
                         });
                     }
+                    // Pitch lines for every clip (P.6); kept ones are skipped quickly.
+                    if let Ok((root, all)) = storage.with(|owner| Ok((owner.root().to_path_buf(), owner.list_clips()?))) {
+                        for clip in all {
+                            let _ = clips::clip_contour(&root, &clip.id, &clip.sha256);
+                        }
+                    }
                 });
             }
             // Damaged/unavailable accounting disables API work, while capture
@@ -1972,6 +2008,7 @@ pub fn run() {
             fetch_link_audio,
             download_link_tool,
             list_clips,
+            get_clip_prosody,
             list_clip_folders,
             create_clip_folder,
             rename_clip_folder,

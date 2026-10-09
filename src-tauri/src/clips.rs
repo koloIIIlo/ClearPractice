@@ -259,15 +259,36 @@ impl ClipDetails<'_> {
     }
 }
 
+/// A staged recording's decoded audio, read once for several clips.
+pub struct StagedAudio {
+    samples: Vec<f32>,
+    rate: u32,
+}
+
+pub fn load_staged(root: &Path, staging_id: &str) -> Result<StagedAudio> {
+    let dir = staging_dir(root, staging_id)?;
+    contained(root, &dir)?;
+    let (samples, rate) = read_wav(&dir.join("full.wav"))?;
+    Ok(StagedAudio { samples, rate })
+}
+
 /// Keeps `start_ms..end_ms` of a staged file as a new clip and removes the staging copy.
 pub fn commit(root: &Path, staging_id: &str, start_ms: u64, end_ms: u64, details: &ClipDetails, origin: &str, keep_staging: bool) -> Result<Clip> {
+    let audio = load_staged(root, staging_id)?;
+    let clip = commit_from(root, &audio, start_ms, end_ms, details, origin)?;
+    if !keep_staging {
+        discard_staging(root, staging_id);
+    }
+    Ok(clip)
+}
+
+/// Cuts one clip from already loaded staged audio (several clips, one read).
+pub fn commit_from(root: &Path, audio: &StagedAudio, start_ms: u64, end_ms: u64, details: &ClipDetails, origin: &str) -> Result<Clip> {
     details.validate()?;
     if end_ms <= start_ms || end_ms - start_ms < MIN_CLIP_MS || end_ms - start_ms > MAX_CLIP_MS {
         return Err("Keep a section between 3 and 30 seconds long.".into());
     }
-    let dir = staging_dir(root, staging_id)?;
-    contained(root, &dir)?;
-    let (samples, rate) = read_wav(&dir.join("full.wav"))?;
+    let (samples, rate) = (&audio.samples, audio.rate);
     let at = |ms: u64| ((ms * u64::from(rate) / 1000) as usize).min(samples.len());
     let (from, to) = (at(start_ms), at(end_ms));
     if to <= from || ((to - from) as u64) * 1000 / u64::from(rate) < MIN_CLIP_MS {
@@ -288,9 +309,6 @@ pub fn commit(root: &Path, staging_id: &str, start_ms: u64, end_ms: u64, details
     fs::create_dir_all(clip_dir).map_err(|_| "Cannot store the clip.")?;
     contained(root, clip_dir)?;
     write_wav(&path, &samples[from..to], rate)?;
-    if !keep_staging {
-        discard_staging(root, staging_id);
-    }
     Ok(Clip {
         id,
         origin: origin.into(),
@@ -389,6 +407,95 @@ pub fn install_bundled(
     Ok((count, problems))
 }
 
+// ── Pitch lines for reference clips (plan P.6) ──────────────────────────────
+
+/// The contour a clip's pitch line is drawn from, kept in `cache/clip-prosody/`
+/// under the clip's checksum and the algorithm version, so a changed clip or a
+/// new pitch tracker is measured again and old results are never reused.
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CachedContour {
+    hop_ms: u64,
+    sample_rate: u32,
+    f0_hz: Vec<Option<f32>>,
+    rms_db: Vec<Option<f32>>,
+    median_f0_hz: Option<f32>,
+    range_semitones: Option<f32>,
+    loudness_range_db: Option<f32>,
+    unavailable_reason: Option<String>,
+}
+
+fn contour_cache(root: &Path, id: &str, sha256: &str) -> Result<PathBuf> {
+    recording::validate_id(id)?;
+    if sha256.len() < 16 || !sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("The clip's checksum is invalid.".into());
+    }
+    Ok(root.join("cache").join("clip-prosody").join(format!(
+        "{id}--{}-{}-d{}.json",
+        &sha256[..16],
+        crate::prosody::ALGORITHM,
+        crate::prosody::DEFINITION_VERSION
+    )))
+}
+
+/// The pitch and loudness contour of a clip (16 kHz analysis on the clip's own
+/// timeline). Measured once and kept; later calls read the kept result.
+pub fn clip_contour(root: &Path, id: &str, sha256: &str) -> Result<crate::prosody::Contour> {
+    use crate::prosody::{self as p, Contour};
+    let cache = contour_cache(root, id, sha256)?;
+    let from = |c: CachedContour| Contour {
+        algorithm: p::ALGORITHM,
+        source: "Estimated",
+        hop_ms: c.hop_ms,
+        sample_rate: c.sample_rate,
+        f0_hz: c.f0_hz,
+        rms_db: c.rms_db,
+        median_f0_hz: c.median_f0_hz,
+        range_semitones: c.range_semitones,
+        loudness_range_db: c.loudness_range_db,
+        unavailable_reason: c.unavailable_reason,
+    };
+    if let Ok(cached) = fs::read(&cache).map_err(|_| ()).and_then(|b| serde_json::from_slice::<CachedContour>(&b).map_err(|_| ())) {
+        return Ok(from(cached));
+    }
+    let path = clip_path(root, id)?;
+    contained(root, &path)?;
+    let mut bytes = Vec::new();
+    File::open(&path).and_then(|mut f| f.read_to_end(&mut bytes)).map_err(|_| "This clip's audio is unavailable.")?;
+    if bytes.len() < 44 || &bytes[..4] != b"RIFF" {
+        return Err("This clip's audio is damaged.".into());
+    }
+    let rate = u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]);
+    let pcm = &bytes[44..];
+    let mut speech = Vec::new();
+    crate::audio::prepare::convert(&mut &pcm[..], &mut speech, rate, (pcm.len() / 2) as u64, &std::sync::atomic::AtomicBool::new(false))?;
+    let samples: Vec<f32> = speech.chunks_exact(2).map(|b| f32::from(i16::from_le_bytes([b[0], b[1]])) / 32768.0).collect();
+    let mut contour = p::contour(&samples, crate::audio::prepare::RATE);
+    // Stored precision, so a fresh result equals a kept one (as for takes).
+    let (f0, rms) = p::decode_frames(&p::encode_frames(&contour))?;
+    contour.f0_hz = f0;
+    contour.rms_db = rms;
+    let kept = CachedContour {
+        hop_ms: contour.hop_ms,
+        sample_rate: contour.sample_rate,
+        f0_hz: contour.f0_hz.clone(),
+        rms_db: contour.rms_db.clone(),
+        median_f0_hz: contour.median_f0_hz,
+        range_semitones: contour.range_semitones,
+        loudness_range_db: contour.loudness_range_db,
+        unavailable_reason: contour.unavailable_reason.clone(),
+    };
+    if let Some(dir) = cache.parent() {
+        if fs::create_dir_all(dir).is_ok() && contained(root, dir).is_ok() {
+            let part = cache.with_extension("part");
+            if fs::write(&part, serde_json::to_vec(&kept).map_err(|e| e.to_string())?).is_ok() {
+                let _ = fs::rename(&part, &cache);
+            }
+        }
+    }
+    Ok(contour)
+}
+
 /// Removes a clip's files (after its record is deleted).
 pub fn remove_files(root: &Path, id: &str) -> Result<()> {
     let path = clip_path(root, id)?;
@@ -420,6 +527,35 @@ mod tests {
         let mut file = File::create(path).unwrap();
         file.write_all(&h).unwrap();
         file.write_all(&data).unwrap();
+    }
+
+    #[test]
+    fn a_clips_pitch_line_is_measured_once_and_kept_under_its_checksum() {
+        let root = recording::tests::TestRoot::new();
+        // 2 s of a 150 Hz voice at 48 kHz, as an installed clip.
+        let rate = 48_000u32;
+        let mut phase = 0.0f64;
+        let samples: Vec<f32> = (0..rate * 2)
+            .map(|_| {
+                phase += std::f64::consts::TAU * 150.0 / f64::from(rate);
+                ((1..=5).map(|h| (phase * h as f64).sin() / h as f64).sum::<f64>() * 0.25) as f32
+            })
+            .collect();
+        let path = clip_path(&root.0, "clip-tone").unwrap();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        write_wav(&path, &samples, rate).unwrap();
+        let sha = hash_file(&path).unwrap();
+        let first = clip_contour(&root.0, "clip-tone", &sha).unwrap();
+        assert_eq!(first.sample_rate, 16_000);
+        let median = first.median_f0_hz.unwrap();
+        assert!((median - 150.0).abs() < 3.0, "{median}");
+        assert!(contour_cache(&root.0, "clip-tone", &sha).unwrap().is_file());
+        // Kept: the audio can go away and the same contour still comes back.
+        fs::remove_file(&path).unwrap();
+        assert_eq!(clip_contour(&root.0, "clip-tone", &sha).unwrap(), first);
+        // A different checksum is a different clip version: measured again (and fails here).
+        assert!(clip_contour(&root.0, "clip-tone", &"f".repeat(64)).is_err());
+        assert!(contour_cache(&root.0, "../x", &sha).is_err());
     }
 
     #[test]
