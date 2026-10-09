@@ -18,6 +18,7 @@ pub mod storage;
 pub mod take_coaching;
 pub mod storage_usage;
 pub mod diagnostics;
+pub mod timings;
 mod redaction_audit;
 pub mod transcribe;
 
@@ -1732,8 +1733,9 @@ async fn clear_cache(
 
 /// Builds the diagnostic report for you to read before saving (6.7).
 #[tauri::command]
-async fn build_diagnostics(storage: State<'_, Arc<SessionStorage>>, accounting: State<'_, Arc<ApiAccounting>>) -> Result<String, String> {
+async fn build_diagnostics(storage: State<'_, Arc<SessionStorage>>, accounting: State<'_, Arc<ApiAccounting>>, timings: State<'_, Arc<timings::Timings>>) -> Result<String, String> {
     let budget = accounting.0.as_ref().ok().and_then(|b| b.summary().ok());
+    let measured = timings.snapshot();
     with_storage(&storage, move |db| {
         let setup = transcribe::status(db).ok();
         let key = |p: &str| credentials::provider_status(p).map(|s| s.present).ok();
@@ -1741,6 +1743,7 @@ async fn build_diagnostics(storage: State<'_, Arc<SessionStorage>>, accounting: 
             "localTranscription": setup.map(|s| serde_json::json!({"configured": s.configured, "model": s.model_id, "backend": s.backend})),
             "keysPresent": {"openai": credentials::status().map(|s| s.present).ok(), "deepgram": key("deepgram"), "assemblyai": key("assemblyai")},
             "apiBudgetThisMonth": budget.map(|b| serde_json::json!({"countedMicroUsd": b.counted_micro_usd, "uncertainMicroUsd": b.uncertain_micro_usd, "stopMicroUsd": b.stop_micro_usd})),
+            "timingsThisRun": measured,
         });
         diagnostics::report(db, extra)
     })
@@ -1849,11 +1852,35 @@ async fn set_filler_decision(
 #[tauri::command]
 async fn search_content(
     storage: State<'_, Arc<SessionStorage>>,
+    timings: State<'_, Arc<timings::Timings>>,
     query: String,
 ) -> Result<Vec<serde_json::Value>, String> {
-    with_storage(&storage, move |owner| owner.search(&query))
+    let started = std::time::Instant::now();
+    let hits = with_storage(&storage, move |owner| owner.search(&query))
         .await
-        .map_err(|_| "Search failed.".to_string())?
+        .map_err(|_| "Search failed.".to_string())?;
+    let _ = timings.record("search", started.elapsed().as_millis() as u64);
+    hits
+}
+
+/// Milliseconds since the app process started (6.5 start-up measurement).
+#[tauri::command]
+fn app_uptime_ms() -> u64 {
+    timings::uptime_ms()
+}
+
+/// Stores a measurement taken by the interface (start-up, record response).
+#[tauri::command]
+fn record_timing(timings: State<'_, Arc<timings::Timings>>, kind: String, ms: u64) -> Result<(), String> {
+    if kind == "search" {
+        return Err("Search is measured natively.".into());
+    }
+    timings.record(&kind, ms)
+}
+
+#[tauri::command]
+fn get_timings(timings: State<'_, Arc<timings::Timings>>) -> std::collections::BTreeMap<String, timings::Measure> {
+    timings.snapshot()
 }
 
 #[tauri::command]
@@ -2250,7 +2277,9 @@ fn close_after_recording(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    timings::mark_process_start();
     tauri::Builder::default()
+        .manage(Arc::new(timings::Timings::default()))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -2442,6 +2471,9 @@ pub fn run() {
             request_take_coaching,
             list_take_coaching,
             get_storage_usage,
+            app_uptime_ms,
+            record_timing,
+            get_timings,
             test_local_llm,
             build_diagnostics,
             save_diagnostics,

@@ -96,8 +96,13 @@ export function useRecorder(title: string, context?: PracticeContext): Recorder 
     attemptId.current = id;
     lastLevelAt.current = -1;
     setState((s) => ({ ...s, phase: "preparing", elapsedMs: 0, level: 0, clipping: false, levels: [], error: null }));
+    const pressed = performance.now();
     starting.current = ipc.startRecording({ attemptId: id, idempotencyKey: crypto.randomUUID(), deviceId, title, context })
-      .then(apply)
+      .then((status) => {
+        // 6.5: Record pressed → microphone running.
+        if (status.phase === "recording" && ipc.recordingMode === "native") void ipc.recordTiming("recordResponse", performance.now() - pressed).catch(() => {});
+        apply(status);
+      })
       .catch((error: unknown) => {
         busy.current = false;
         if (alive.current) setState((s) => ({ ...s, phase: "interrupted", level: 0, error: error instanceof Error ? error.message : "The microphone could not be opened." }));

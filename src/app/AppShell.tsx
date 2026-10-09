@@ -7,9 +7,20 @@ import { TopBar } from "./TopBar";
 import { useIpc } from "@/lib/ipc";
 import { RecoveryNotice } from "./RecoveryNotice";
 
+/** Start-up is measured once per app run: process start → first painted screen (6.5). */
+let startupMeasured = false;
+
 export function AppShell() {
   const ipc = useIpc();
   const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => {
+    if (startupMeasured || ipc.recordingMode !== "native") return;
+    startupMeasured = true;
+    requestAnimationFrame(() => {
+      void ipc.appUptimeMs().then((ms) => ipc.recordTiming("startup", ms)).catch(() => {});
+    });
+  }, [ipc]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

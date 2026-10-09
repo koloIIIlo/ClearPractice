@@ -828,6 +828,11 @@ export const StorageCategory = z.object({
 }).strict();
 export type StorageCategory = z.infer<typeof StorageCategory>;
 
+/** Performance on this computer during this run (6.5). */
+export const Measure = z.object({ latestMs: z.number(), bestMs: z.number(), worstMs: z.number(), count: z.number(), targetMs: z.number() }).strict();
+export const Timings = z.record(z.string(), Measure);
+export type Timings = z.infer<typeof Timings>;
+
 export const TakeCoachingPreview = z.object({
   preview: CoachingPreview,
   /** When this exact request was already answered for the take (asking again may be billed). */

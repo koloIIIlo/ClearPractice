@@ -20,6 +20,7 @@ import { BackupSettings } from "./BackupSettings";
 import { DataFolder } from "./DataFolder";
 import { StorageUsage } from "./StorageUsage";
 import { DiagnosticReport } from "./DiagnosticReport";
+import { Performance } from "./Performance";
 import { TranscriptionSetup } from "./TranscriptionSetup";
 import { TranscriptionMode } from "./TranscriptionMode";
 import { MicrophoneTest } from "./MicrophoneTest";
@@ -389,6 +390,9 @@ function AboutSettings() {
         No analytics, no account, and no network use except what you explicitly ask for.
       </p>
       <Button variant="outline" className="w-fit" asChild><NavLink to="/welcome">Run the first-launch setup again</NavLink></Button>
+    </Section>
+    <Section title="Performance" description="Measured on this computer during this run. A development build is slower than the installed app.">
+      <Performance />
     </Section>
     <Section title="Diagnostic report" description="For reporting a problem: versions, counts and settings states, without your recordings, words or names. You read it before saving it.">
       <DiagnosticReport />

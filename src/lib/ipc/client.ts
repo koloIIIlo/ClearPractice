@@ -69,6 +69,7 @@ import type {
   TakeCoachingPreview,
   FollowUpQuestion,
   StorageCategory,
+  Timings,
 } from "./schemas";
 
 export interface SessionFilter {
@@ -278,6 +279,10 @@ export interface IpcClient {
   getStorageUsage(): Promise<StorageCategory[]>;
   /** Test connection to a local model server on this computer (5.4, 5.10); returns its models. */
   testLocalLlm(endpoint: string): Promise<string[]>;
+  /** Performance on this computer (6.5): start-up and record response are measured by the interface. */
+  appUptimeMs(): Promise<number>;
+  recordTiming(kind: "startup" | "recordResponse", ms: number): Promise<void>;
+  getTimings(): Promise<Timings>;
   /** Diagnostic report (6.7): counts, versions, states; no personal content. Read it, then save it. */
   buildDiagnostics(): Promise<string>;
   /** Returns the saved file's name, or null when cancelled. */
