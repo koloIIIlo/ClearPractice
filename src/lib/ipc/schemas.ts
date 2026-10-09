@@ -700,6 +700,8 @@ export const Preferences = z
     localModel: z.string(),
     budgetWarningMicroUsd: z.number().int().min(100_000).max(5_000_000),
     reminderTime: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
+    /** Coaching prices you entered (5.9), USD per million tokens; other models use the built-in prices. */
+    coachingPrices: z.record(z.string(), z.object({ input: z.string(), output: z.string(), checkedOn: z.string() }).strict()),
   })
   .strict();
 export type Preferences = z.infer<typeof Preferences>;
@@ -707,7 +709,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   recordingSounds: true, recordingShortcuts: true, inputDeviceId: null, sessionLength: "standard",
   coachingMode: "api", coachingModel: "gpt-6-luna", deliveryImpressions: false,
   onboarded: false, goals: [], goalNote: "", difficultyLanguage: null,
-  localEndpoint: "http://127.0.0.1:8080", localModel: "", budgetWarningMicroUsd: 4_000_000, reminderTime: null,
+  localEndpoint: "http://127.0.0.1:8080", localModel: "", budgetWarningMicroUsd: 4_000_000, reminderTime: null, coachingPrices: {},
 };
 
 export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api", "off"]), provider: AudioProvider }).strict();

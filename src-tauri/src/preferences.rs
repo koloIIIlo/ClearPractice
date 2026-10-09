@@ -36,6 +36,8 @@ pub struct Preferences {
     pub budget_warning_micro_usd: u64,
     /// Daily reminder time ("HH:MM", local), or `None` for no reminder.
     pub reminder_time: Option<String>,
+    /// Coaching prices you entered (5.9), by model ID; others use the built-in prices.
+    pub coaching_prices: std::collections::BTreeMap<String, crate::api::coaching::PriceOverride>,
 }
 
 impl Default for Preferences {
@@ -43,7 +45,8 @@ impl Default for Preferences {
         Self { recording_sounds: true, recording_shortcuts: true, input_device_id: None, session_length: "standard".into(),
             coaching_mode: "api".into(), coaching_model: CoachingModel::default(), delivery_impressions: false,
             onboarded: false, goals: Vec::new(), goal_note: String::new(), difficulty_language: None,
-            local_endpoint: "http://127.0.0.1:8080".into(), local_model: String::new(), budget_warning_micro_usd: 4_000_000, reminder_time: None }
+            local_endpoint: "http://127.0.0.1:8080".into(), local_model: String::new(), budget_warning_micro_usd: 4_000_000, reminder_time: None,
+            coaching_prices: Default::default() }
     }
 }
 
@@ -55,6 +58,12 @@ fn validate(mut p: Preferences) -> Result<Preferences, String> {
         return Err("Unknown coaching mode.".into());
     }
     p.local_endpoint = crate::api::local_llm::validate_endpoint(&p.local_endpoint)?;
+    for (id, price) in &p.coaching_prices {
+        if !crate::api::coaching::CoachingModel::all().iter().any(|m| m.id() == id) {
+            return Err("Unknown model in the price list.".into());
+        }
+        price.validate()?;
+    }
     if p.reminder_time.as_deref().is_some_and(|t| chrono::NaiveTime::parse_from_str(t, "%H:%M").is_err()) {
         return Err("Choose a reminder time like 18:00.".into());
     }
@@ -84,15 +93,18 @@ fn validate(mut p: Preferences) -> Result<Preferences, String> {
 }
 
 pub fn load(db: &DatabaseOwner) -> Result<Preferences, String> {
-    Ok(db
+    let preferences = db
         .setting(KEY)?
         .and_then(|json| serde_json::from_str::<Preferences>(&json).ok())
         .and_then(|p| validate(p).ok())
-        .unwrap_or_default())
+        .unwrap_or_default();
+    crate::api::coaching::set_price_overrides(&preferences.coaching_prices);
+    Ok(preferences)
 }
 
 pub fn save(db: &DatabaseOwner, preferences: Preferences) -> Result<Preferences, String> {
     let preferences = validate(preferences)?;
+    crate::api::coaching::set_price_overrides(&preferences.coaching_prices);
     db.set_setting(KEY, &serde_json::to_string(&preferences).map_err(|e| e.to_string())?)?;
     Ok(preferences)
 }

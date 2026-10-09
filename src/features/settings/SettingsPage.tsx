@@ -28,6 +28,7 @@ import { MicrophoneTest } from "./MicrophoneTest";
 import { ApiTranscriptionTest } from "./ApiTranscriptionTest";
 import { ApiCredentialSettings } from "./ApiCredentialSettings";
 import { ApiBudgetStatus } from "./ApiBudgetStatus";
+import { CoachingPrices } from "./CoachingPrices";
 import { COACHING_MODELS, CoachingSpike } from "./CoachingSpike";
 
 const SECTIONS = [
@@ -283,6 +284,7 @@ function CoachingSettings() {
           />
           <ApiCredentialSettings />
           <ApiBudgetStatus />
+          <CoachingPrices />
           <p className="text-meta text-muted-foreground">Warning at USD 4.00 and stop at USD 5.00 a month, shared with cloud transcription (fixed in this version).</p>
           <CoachingSpike />
         </Section>

@@ -1664,8 +1664,12 @@ async fn preview_follow_up(
 ) -> Result<api::coaching::Preview, String> {
     let owner = owner.inner().clone();
     with_storage(&storage, move |db| {
+        let prefs = preferences::load(db)?;
+        let local = (prefs.coaching_mode == "local")
+            .then(|| api::local_llm::validate_endpoint(&prefs.local_endpoint).map(|base| api::local_llm::LocalTarget { base, model: prefs.local_model.clone() }))
+            .transpose()?;
         let input = db.take_coaching_input(&attempt_id)?;
-        owner.preview_follow_up(take_coaching::follow_up_text(&input)?, model.unwrap_or_default())
+        owner.preview_follow_up(take_coaching::follow_up_text(&input)?, model.unwrap_or_default(), local)
     })
     .await
     .map_err(|_| "Preparing the request failed.".to_string())?
@@ -1683,11 +1687,17 @@ async fn request_follow_up(
 ) -> Result<api::coaching::FollowUp, String> {
     let owner = owner.inner().clone();
     let accounting = accounting.inner().clone();
-    accounting.0.as_ref().map_err(Clone::clone)?;
+    let local = owner.is_local(&request_id);
+    if !local {
+        accounting.0.as_ref().map_err(Clone::clone)?;
+    }
     let inflight = inflight.inner().clone();
     let task = {
         let (accounting, request_id, payload_sha256) = (accounting.clone(), request_id.clone(), payload_sha256.clone());
         tauri::async_runtime::spawn(async move {
+            if local {
+                return owner.send_follow_up_local(&attempt_id, &request_id, &payload_sha256).await;
+            }
             let budget = accounting.0.as_ref().map_err(Clone::clone)?;
             owner.send_follow_up(budget, &accounting.1, &attempt_id, &request_id, &payload_sha256).await
         })
@@ -1702,6 +1712,7 @@ async fn request_follow_up(
     }
     match outcome {
         Ok(result) => result,
+        Err(_) if local => Err("Stopped waiting for the local model. Nothing left this computer.".into()),
         Err(_) => Err(api::audio::stopped(accounting.0.as_ref().map_err(Clone::clone)?, &request_id)),
     }
 }
@@ -2326,6 +2337,10 @@ pub fn run() {
                 root.clone(),
             )));
             app.manage(Arc::new(api::coaching::PreviewOwner::default()));
+            // Prices you entered in Settings apply from the first preview (5.9).
+            if let Some(storage) = app.try_state::<Arc<SessionStorage>>() {
+                let _ = storage.with(|db| preferences::load(db).map(|_| ()));
+            }
             app.manage(Arc::new(api::audio::AudioPreviewOwner::default()));
             app.manage(Arc::new(InflightApi::default()));
             app.manage(Arc::new(ClipWork::default()));

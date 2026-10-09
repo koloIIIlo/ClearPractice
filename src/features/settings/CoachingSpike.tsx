@@ -9,11 +9,13 @@ import type { CoachingModel, CoachingPreview, FeedbackResult } from "@/lib/ipc/s
 import { UI_LOCALE } from "@/lib/format";
 
 /** Official IDs and standard text prices per million tokens (input / output), checked 2026-10-08. */
-export const COACHING_MODELS: { id: CoachingModel; label: string; note: string }[] = [
-  { id: "gpt-6-luna", label: "GPT-6 Luna", note: "most efficient · $0.10 / $0.50 per M tokens" },
-  { id: "gpt-6.1-sol", label: "GPT-6.1 Sol", note: "near-flagship · $2 / $10 per M tokens" },
-  { id: "gpt-6-astra", label: "GPT-6 Astra", note: "flagship · $10 / $50 per M tokens" },
+export const COACHING_MODELS: { id: CoachingModel; label: string; note: string; input: string; output: string }[] = [
+  { id: "gpt-6-luna", label: "GPT-6 Luna", note: "most efficient · $0.10 / $0.50 per M tokens", input: "0.10", output: "0.50" },
+  { id: "gpt-6.1-sol", label: "GPT-6.1 Sol", note: "near-flagship · $2 / $10 per M tokens", input: "2", output: "10" },
+  { id: "gpt-6-astra", label: "GPT-6 Astra", note: "flagship · $10 / $50 per M tokens", input: "10", output: "50" },
 ];
+/** The day the built-in prices were checked on OpenAI's model pages. */
+export const BUILT_IN_PRICE_DATE = "2026-10-08";
 
 const money = (micro: number) => new Intl.NumberFormat(UI_LOCALE, { style: "currency", currency: "USD", maximumFractionDigits: 6 }).format(micro / 1_000_000);
 

@@ -41,7 +41,8 @@ export function FollowUpPanel({ prompt, sessionId, lastTakeId, takeCount, native
 
   if (!prompt.conditions.followUp || takeCount === 0) return null;
   const question = ai?.question ?? written[index % written.length];
-  const canAskAi = native && preferences.coachingMode === "api" && !!lastTakeId;
+  const canAskAi = native && preferences.coachingMode !== "off" && !!lastTakeId;
+  const local = preferences.coachingMode === "local";
   const hasTranscript = !!transcript.data?.revision;
 
   const discard = () => {
@@ -113,19 +114,21 @@ export function FollowUpPanel({ prompt, sessionId, lastTakeId, takeCount, native
       </div>
       {preview && (
         <div className="space-y-2 rounded-lg border p-3" role="group" aria-label="Follow-up request preview">
-          <p className="font-medium">Recipient: OpenAI · {preview.model} · estimated upper reservation {money(preview.estimatedMaximumCostMicroUsd)}</p>
+          <p className="font-medium">
+            {local ? `Recipient: local model on this computer · ${preview.model} · free` : `Recipient: OpenAI · ${preview.model} · estimated upper reservation ${money(preview.estimatedMaximumCostMicroUsd)}`}
+          </p>
           <p className="text-meta font-medium">Text that will be sent</p>
           <pre className="max-h-56 overflow-auto rounded-md border bg-muted/40 p-3 text-meta whitespace-pre-wrap">{preview.selectedText}</pre>
           <details className="text-meta"><summary className="cursor-pointer">Instructions to the model</summary><p className="mt-2">{preview.instructions}</p></details>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" disabled={busy} onClick={() => void send()}>Send · may be billed</Button>
+            <Button size="sm" disabled={busy} onClick={() => void send()}>{local ? "Send to the local model" : "Send · may be billed"}</Button>
             <Button size="sm" variant="outline" disabled={busy} onClick={discard}>Cancel preview</Button>
           </div>
         </div>
       )}
       {busy && (
         <div className="flex flex-wrap items-center gap-2">
-          <p role="status" className="text-meta">{sending ? "Waiting for OpenAI…" : "Preparing the text…"}</p>
+          <p role="status" className="text-meta">{sending ? `Waiting for ${local ? "the local model" : "OpenAI"}…` : "Preparing the text…"}</p>
           {sending && <Button variant="outline" size="sm" onClick={() => void ipc.stopTakeCoaching(sending)}>Stop waiting</Button>}
         </div>
       )}
