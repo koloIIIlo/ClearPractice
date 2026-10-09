@@ -19,7 +19,9 @@ type Result<T> = std::result::Result<T, String>;
 pub mod library;
 #[path = "phrases.rs"]
 pub mod phrases;
-const VERSION: i64 = 14;
+#[path = "coaching_runs.rs"]
+pub mod coaching_runs;
+const VERSION: i64 = 15;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
@@ -183,7 +185,10 @@ impl DatabaseOwner {
             if version < 13 {
                 migrate(&mut connection, include_str!("schema-v13.sql"))?;
             }
-            migrate(&mut connection, include_str!("schema-v14.sql"))?;
+            if version < 14 {
+                migrate(&mut connection, include_str!("schema-v14.sql"))?;
+            }
+            migrate(&mut connection, include_str!("schema-v15.sql"))?;
         }
         backfill_measures(&connection)?;
         connection
@@ -498,7 +503,7 @@ impl DatabaseOwner {
             .lock()
             .map_err(|_| "Session storage owner is unavailable.")?;
         #[allow(clippy::type_complexity)]
-        let (prompt, outline, focus, notes, curriculum_version, content_id, ease, takeaway): (
+        let (prompt, outline, focus, notes, curriculum_version, content_id, ease, takeaway, preferred_take): (
             Option<String>,
             Option<String>,
             Option<String>,
@@ -507,11 +512,12 @@ impl DatabaseOwner {
             Option<String>,
             Option<i64>,
             Option<String>,
+            Option<String>,
         ) = conn
             .query_row(
-                "SELECT prompt_snapshot,outline_snapshot,focus,notes,curriculum_version,content_id,ease,takeaway FROM sessions WHERE id=?1",
+                "SELECT prompt_snapshot,outline_snapshot,focus,notes,curriculum_version,content_id,ease,takeaway,preferred_take FROM sessions WHERE id=?1",
                 [id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?)),
             )
             .map_err(db_error)?;
         let mut stmt=conn.prepare("SELECT a.id,a.ordinal,a.created_at_ms,aa.duration_ms,aa.unavailable_reason,t.familiarity,t.preparation_seconds,t.target_seconds,t.audience,t.follow_up FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN audio_assets aa ON aa.id=a.asset_id LEFT JOIN task_conditions t ON t.attempt_id=a.id WHERE st.session_id=?1 AND a.deleted_at_ms IS NULL ORDER BY a.ordinal").map_err(db_error)?;
@@ -537,6 +543,8 @@ impl DatabaseOwner {
         summary["contentId"] = json!(content_id);
         summary["ease"] = json!(ease);
         summary["takeaway"] = json!(takeaway);
+        // A take that has since been deleted no longer counts as the preference.
+        summary["preferredTake"] = json!(preferred_take.filter(|p| p == "same" || attempts.iter().any(|a| a["id"] == p.as_str())));
         summary["conditions"] = conditions.clone();
         summary["conditionsUnavailableReason"] = if conditions.is_null() {
             json!("This older recording did not store task conditions.")
@@ -617,6 +625,32 @@ impl DatabaseOwner {
                 "UPDATE sessions SET ease=COALESCE(?1,ease),takeaway=COALESCE(?2,takeaway) WHERE id=?3 AND deleted_at_ms IS NULL",
                 params![ease, takeaway.map(|t| if t.is_empty() { None } else { Some(t) }).flatten(), id],
             )
+            .map_err(db_error)?;
+        if count != 1 {
+            return Err("This session is unavailable.".into());
+        }
+        Ok(())
+    }
+
+    /// Which take felt clearer (4.14): one of this session's takes, "same", or
+    /// `None` to clear. Your own judgement; never derived from measures.
+    pub fn set_preferred_take(&self, id: &str, preferred: Option<&str>) -> Result<()> {
+        recording::validate_id(id)?;
+        let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+        if let Some(take) = preferred.filter(|p| *p != "same") {
+            let ours: bool = conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM attempts a JOIN session_steps st ON st.id=a.step_id WHERE a.id=?1 AND st.session_id=?2 AND a.deleted_at_ms IS NULL)",
+                    params![take, id],
+                    |r| r.get(0),
+                )
+                .map_err(db_error)?;
+            if !ours {
+                return Err("Choose one of this session's takes.".into());
+            }
+        }
+        let count = conn
+            .execute("UPDATE sessions SET preferred_take=?1 WHERE id=?2 AND deleted_at_ms IS NULL", params![preferred, id])
             .map_err(db_error)?;
         if count != 1 {
             return Err("This session is unavailable.".into());
@@ -1431,7 +1465,7 @@ impl DatabaseOwner {
 /// and writes their purge tombstones; shared by session and single-take purges.
 fn purge_take_rows(tx: &Transaction, takes: &str, id: &str, now: i64) -> Result<()> {
     tx.execute(&format!("INSERT OR IGNORE INTO purged_assets(id,purged_at_ms) SELECT id,?2 FROM ({takes})"),params![id,now]).map_err(db_error)?;
-    for table in ["task_conditions", "api_runs"] {
+    for table in ["task_conditions", "api_runs", "coaching_runs"] {
         tx.execute(&format!("DELETE FROM {table} WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
     }
     tx.execute(&format!("DELETE FROM metric_values WHERE run_id IN (SELECT id FROM analysis_runs WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
@@ -1893,6 +1927,16 @@ mod tests {
         owner.set_session_reflection("session", None, None).unwrap(); // leaves both unchanged
         let detail = owner.get_session("session").unwrap();
         assert_eq!((detail["ease"].as_i64(), detail["takeaway"].as_str()), (Some(4), Some("Pause before the example")));
+        // Which take felt clearer (4.14) is the user's own choice among this session's takes.
+        assert!(detail["preferredTake"].is_null());
+        let take = detail["attempts"][0]["id"].as_str().unwrap().to_string();
+        owner.set_preferred_take("session", Some(&take)).unwrap();
+        assert_eq!(owner.get_session("session").unwrap()["preferredTake"], take.as_str());
+        owner.set_preferred_take("session", Some("same")).unwrap();
+        assert_eq!(owner.get_session("session").unwrap()["preferredTake"], "same");
+        assert!(owner.set_preferred_take("session", Some("not-a-take")).is_err());
+        owner.set_preferred_take("session", None).unwrap();
+        assert!(owner.get_session("session").unwrap()["preferredTake"].is_null());
         assert!(owner.set_session_reflection("session", Some(6), None).is_err());
         assert!(owner.set_session_reflection("session", Some(0), None).is_err());
 
@@ -2092,7 +2136,7 @@ mod tests {
             .unwrap();
         {
             let conn = owner.connection.lock().unwrap();
-            conn.execute_batch("DROP INDEX phrase_reviews_card; DROP INDEX phrase_cards_due; DROP TABLE phrase_reviews; DROP TABLE phrase_cards; DROP INDEX reference_clips_source; DROP INDEX reference_clips_folder; ALTER TABLE reference_clips DROP COLUMN source_end_ms; ALTER TABLE reference_clips DROP COLUMN source_start_ms; ALTER TABLE reference_clips DROP COLUMN source_id; ALTER TABLE reference_clips DROP COLUMN folder_id; DROP INDEX clip_source_picks_source; DROP TABLE clip_source_picks; DROP TABLE clip_sources; DROP TABLE clip_folders; ALTER TABLE reference_clips DROP COLUMN description; ALTER TABLE reference_clips DROP COLUMN feature; DROP TABLE reference_clips; ALTER TABLE sessions DROP COLUMN ease; ALTER TABLE sessions DROP COLUMN takeaway; ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+            conn.execute_batch("ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; DROP INDEX phrase_reviews_card; DROP INDEX phrase_cards_due; DROP TABLE phrase_reviews; DROP TABLE phrase_cards; DROP INDEX reference_clips_source; DROP INDEX reference_clips_folder; ALTER TABLE reference_clips DROP COLUMN source_end_ms; ALTER TABLE reference_clips DROP COLUMN source_start_ms; ALTER TABLE reference_clips DROP COLUMN source_id; ALTER TABLE reference_clips DROP COLUMN folder_id; DROP INDEX clip_source_picks_source; DROP TABLE clip_source_picks; DROP TABLE clip_sources; DROP TABLE clip_folders; ALTER TABLE reference_clips DROP COLUMN description; ALTER TABLE reference_clips DROP COLUMN feature; DROP TABLE reference_clips; ALTER TABLE sessions DROP COLUMN ease; ALTER TABLE sessions DROP COLUMN takeaway; ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
         }
         drop(owner);
         let upgraded = DatabaseOwner::open(&root.0).unwrap();
@@ -2102,7 +2146,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v14-")));
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v15-")));
         assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
     }
     fn api_result(take: &SavedRecording, run: &str, words: Option<Vec<(&str, u64, u64)>>) -> crate::audio::transcription::TranscriptionResult {
@@ -2245,6 +2289,53 @@ fast.", 3).unwrap_err();
         owner.delete_permanently(&["take".into()]).unwrap();
         assert!(owner.attempt_transcript("take").unwrap()["revision"].is_null());
     }
+    #[test]
+    fn take_coaching_reads_the_newest_text_and_runs_are_kept_cached_and_purged_with_the_take() {
+        use super::coaching_runs::NewRun;
+        let root = TestRoot::new();
+        saved(&root.0, "take");
+        let owner = DatabaseOwner::open(&root.0).unwrap();
+        assert!(owner.take_coaching_input("take").unwrap_err().contains("Transcribe this take first"));
+        let transcript = crate::audio::whisper::Transcript {
+            version: 1, run_id: "take--1".into(), asset_id: "take".into(), provider: "whisper.cpp".into(),
+            model_id: "base".into(), model_sha256: "a".repeat(64), runtime_version: "1.9.1".into(),
+            backend: crate::audio::whisper::Backend::Cpu, threads: 4, prompt: None, source_sha256: "b".repeat(64),
+            prepared_sha256: "c".repeat(64), language: "en".into(), raw_text: " Index is, uh, fast.".into(),
+            segments: vec![crate::audio::whisper::Segment { text: " Index is, uh, fast.".into(), start_ms: Some(0), end_ms: Some(900), timing_source: "Estimated".into(), timing_unavailable_reason: None }],
+            elapsed_ms: 10, peak_ram_bytes: None, peak_ram_unavailable_reason: None, created_at_ms: 1,
+        };
+        owner.start_job("job-1", "take", 1).unwrap();
+        owner.save_local_transcript("job-1", "take", &transcript, 2).unwrap();
+        let input = owner.take_coaching_input("take").unwrap();
+        assert_eq!((input.revision_id.as_str(), input.text.as_str(), input.corrected), ("take--1", "Index is, uh, fast.", false));
+        assert_eq!(input.timed_parts, vec![("Index is, uh, fast.".to_string(), 0, 900)]);
+        assert_eq!(input.fillers, 1);
+        // Your correction is what gets sent; the timed parts stay the machine's.
+        let correction = owner.save_transcript_correction("take", "take--1", "Indexes are fast.", 3).unwrap();
+        let input = owner.take_coaching_input("take").unwrap();
+        assert_eq!((input.revision_id.as_str(), input.text.as_str(), input.corrected), (correction.as_str(), "Indexes are fast.", true));
+        assert_eq!(input.timed_parts.len(), 1);
+
+        let feedback = json!({"summary":"s","oneImprovement":"o","nextAttempt":"n","corrections":[],"deliveryNotes":[]});
+        let run = |id: &'static str, hash: &'static str| NewRun { id, attempt_id: "take", revision_id: &correction, provider: "OpenAI", model: "gpt-6-luna",
+            payload_sha256: hash, sent_text: "Task: x", transcript_text: "Indexes are fast.", delivery_impressions: false, provider_request_id: Some("req_1"),
+            raw_response: "{}", feedback: &feedback, input_tokens: Some(10), output_tokens: None, estimated_cost_micro_usd: None };
+        let hash = "d".repeat(64);
+        let leaked: &'static str = Box::leak(hash.clone().into_boxed_str());
+        assert!(owner.coaching_answered_at("take", &hash).unwrap().is_none());
+        let first = owner.insert_coaching_run(&run("coach-1", leaked)).unwrap();
+        assert_eq!(first.feedback["summary"], "s");
+        assert!(first.cost_unavailable_reason.is_some(), "missing usage is explained, never 0");
+        assert!(owner.coaching_answered_at("take", &hash).unwrap().is_some());
+        owner.insert_coaching_run(&run("coach-2", leaked)).unwrap();
+        assert!(owner.insert_coaching_run(&run("coach-2", leaked)).is_err(), "a run is stored once");
+        assert_eq!(owner.list_coaching_runs("take").unwrap().len(), 2);
+        // Trash purges feedback with the take.
+        owner.move_to_trash("take", 10).unwrap();
+        owner.delete_permanently(&["take".into()]).unwrap();
+        assert!(owner.list_coaching_runs("take").unwrap().is_empty());
+    }
+
     #[test]
     fn take_intonation_is_stored_checked_regenerated_and_purged_with_the_take() {
         let root = TestRoot::new();

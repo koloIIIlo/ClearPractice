@@ -13,10 +13,15 @@ export type PlayerLink = {
   attach: (seek: (ms: number, play?: boolean) => void) => () => void;
   /** Moves the playhead; `play` also starts playback from there. */
   seek: (ms: number, play?: boolean) => void;
+  /** Called by the player when it reaches the end (not while looping). */
+  finished: () => void;
+  /** Runs `listener` each time the take finishes playing (4.14 alternating playback). */
+  onFinish: (listener: () => void) => () => void;
 };
 
 export function createPlayerLink(): PlayerLink {
   const listeners = new Set<() => void>();
+  const finishListeners = new Set<() => void>();
   let seekFn: ((ms: number, play?: boolean) => void) | null = null;
   let position: number | null = null;
   const notify = () => listeners.forEach((l) => l());
@@ -43,6 +48,11 @@ export function createPlayerLink(): PlayerLink {
       };
     },
     seek: (ms, play) => (play ? seekFn?.(ms, true) : seekFn?.(ms)),
+    finished: () => finishListeners.forEach((l) => l()),
+    onFinish: (listener) => {
+      finishListeners.add(listener);
+      return () => finishListeners.delete(listener);
+    },
   };
 }
 

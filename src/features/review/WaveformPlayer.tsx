@@ -111,7 +111,11 @@ export function WaveformPlayer({ url, peaks, label, link }: { url: string; peaks
     });
     ws.on("finish", () => {
       const range = loopRef.current;
-      if (!range) return setPlaying(false);
+      if (!range) {
+        setPlaying(false);
+        link?.finished();
+        return;
+      }
       ws.setTime(range.startMs / 1000);
       void ws.play();
     });

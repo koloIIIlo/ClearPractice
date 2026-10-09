@@ -61,6 +61,8 @@ import type {
   CoachingModel,
   CoachingPreview,
   FeedbackResult,
+  CoachingRun,
+  TakeCoachingPreview,
 } from "./schemas";
 
 export interface SessionFilter {
@@ -95,6 +97,8 @@ export interface IpcClient {
   getSession(sessionId: string): Promise<SessionDetail>;
   /** The one thing to improve in the next take (4.6), or the imitated feature (4.8); null clears it. */
   setSessionFocus(sessionId: string, focus: string | null): Promise<void>;
+  /** Which take felt clearer (4.14): a take ID, "same", or null to clear. */
+  setPreferredTake(sessionId: string, preferred: string | null): Promise<void>;
   /** End-of-practice reflection (4.11): ease 1–5 and a takeaway; null leaves a value unchanged. */
   setSessionReflection(sessionId: string, ease: number | null, takeaway: string | null): Promise<void>;
   updateSession(sessionId: string, details: { title: string; notes: string; tags: string[]; favorite: boolean }): Promise<void>;
@@ -247,6 +251,13 @@ export interface IpcClient {
   previewCoachingRequest(selectedText: string, model?: CoachingModel): Promise<CoachingPreview>;
   cancelCoachingPreview(requestId: string): Promise<void>;
   requestCoaching(requestId: string, payloadSha256: string): Promise<FeedbackResult>;
+  /** Builds the text for AI feedback on a take (M5, P.9); nothing is sent. Hidden words never leave the computer. */
+  previewTakeCoaching(attemptId: string, options: { model: CoachingModel; deliveryImpressions: boolean; hide: string[] }): Promise<TakeCoachingPreview>;
+  /** Sends one approved take preview; the answer is stored with the take. */
+  requestTakeCoaching(attemptId: string, requestId: string, payloadSha256: string): Promise<CoachingRun>;
+  /** Stops waiting for a sent request; a dispatched one keeps its possible charge. */
+  stopTakeCoaching(requestId: string): Promise<void>;
+  listTakeCoaching(attemptId: string): Promise<CoachingRun[]>;
 }
 
 /** A command failed in a way the UI should explain in context (§14). */

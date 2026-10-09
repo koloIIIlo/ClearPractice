@@ -488,6 +488,8 @@ export const SessionDetail = SessionSummary.extend({
   /** Completion reflection (4.11): the user's own ease rating and takeaway. */
   ease: z.number().int().min(1).max(5).nullable().optional(),
   takeaway: z.string().nullable().optional(),
+  /** Attempt comparison (4.14): the take that felt clearer to you, or "same". Your own judgement. */
+  preferredTake: z.string().nullable().optional(),
 });
 export type SessionDetail = z.infer<typeof SessionDetail>;
 
@@ -646,16 +648,25 @@ export const DataLocation = z.object({
 export type DataLocation = z.infer<typeof DataLocation>;
 
 /** Settings that change how the app behaves (stored natively in app_settings). */
+export const CoachingModel = z.enum(["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"]);
+export type CoachingModel = z.infer<typeof CoachingModel>;
+
 export const Preferences = z
   .object({
     recordingSounds: z.boolean(),
     recordingShortcuts: z.boolean(),
     inputDeviceId: z.string().min(1).max(512).nullable(),
     sessionLength: SessionLength,
+    coachingMode: z.enum(["api", "off"]),
+    coachingModel: CoachingModel,
+    deliveryImpressions: z.boolean(),
   })
   .strict();
 export type Preferences = z.infer<typeof Preferences>;
-export const DEFAULT_PREFERENCES: Preferences = { recordingSounds: true, recordingShortcuts: true, inputDeviceId: null, sessionLength: "standard" };
+export const DEFAULT_PREFERENCES: Preferences = {
+  recordingSounds: true, recordingShortcuts: true, inputDeviceId: null, sessionLength: "standard",
+  coachingMode: "api", coachingModel: "gpt-6-luna", deliveryImpressions: false,
+};
 
 export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api"]), provider: AudioProvider }).strict();
 export type TranscriptionPreference = z.infer<typeof TranscriptionPreference>;
@@ -721,8 +732,6 @@ export const BudgetSummary = z.object({
 export type BudgetSummary = z.infer<typeof BudgetSummary>;
 
 /** OpenAI models offered for coaching (IDs and prices checked 2026-10-08). */
-export const CoachingModel = z.enum(["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"]);
-export type CoachingModel = z.infer<typeof CoachingModel>;
 
 export const CoachingPreview = z.object({
   version: z.literal(1), requestId: Id, payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -746,6 +755,32 @@ export const FeedbackResult = z.object({
   if (value.estimatedCostMicroUsd === null && !value.costUnavailableReason) ctx.addIssue({code:"custom",message:"Missing cost needs a reason"});
 });
 export type FeedbackResult = z.infer<typeof FeedbackResult>;
+
+/** AI feedback on one take (M5, P.9). Delivery notes appear only when you opted in. */
+export const TakeFeedback = z.object({
+  summary: z.string().min(1), oneImprovement: z.string().min(1), nextAttempt: z.string().min(1),
+  corrections: z.array(z.object({kind: z.enum(["clear-error", "style"]), quote: z.string().min(1), suggestion: z.string().min(1), reason: z.string().min(1)}).strict()).max(3),
+  deliveryNotes: z.array(z.object({part: z.number().int().positive(), note: z.string().min(1)}).strict()).max(3),
+}).strict();
+export type TakeFeedback = z.infer<typeof TakeFeedback>;
+
+export const CoachingRun = z.object({
+  id: Id, attemptId: Id, revisionId: Id, provider: z.literal("OpenAI"), model: z.string().min(1),
+  payloadSha256: z.string().regex(/^[a-f0-9]{64}$/), sentText: z.string().min(1), transcriptText: z.string().min(1),
+  deliveryImpressions: z.boolean(), feedback: TakeFeedback,
+  inputTokens: z.number().int().nonnegative().nullable(), outputTokens: z.number().int().nonnegative().nullable(),
+  estimatedCostMicroUsd: MicroUsd.nullable(), costUnavailableReason: z.string().nullable(), createdAt: z.string().min(1), // ISO UTC
+}).strict().refine((v) => (v.estimatedCostMicroUsd === null) === (v.costUnavailableReason !== null), "Missing cost needs a reason");
+export type CoachingRun = z.infer<typeof CoachingRun>;
+
+export const TakeCoachingPreview = z.object({
+  preview: CoachingPreview,
+  /** When this exact request was already answered for the take (asking again may be billed). */
+  answeredAt: z.string().nullable(),
+  timedParts: z.number().int().nonnegative(),
+  corrected: z.boolean(),
+}).strict();
+export type TakeCoachingPreview = z.infer<typeof TakeCoachingPreview>;
 
 const available = <T extends z.ZodType>(value: T) => z.object({
   value: value.nullable(), unavailableReason: z.string().min(1).max(512).nullable(),

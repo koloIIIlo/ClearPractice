@@ -1,7 +1,7 @@
 //! Interface preferences from Settings (recording sounds, shortcuts, the chosen
-//! microphone, default session length), stored as one JSON value in
-//! `app_settings`. Unknown or damaged values fall back to the defaults.
-use crate::storage::database::DatabaseOwner;
+//! microphone, default session length, coaching choices), stored as one JSON
+//! value in `app_settings`. Unknown or damaged values fall back to the defaults.
+use crate::{api::coaching::CoachingModel, storage::database::DatabaseOwner};
 use serde::{Deserialize, Serialize};
 
 const KEY: &str = "ui_preferences";
@@ -15,17 +15,27 @@ pub struct Preferences {
     pub input_device_id: Option<String>,
     /// "standard" (about 13 minutes) or "short" (about 5 minutes).
     pub session_length: String,
+    /// "api" shows AI feedback on takes (every request is previewed and sent
+    /// only on Send); "off" hides it (5.10).
+    pub coaching_mode: String,
+    pub coaching_model: CoachingModel,
+    /// D-27: how delivery may come across to a listener; off by default.
+    pub delivery_impressions: bool,
 }
 
 impl Default for Preferences {
     fn default() -> Self {
-        Self { recording_sounds: true, recording_shortcuts: true, input_device_id: None, session_length: "standard".into() }
+        Self { recording_sounds: true, recording_shortcuts: true, input_device_id: None, session_length: "standard".into(),
+            coaching_mode: "api".into(), coaching_model: CoachingModel::default(), delivery_impressions: false }
     }
 }
 
 fn validate(mut p: Preferences) -> Result<Preferences, String> {
     if !matches!(p.session_length.as_str(), "standard" | "short") {
         return Err("Unknown session length.".into());
+    }
+    if !matches!(p.coaching_mode.as_str(), "api" | "off") {
+        return Err("Unknown coaching mode.".into());
     }
     p.input_device_id = p.input_device_id.filter(|id| !id.trim().is_empty());
     if p.input_device_id.as_ref().is_some_and(|id| id.len() > 512) {
@@ -62,6 +72,11 @@ mod tests {
         assert_eq!(save(&db, chosen.clone()).unwrap(), chosen);
         assert_eq!(load(&db).unwrap(), chosen);
         assert!(save(&db, Preferences { session_length: "long".into(), ..Default::default() }).is_err());
+        assert!(save(&db, Preferences { coaching_mode: "local".into(), ..Default::default() }).is_err());
+        // Older stored preferences without the coaching fields keep the defaults.
+        db.set_setting(KEY, r#"{"recordingSounds":false,"recordingShortcuts":true,"inputDeviceId":null,"sessionLength":"short"}"#).unwrap();
+        let old = load(&db).unwrap();
+        assert!(!old.recording_sounds && old.coaching_mode == "api" && !old.delivery_impressions && old.coaching_model == CoachingModel::Luna);
         db.set_setting(KEY, "{broken").unwrap();
         assert_eq!(load(&db).unwrap(), Preferences::default());
         let blank = save(&db, Preferences { input_device_id: Some("  ".into()), ..Default::default() }).unwrap();

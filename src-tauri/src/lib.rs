@@ -15,6 +15,7 @@ pub mod preferences;
 pub mod prosody;
 pub mod sources;
 pub mod storage;
+pub mod take_coaching;
 pub mod transcribe;
 
 use audio::capture::{CaptureService, RecordingStatus, StartRequest};
@@ -565,6 +566,13 @@ async fn delete_sessions_permanently(
     })
     .await
     .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn set_preferred_take(storage: State<'_, Arc<SessionStorage>>, session_id: String, preferred: Option<String>) -> Result<(), String> {
+    with_storage(&storage, move |owner| owner.set_preferred_take(&session_id, preferred.as_deref()))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
 }
 
 #[tauri::command]
@@ -1450,6 +1458,125 @@ async fn choose_transcription_setup(
     .map_err(|_| "Transcription setup failed.".to_string())?
 }
 
+/// A take's coaching preview plus what the screen needs to explain it.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TakeCoachingPreview {
+    preview: api::coaching::Preview,
+    /// When this exact request was already answered for the take (5.7).
+    answered_at: Option<String>,
+    timed_parts: usize,
+    corrected: bool,
+}
+
+/// Prepares AI feedback on a saved take (M5, P.9). Builds the text from the
+/// take's transcript, task, focus and local measures; nothing is sent.
+#[tauri::command]
+async fn preview_take_coaching(
+    storage: State<'_, Arc<SessionStorage>>,
+    owner: State<'_, Arc<api::coaching::PreviewOwner>>,
+    attempt_id: String,
+    model: Option<api::coaching::CoachingModel>,
+    delivery_impressions: bool,
+    hide: Vec<String>,
+) -> Result<TakeCoachingPreview, String> {
+    let owner = owner.inner().clone();
+    with_storage(&storage, move |db| {
+        let input = db.take_coaching_input(&attempt_id)?;
+        let parts = if input.timed_parts.is_empty() {
+            Vec::new()
+        } else {
+            // Pitch and loudness need the take's contour; without it pace and pauses still count.
+            match db.prosody(&attempt_id) {
+                Ok(c) => clipsplit::measure_sentences(&input.timed_parts, &c.f0_hz, &c.rms_db, c.hop_ms),
+                Err(_) => clipsplit::measure_sentences(&input.timed_parts, &[], &[], 10),
+            }
+        };
+        let text = take_coaching::build(&input, &parts, &hide)?;
+        let timed_parts = text.parts;
+        let preview = owner.preview_take(text, model.unwrap_or_default(), delivery_impressions)?;
+        let answered_at = db.coaching_answered_at(&attempt_id, &preview.payload_sha256)?;
+        Ok(TakeCoachingPreview { preview, answered_at, timed_parts, corrected: input.corrected })
+    })
+    .await
+    .map_err(|_| "Preparing the feedback request failed.".to_string())?
+}
+
+/// Sends an approved take preview and stores the validated answer with the
+/// take. Stop waiting works like transcription (3.18): before dispatch nothing
+/// is billed; after it the charge stays Uncertain.
+#[tauri::command]
+async fn request_take_coaching(
+    service: State<'_, Arc<CaptureService>>,
+    storage: State<'_, Arc<SessionStorage>>,
+    owner: State<'_, Arc<api::coaching::PreviewOwner>>,
+    accounting: State<'_, Arc<ApiAccounting>>,
+    inflight: State<'_, Arc<InflightApi>>,
+    attempt_id: String,
+    request_id: String,
+    payload_sha256: String,
+) -> Result<storage::database::coaching_runs::CoachingRun, String> {
+    if service.is_active() {
+        return Err("Finish the recording first. Nothing was sent.".into());
+    }
+    let owner = owner.inner().clone();
+    let accounting = accounting.inner().clone();
+    accounting.0.as_ref().map_err(Clone::clone)?;
+    let inflight = inflight.inner().clone();
+    let task = {
+        let (accounting, attempt_id, request_id, payload_sha256) = (accounting.clone(), attempt_id.clone(), request_id.clone(), payload_sha256.clone());
+        tauri::async_runtime::spawn(async move {
+            let budget = accounting.0.as_ref().map_err(Clone::clone)?;
+            owner.send_take(budget, &accounting.1, &attempt_id, &request_id, &payload_sha256).await
+        })
+    };
+    let abort = task.inner().abort_handle();
+    if let Ok(mut map) = inflight.0.lock() {
+        map.insert(request_id.clone(), Box::new(move || abort.abort()));
+    }
+    let outcome = task.await;
+    if let Ok(mut map) = inflight.0.lock() {
+        map.remove(&request_id);
+    }
+    let answer = match outcome {
+        Ok(result) => result?,
+        Err(_) => return Err(api::audio::stopped(accounting.0.as_ref().map_err(Clone::clone)?, &request_id)),
+    };
+    // The raw answer is already in cache/coaching/<id>; if the database cannot
+    // take it, say where it is. Nothing is sent again.
+    let id = request_id.clone();
+    with_storage(&storage, move |db| {
+        db.insert_coaching_run(&storage::database::coaching_runs::NewRun {
+            id: &id,
+            attempt_id: &answer.request.attempt_id,
+            revision_id: &answer.request.revision_id,
+            provider: "OpenAI",
+            model: &answer.model,
+            payload_sha256: &answer.payload_sha256,
+            sent_text: &answer.sent_text,
+            transcript_text: &answer.request.transcript,
+            delivery_impressions: answer.request.delivery,
+            provider_request_id: answer.provider_request_id.as_deref(),
+            raw_response: &answer.raw.to_string(),
+            feedback: &answer.feedback,
+            input_tokens: answer.input_tokens,
+            output_tokens: answer.output_tokens,
+            estimated_cost_micro_usd: answer.estimated_cost_micro_usd,
+        })
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+    .map_err(|e| format!("The feedback arrived but could not be saved with the take ({e}). It is kept in the app's cache/coaching/{request_id} folder; nothing will be sent again."))
+}
+
+/// A take's saved AI feedback, newest first.
+#[tauri::command]
+async fn list_take_coaching(storage: State<'_, Arc<SessionStorage>>, attempt_id: String) -> Result<Vec<storage::database::coaching_runs::CoachingRun>, String> {
+    with_storage(&storage, move |db| db.list_coaching_runs(&attempt_id))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
 #[tauri::command]
 async fn get_take_prosody(
     storage: State<'_, Arc<SessionStorage>>,
@@ -2039,6 +2166,7 @@ pub fn run() {
             empty_trash,
             move_take_to_trash,
             set_session_focus,
+            set_preferred_take,
             choose_clip_file,
             get_clip_staging_path,
             discard_clip_staging,
@@ -2097,6 +2225,9 @@ pub fn run() {
             get_attempt_transcript,
             list_model_packs,
             get_take_prosody,
+            preview_take_coaching,
+            request_take_coaching,
+            list_take_coaching,
             import_model_pack,
             save_transcript_correction,
             search_content,

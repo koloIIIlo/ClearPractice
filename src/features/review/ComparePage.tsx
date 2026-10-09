@@ -11,7 +11,7 @@ import { useAttemptReview, useSession } from "@/lib/ipc/queries";
 import type { Attempt, AttemptReview } from "@/lib/ipc/schemas";
 import { cn } from "@/lib/utils";
 import { useIpc } from "@/lib/ipc";
-import { NativeSession } from "@/features/sessions/NativeSession";
+import { NativeCompare } from "./NativeCompare";
 import { useSimulatedPlayback, type Playback } from "./playback";
 
 export function ComparePage() {
@@ -23,7 +23,7 @@ export function ComparePage() {
     <Page className="max-w-6xl">
       <QueryView query={session} loading={<LoadingBlock rows={4} label="Loading session" />}>
         {(s) => {
-          if (ipc.recordingMode === "native") return <NativeSession key={s.id} session={s} />;
+          if (ipc.recordingMode === "native") return <NativeCompare key={s.id} session={s} />;
           const [a, b] = [s.attempts[0], s.attempts.at(-1)!];
           return (
             <>

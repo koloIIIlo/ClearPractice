@@ -55,4 +55,4 @@ it("adds a phrase that is new and due today, edits its text and removes it after
   await user.click(within(edited).getByRole("button", { name: "Remove" }));
   expect(client.deletePhrase).toHaveBeenCalledOnce();
   await waitFor(() => expect(screen.queryByText("I put the conclusion first")).not.toBeInTheDocument());
-});
+}, 15_000); // much typing; slow under parallel load

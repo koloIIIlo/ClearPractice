@@ -14,8 +14,9 @@ import { SavedAudio } from "@/features/practice/RecordingLibrary";
 import { MoveTakeToTrashButton, MoveToTrashButton } from "./TrashPage";
 import { TakeTranscript } from "@/features/review/TakeTranscript";
 import { IntonationTrack } from "@/features/review/IntonationTrack";
-import { BookmarkPlus, Download } from "lucide-react";
+import { BookmarkPlus, Columns2, Download } from "lucide-react";
 import { PhraseForm } from "@/features/phrases/PhrasesPage";
+import { TakeCoaching } from "@/features/review/TakeCoaching";
 
 /** Real saved audio never falls through to simulated review or mock observations. */
 export function NativeSession({ session, selectedOrdinal }: { session: SessionDetail; selectedOrdinal?: number }) {
@@ -32,7 +33,11 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
   const exporting = useMutation({ mutationFn: () => ipc.exportSession(session.id) });
   const attempts = selectedOrdinal === undefined ? session.attempts : session.attempts.filter((a) => a.ordinal === selectedOrdinal);
   return <div className="space-y-4">
-    <PageHeader title={session.title} description={`${formatLongDay(session.localDate)} · ${session.attemptCount} saved takes · ${formatClock(session.durationMs)}${session.curriculumVersion ? ` · curriculum v${session.curriculumVersion}` : ""}`} />
+    <PageHeader
+      title={session.title}
+      description={`${formatLongDay(session.localDate)} · ${session.attemptCount} saved takes · ${formatClock(session.durationMs)}${session.curriculumVersion ? ` · curriculum v${session.curriculumVersion}` : ""}`}
+      actions={session.attempts.length > 1 ? <Button variant="outline" asChild><Link to={`/sessions/${session.id}/compare`}><Columns2 aria-hidden /> Compare takes</Link></Button> : undefined}
+    />
     {session.prompt && <Panel><p>{session.prompt}</p></Panel>}
     {session.focus && <p className="text-meta"><span className="text-muted-foreground">Your focus for the retakes:</span> {session.focus}</p>}
     {(session.ease || session.takeaway) && (
@@ -44,7 +49,7 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
       </p>
     )}
     {session.conditionsUnavailableReason && <p className="text-meta text-muted-foreground">Task conditions unavailable: {session.conditionsUnavailableReason}</p>}
-    <p className="text-meta text-muted-foreground">Listen, transcribe a take on this computer, review fillers and pauses, and keep your own notes. Coaching feedback is still being developed.</p>
+    <p className="text-meta text-muted-foreground">Listen, transcribe a take, review fillers, pauses and intonation, and keep your own notes. AI feedback on a take is optional: you see the exact text before anything is sent, and audio never leaves this computer.</p>
     {attempts.length === 0 && <p role="status">This take is unavailable.</p>}
     {attempts.map((a) => <Panel key={a.id} className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -87,7 +92,7 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
 /** Player and intonation share one position, so the pitch view follows playback (P.4). */
 function LinkedTake({ attemptId, sessionId }: { attemptId: string; sessionId: string }) {
   const [link] = useState(createPlayerLink);
-  return <><NativeTake assetId={attemptId} link={link} /><IntonationTrack attemptId={attemptId} link={link} /><TakeTranscript attemptId={attemptId} link={link} /><SavePhrase sessionId={sessionId} /></>;
+  return <><NativeTake assetId={attemptId} link={link} /><IntonationTrack attemptId={attemptId} link={link} /><TakeTranscript attemptId={attemptId} link={link} /><SavePhrase sessionId={sessionId} /><TakeCoaching attemptId={attemptId} /></>;
 }
 
 /**
@@ -113,7 +118,7 @@ export function SavePhrase({ sessionId }: { sessionId: string }) {
     </div>
   );
 }
-function NativeTake({ assetId, link }: { assetId: string; link: PlayerLink }) {
+export function NativeTake({ assetId, link }: { assetId: string; link: PlayerLink }) {
   const ipc = useIpc();
   const recording = useQuery({ queryKey: ["recording", assetId], queryFn: () => ipc.getSavedRecording(assetId), retry: false });
   return <QueryView query={recording}>{(r) => <SavedAudio recording={r} link={link} />}</QueryView>;

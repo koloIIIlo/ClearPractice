@@ -1,8 +1,7 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { NavLink, useParams } from "react-router";
 import { useTheme, type ThemePreference } from "@/app/theme";
 import { Page, PageHeader, Panel } from "@/components/page";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -11,7 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useIpc } from "@/lib/ipc";
 import { formatClock } from "@/lib/format";
 import { useInputDevices, usePreferences } from "@/lib/ipc/queries";
-import type { Preferences } from "@/lib/ipc/schemas";
+import type { CoachingModel, Preferences } from "@/lib/ipc/schemas";
 import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,7 +22,7 @@ import { MicrophoneTest } from "./MicrophoneTest";
 import { ApiTranscriptionTest } from "./ApiTranscriptionTest";
 import { ApiCredentialSettings } from "./ApiCredentialSettings";
 import { ApiBudgetStatus } from "./ApiBudgetStatus";
-import { CoachingSpike } from "./CoachingSpike";
+import { COACHING_MODELS, CoachingSpike } from "./CoachingSpike";
 
 const SECTIONS = [
   { id: "audio", label: "Audio" },
@@ -83,14 +82,6 @@ function Section({ title, description, children }: { title: string; description?
       {description && <p className="mt-1 text-meta text-muted-foreground">{description}</p>}
       <div className="mt-4 space-y-4">{children}</div>
     </Panel>
-  );
-}
-
-function Later({ milestone, children }: { milestone: number; children: ReactNode }) {
-  return (
-    <p className="text-meta text-muted-foreground">
-      {children} <span className="whitespace-nowrap">(available from milestone {milestone})</span>
-    </p>
   );
 }
 
@@ -252,26 +243,25 @@ function TranscriptionSettings() {
   );
 }
 
-type CoachingMode = "api" | "local_llm" | "off";
-
 function CoachingSettings() {
-  const [mode, setMode] = useState<CoachingMode>("api");
+  const { preferences, update } = usePreferences();
+  const mode = preferences.coachingMode;
   return (
     <>
       <Section
         title="Coaching provider"
-        description="Independent of transcription. Switching providers never uploads audio or downloads a model."
+        description="Independent of transcription. Switching never uploads audio or downloads a model, and nothing is sent until you approve a preview."
       >
-        <RadioGroup value={mode} onValueChange={(v) => setMode(v as CoachingMode)} className="gap-3">
+        <RadioGroup value={mode} onValueChange={(v) => update({ coachingMode: v as "api" | "off" })} className="gap-3">
           {(
             [
-              ["api", "API", "Your own provider account. Selected text leaves this computer when you ask for feedback."],
-              ["local_llm", "Local LLM", "A server you run yourself on this computer (loopback only)."],
-              ["off", "Off", "No text is sent anywhere. Playback, transcript, and manual review still work."],
+              ["api", "API", "Your own OpenAI account. A take's transcript text and measures leave this computer only when you press Send on a preview.", false],
+              ["local_llm", "Local LLM", "A server you run yourself on this computer (loopback only). Not available yet.", true],
+              ["off", "Off", "No text is sent anywhere and AI feedback is hidden. Playback, transcripts and your own review still work.", false],
             ] as const
-          ).map(([v, l, hint]) => (
-            <Label key={v} htmlFor={`mode-${v}`} className="flex items-start gap-3 font-normal">
-              <RadioGroupItem id={`mode-${v}`} value={v} className="mt-1" />
+          ).map(([v, l, hint, disabled]) => (
+            <Label key={v} htmlFor={`mode-${v}`} className={cn("flex items-start gap-3 font-normal", disabled && "opacity-60")}>
+              <RadioGroupItem id={`mode-${v}`} value={v} className="mt-1" disabled={disabled} />
               <span>
                 <span className="block font-medium">{l}</span>
                 <span className="block text-meta text-muted-foreground">{hint}</span>
@@ -282,43 +272,28 @@ function CoachingSettings() {
       </Section>
 
       {mode === "api" && (
-        <Section title="API connection" description="Requests may be billed by your provider. Their data-retention terms apply to text you send.">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1">
-              <Label htmlFor="api-protocol">Provider</Label>
-              <Select disabled>
-                <SelectTrigger id="api-protocol" className="h-10 w-full"><SelectValue placeholder="OpenAI" /></SelectTrigger>
-                <SelectContent />
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="api-model">Model</Label>
-              <Input id="api-model" className="h-10" disabled placeholder="Chosen per request below: GPT-6 Luna, 6.1 Sol or Astra" />
-            </div>
+        <Section title="API connection" description="Requests may be billed by OpenAI. Their data-retention terms apply to text you send; provider storage is switched off on every request.">
+          <div className="space-y-1">
+            <Label htmlFor="coaching-default-model">Default model</Label>
+            <Select value={preferences.coachingModel} onValueChange={(v) => update({ coachingModel: v as CoachingModel })}>
+              <SelectTrigger id="coaching-default-model" className="h-10 w-full max-w-md"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {COACHING_MODELS.map((m) => <SelectItem key={m.id} value={m.id}>{m.label} · {m.note}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <p className="text-meta text-muted-foreground">Preselected on each request; you can change it there.</p>
           </div>
+          <SwitchRow
+            id="delivery-impressions"
+            label="Delivery impressions (experimental)"
+            hint="Off by default. When on, feedback may say how parts of a take may come across to a listener, citing measured pitch, loudness and pace. Never your feelings, never a score."
+            checked={preferences.deliveryImpressions}
+            onCheckedChange={(on) => update({ deliveryImpressions: on })}
+          />
           <ApiCredentialSettings />
           <ApiBudgetStatus />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1">
-              <Label htmlFor="budget-warn">Monthly warning at</Label>
-              <Input id="budget-warn" className="h-10" disabled placeholder="4.00 USD" />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="budget-stop">Stop new requests at</Label>
-              <Input id="budget-stop" className="h-10" disabled placeholder="e.g. 5.00 USD" />
-            </div>
-          </div>
+          <p className="text-meta text-muted-foreground">Warning at USD 4.00 and stop at USD 5.00 a month, shared with cloud transcription (fixed in this version).</p>
           <CoachingSpike />
-        </Section>
-      )}
-
-      {mode === "local_llm" && (
-        <Section title="Local endpoint" description="Only loopback addresses count as “on this computer”. A LAN or remote server belongs to API mode.">
-          <div className="space-y-1">
-            <Label htmlFor="llm-endpoint">Endpoint</Label>
-            <Input id="llm-endpoint" className="h-10" disabled placeholder="http://127.0.0.1:8080" />
-          </div>
-          <Later milestone={5}>Tested against a llama.cpp-compatible server.</Later>
         </Section>
       )}
     </>

@@ -48,6 +48,10 @@ export function createMockClient(): IpcClient {
     previewCoachingRequest: async () => { throw new IpcError("desktop_required", "API previews are available in the desktop app."); },
     cancelCoachingPreview: async () => {},
     requestCoaching: async () => { throw new IpcError("desktop_required", "API feedback is available in the desktop app."); },
+    previewTakeCoaching: async () => { throw new IpcError("desktop_required", "AI feedback on takes is available in the desktop app."); },
+    requestTakeCoaching: async () => { throw new IpcError("desktop_required", "AI feedback on takes is available in the desktop app."); },
+    stopTakeCoaching: async () => {},
+    listTakeCoaching: async () => [],
     getServiceStatus: () =>
       respond(S.ServiceStatus, {
         transcription: { mode: "local", model: "large-v3-turbo-q5_0", state: "needs_setup" },
@@ -229,6 +233,11 @@ export function createMockClient(): IpcClient {
       const session = sessions.find((s) => s.id === id);
       if (!session) throw new IpcError("not_found", "This session is unavailable.");
       Object.assign(session, ease === null ? {} : { ease }, takeaway === null ? {} : { takeaway });
+    },
+    setPreferredTake: async (id, preferred) => {
+      const session = sessions.find((s) => s.id === id);
+      if (!session) throw new IpcError("not_found", "This session is unavailable.");
+      session.preferredTake = preferred;
     },
     setSessionFocus: async (id, focus) => {
       const session = sessions.find((s) => s.id === id);
