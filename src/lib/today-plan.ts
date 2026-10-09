@@ -5,7 +5,7 @@
  * from your sessions, and the phrase to review is your next due phrase.
  */
 import { PROMPTS } from "@/content/prompts";
-import type { PhraseCard, ProgressSummary, ProgressView, SessionDetail, SessionLength, SessionSummary, TodayPlan } from "./ipc/schemas";
+import type { PhraseCard, ProgressSummary, ProgressView, SessionDetail, SessionLength, SessionSummary, TodayPlan, TransferReview } from "./ipc/schemas";
 
 export const PLAN_STEPS: Record<SessionLength, TodayPlan["steps"]> = {
   standard: [
@@ -26,25 +26,37 @@ export const DAILY_FOCUSES = [
   "Slow down a little on the important words.",
 ] as const;
 
+/** One real-conversation assignment per week (§7 Transfer), in a fixed order. */
+export const TRANSFER_TASKS = [
+  "Explain a recent decision to someone and ask what they understood.",
+  "Tell someone a short story about something that happened this week.",
+  "Ask someone a follow-up question about something they explained, then sum up their answer.",
+  "Explain something from your work or studies to someone outside it.",
+] as const;
+
 /** Days since 1970-01-01 for a YYYY-MM-DD local date (no timezone drift). */
 export function dayNumber(localDate: string): number {
   const [y, m, d] = localDate.split("-").map(Number);
   return Math.floor(Date.UTC(y, m - 1, d) / 86_400_000);
 }
 
-export function buildTodayPlan({ localDate, length, sessions, phrases, latest }: {
+export function buildTodayPlan({ localDate, length, sessions, phrases, latest, reviews = [] }: {
   localDate: string;
   length: SessionLength;
   sessions: SessionSummary[];
   phrases: PhraseCard[];
   /** Details of the newest session, for its takeaway or note. */
   latest: SessionDetail | null;
+  /** Real-conversation reflections; one this week marks the weekly row done (4.17). */
+  reviews?: TransferReview[];
 }): TodayPlan {
   const day = dayNumber(localDate);
   const unfamiliar = PROMPTS.filter((p) => p.conditions.familiarity === "unfamiliar");
   // Monday-based weeks: 1970-01-01 was a Thursday.
   const week = Math.floor((day + 3) / 7);
   const topic = unfamiliar[week % unfamiliar.length];
+  const weekStart = week * 7 - 3;
+  const reflectedThisWeek = reviews.some((r) => { const d = dayNumber(r.localDate); return d >= weekStart && d < weekStart + 7; });
   // Native sessions stay "in progress" after their takes are saved; any session with takes counts.
   const lastCompleted = sessions.find((s) => s.status === "completed") ?? sessions.find((s) => s.status !== "interrupted" && s.attemptCount > 0) ?? null;
   const reflection = latest && lastCompleted && latest.id === lastCompleted.id ? (latest.takeaway?.trim() || latest.notes.trim() || null) : null;
@@ -66,7 +78,7 @@ export function buildTodayPlan({ localDate, length, sessions, phrases, latest }:
         familiarity: "unfamiliar",
         reason: "This week's new topic from the curriculum, so you also practise speaking without rehearsal.",
       },
-      realConversation: { task: "Explain a recent decision to someone and ask what they understood.", done: false },
+      realConversation: { task: TRANSFER_TASKS[week % TRANSFER_TASKS.length], done: reflectedThisWeek },
     },
   };
 }

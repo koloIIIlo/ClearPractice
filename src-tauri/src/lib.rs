@@ -604,6 +604,21 @@ async fn set_prompt_favorite(storage: State<'_, Arc<SessionStorage>>, prompt_id:
 }
 
 #[tauri::command]
+async fn list_transfer_reviews(storage: State<'_, Arc<SessionStorage>>) -> Result<Vec<storage::database::transfer::TransferReview>, String> {
+    with_storage(&storage, |db| db.list_transfer_reviews()).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn add_transfer_review(storage: State<'_, Arc<SessionStorage>>, review: storage::database::transfer::TransferInput) -> Result<storage::database::transfer::TransferReview, String> {
+    with_storage(&storage, move |db| db.add_transfer_review(&review)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+async fn delete_transfer_review(storage: State<'_, Arc<SessionStorage>>, review_id: String) -> Result<(), String> {
+    with_storage(&storage, move |db| db.delete_transfer_review(&review_id)).await.map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
 async fn set_preferred_take(storage: State<'_, Arc<SessionStorage>>, session_id: String, preferred: Option<String>) -> Result<(), String> {
     with_storage(&storage, move |owner| owner.set_preferred_take(&session_id, preferred.as_deref()))
         .await
@@ -2202,6 +2217,9 @@ pub fn run() {
             move_take_to_trash,
             set_session_focus,
             set_preferred_take,
+            list_transfer_reviews,
+            add_transfer_review,
+            delete_transfer_review,
             get_prompt_state,
             add_user_prompt,
             update_user_prompt,

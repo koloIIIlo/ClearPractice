@@ -44,4 +44,20 @@ CREATE TABLE prompt_favorites (
  favorite INTEGER NOT NULL CHECK(favorite IN (0,1)),
  updated_at_ms INTEGER NOT NULL
 ) STRICT;
+-- Real-conversation reflections (4.17, §7 Transfer): no recording of anyone
+-- else. The listener's own words (listener_text) are kept apart from your
+-- reading of the conversation (self_report).
+CREATE TABLE transfer_reviews (
+ id TEXT PRIMARY KEY,
+ local_date TEXT NOT NULL CHECK(local_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+ situation TEXT NOT NULL CHECK(length(trim(situation)) BETWEEN 3 AND 2000),
+ preparation TEXT NOT NULL DEFAULT '',
+ listener_text TEXT NOT NULL DEFAULT '',
+ clarification TEXT NOT NULL DEFAULT '',
+ success TEXT NOT NULL DEFAULT '',
+ self_report TEXT NOT NULL DEFAULT '',
+ next_focus TEXT NOT NULL DEFAULT '',
+ created_at_ms INTEGER NOT NULL,
+ deleted_at_ms INTEGER
+) STRICT;
 PRAGMA user_version=15;

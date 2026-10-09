@@ -198,13 +198,14 @@ function TodayContent({
                 <MessagesSquare aria-hidden className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1 space-y-1">
                   <span className="font-medium">Real conversation</span>
+                  {plan.weekly.realConversation.done && <span className="ml-2 text-meta text-muted-foreground">· reflection saved this week</span>}
                   <p>{plan.weekly.realConversation.task}</p>
                   <p className="text-meta text-muted-foreground">
                     Afterwards, note what the listener understood. No recording of anyone else is needed.
                   </p>
                 </div>
                 <Button variant="outline" size="sm" asChild>
-                  <Link to="/progress?view=real">Add reflection</Link>
+                  <Link to="/progress?view=real">{plan.weekly.realConversation.done ? "Add another" : "Add reflection"}</Link>
                 </Button>
               </li>
             </ul>

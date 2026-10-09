@@ -29,6 +29,7 @@ export function createMockClient(): IpcClient {
   const phrases = structuredClone(data.phrases);
   const prompts = structuredClone(data.prompts);
   const sessions = structuredClone(data.sessions);
+  const transferReviews: S.TransferReview[] = [];
   const trash = new Map<string, { session: (typeof sessions)[number]; deletedAtMs: number }>();
   let retentionDays: S.TrashRetentionDays = 30;
   let preferences: S.Preferences = { ...S.DEFAULT_PREFERENCES };
@@ -97,6 +98,19 @@ export function createMockClient(): IpcClient {
       const p = prompts.find((x) => x.id === promptId);
       if (!p) throw new IpcError("not_found", "Prompt not found");
       p.favorite = favorite;
+    },
+    listTransferReviews: async () => [...transferReviews].sort((a, b) => b.localDate.localeCompare(a.localDate) || b.createdAt.localeCompare(a.createdAt)),
+    addTransferReview: async (input) => {
+      if (input.situation.trim().length < 3) throw new IpcError("invalid", "Describe the situation in a few words.");
+      const trimmed = Object.fromEntries(Object.entries(input).map(([k, v]) => [k, v.trim()])) as S.TransferInput;
+      const review: S.TransferReview = { ...trimmed, id: `transfer-${Date.now()}-${transferReviews.length}`, createdAt: new Date().toISOString() };
+      transferReviews.push(review);
+      return review;
+    },
+    deleteTransferReview: async (reviewId) => {
+      const at = transferReviews.findIndex((r) => r.id === reviewId);
+      if (at < 0) throw new IpcError("not_found", "This reflection no longer exists.");
+      transferReviews.splice(at, 1);
     },
     addPrompt: async (input) => {
       const prompt: S.PracticePrompt = { id: `user-prompt-${Date.now()}`, text: input.text.trim(), tags: [...new Set(input.tags)], conditions: { ...input.conditions }, favorite: false, source: "user" };

@@ -95,6 +95,9 @@ export function createNativeClient(): IpcClient {
     addPrompt: async (prompt) => ({ ...(await command("add_user_prompt", S.PromptState.shape.userPrompts.element, { prompt })), favorite: false, source: "user" as const }),
     updatePrompt: async (promptId, prompt) => ({ ...(await command("update_user_prompt", S.PromptState.shape.userPrompts.element, { promptId, prompt })), favorite: false, source: "user" as const }),
     deletePrompt: async (promptId) => { await command("delete_user_prompt", z.null(), { promptId }); },
+    listTransferReviews: () => command("list_transfer_reviews", S.TransferReview.array()),
+    addTransferReview: (review) => command("add_transfer_review", S.TransferReview, { review }),
+    deleteTransferReview: async (reviewId) => { await command("delete_transfer_review", z.null(), { reviewId }); },
     listPhrases: () => command("list_phrases", S.PhraseCard.array()),
     // The status line from your real settings, not sample data (4.12).
     getServiceStatus: async () => {
@@ -135,13 +138,14 @@ export function createNativeClient(): IpcClient {
     },
     // Today's plan from your own sessions and phrases plus the curriculum rotation (4.12).
     getTodayPlan: async (length) => {
-      const [sessions, phrases] = await Promise.all([
+      const [sessions, phrases, reviews] = await Promise.all([
         command("list_sessions", S.SessionSummary.array(), { filter: null }),
         command("list_phrases", S.PhraseCard.array()),
+        command("list_transfer_reviews", S.TransferReview.array()).catch(() => []),
       ]);
       const newest = sessions.find((s) => s.status === "completed") ?? sessions.find((s) => s.status !== "interrupted" && s.attemptCount > 0);
       const latest = newest ? await command("get_session", S.SessionDetail, { sessionId: newest.id }).catch(() => null) : null;
-      return S.TodayPlan.parse(buildTodayPlan({ localDate: toLocalDate(new Date()), length, sessions, phrases, latest }));
+      return S.TodayPlan.parse(buildTodayPlan({ localDate: toLocalDate(new Date()), length, sessions, phrases, latest, reviews }));
     },
     reviewPhrase: (phraseId, rating) => command("review_phrase", S.PhraseCard, { phraseId, rating }),
     addPhrase: (phrase, sourceSessionId) => command("add_phrase", S.PhraseCard, { phrase, sourceSessionId: sourceSessionId ?? null }),

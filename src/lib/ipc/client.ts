@@ -12,6 +12,8 @@ import type {
   PhraseRating,
   PhraseInput,
   PromptInput,
+  TransferInput,
+  TransferReview,
   PracticePrompt,
   ProgressSummary,
   ProgressView,
@@ -95,6 +97,10 @@ export interface IpcClient {
   setPromptFavorite(promptId: string, favorite: boolean): Promise<void>;
   /** Your own prompts (4.13). Sessions keep the text they used when a prompt changes. */
   addPrompt(prompt: PromptInput): Promise<PracticePrompt>;
+  /** Real-conversation reflections (4.17), newest first. */
+  listTransferReviews(): Promise<TransferReview[]>;
+  addTransferReview(review: TransferInput): Promise<TransferReview>;
+  deleteTransferReview(reviewId: string): Promise<void>;
   updatePrompt(promptId: string, prompt: PromptInput): Promise<PracticePrompt>;
   deletePrompt(promptId: string): Promise<void>;
 

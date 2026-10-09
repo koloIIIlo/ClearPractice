@@ -78,6 +78,14 @@ export const PracticePrompt = z.object({
   source: z.enum(["bundled", "user"]),
 });
 export type PracticePrompt = z.infer<typeof PracticePrompt>;
+
+/** A real-conversation reflection (4.17). `listenerText` is the listener's own words; `selfReport` is yours. */
+export const TransferReview = z.object({
+  id: Id, localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), situation: z.string().min(1), preparation: z.string(),
+  listenerText: z.string(), clarification: z.string(), success: z.string(), selfReport: z.string(), nextFocus: z.string(), createdAt: z.string(),
+}).strict();
+export type TransferReview = z.infer<typeof TransferReview>;
+export type TransferInput = Omit<TransferReview, "id" | "createdAt">;
 /** What you write for your own prompt (4.13). */
 export type PromptInput = { text: string; tags: PromptTag[]; conditions: TaskConditions };
 /** Your prompts and favourite marks, stored natively; bundled prompts come from the content pack. */
