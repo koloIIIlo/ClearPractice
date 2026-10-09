@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
 import { CheckCircle2, Circle, Info, Loader2, Mic, RefreshCw, Square } from "lucide-react";
 import { toast } from "sonner";
 import { Page, Panel, QueryView } from "@/components/page";
@@ -30,10 +30,30 @@ import { describeDemands } from "@/features/exercises/describe";
 import { useRecorder, type Recorder } from "./recorder";
 import { LiveWaveform } from "@/components/live-waveform";
 import { RecordingLibrary, SavedAudio } from "./RecordingLibrary";
+import { NativeTake } from "@/features/sessions/NativeSession";
+import { TakeTranscript } from "@/features/review/TakeTranscript";
+import { createPlayerLink } from "@/features/review/player-link";
+import { useQuery } from "@tanstack/react-query";
+import type { SavedRecording } from "@/lib/ipc/schemas";
 import { MoveTakeToTrashButton } from "@/features/sessions/TrashPage";
 import { PASSAGES, type Passage } from "@/content/passages";
 import { BASELINE_PROMPT, CURRICULUM_VERSION } from "@/content/prompts";
 import { passagePrompt, ThoughtGroupPassage } from "./ThoughtGroupPassage";
+
+/**
+ * A take in the Studio with its transcript underneath (user request
+ * 2026-10-09): transcribe without leaving, so the follow-up question and
+ * AI requests that need a transcript work in place.
+ */
+function TakeWithTranscript({ attemptId, recording }: { attemptId: string; recording?: SavedRecording }) {
+  const [link] = useState(createPlayerLink);
+  return (
+    <div className="space-y-3">
+      {recording ? <SavedAudio recording={recording} link={link} /> : <NativeTake assetId={attemptId} link={link} />}
+      <TakeTranscript attemptId={attemptId} link={link} />
+    </div>
+  );
+}
 
 export function StudioPage() {
   const { exerciseId } = useParams();
@@ -73,7 +93,12 @@ export function StudioPage() {
 function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise: ExerciseDefinition; prompt: PracticePrompt; passage?: Passage; phrase?: PhraseCard; phrases?: PhraseCard[] }) {
   const ipc = useIpc();
   const native = ipc.recordingMode === "native";
-  const [sessionId] = useState(() => crypto.randomUUID());
+  const [params] = useSearchParams();
+  // Continue an earlier session (?session=<id>): new takes are added to it.
+  const continuing = params.get("session");
+  const [sessionId] = useState(() => continuing ?? crypto.randomUUID());
+  const earlier = useQuery({ queryKey: ["session", continuing ?? ""], queryFn: () => ipc.getSession(continuing!), enabled: native && !!continuing, retry: false });
+  const earlierTakes = (earlier.data?.attempts ?? []).filter((a) => !a.audioUnavailableReason);
   const devices = useInputDevices();
   const { preferences, update: updatePreferences } = usePreferences();
   const preferred = devices.data?.find((device) => device.id === preferences.inputDeviceId && device.available)?.id;
@@ -87,7 +112,10 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
     exerciseType: exercise.type, prompt: prompt.text, outline, conditions: prompt.conditions });
   const [announcement, setAnnouncement] = useState("");
   const [trashed, setTrashed] = useState<Set<string>>(() => new Set());
-  const [params] = useSearchParams();
+  const newIds = new Set(rec.takes.map((t) => t.asset.assetId));
+  const shownEarlier = earlierTakes.filter((a) => !newIds.has(a.id));
+  const allTakeCount = shownEarlier.length + rec.takes.length;
+  const lastTakeId = rec.takes.at(-1)?.asset.assetId ?? shownEarlier.at(-1)?.id;
   const inSequence = params.get("seq") === "1";
   const studioRef = useRef<HTMLDivElement>(null);
 
@@ -197,7 +225,7 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
       )}
       {exercise.type === "imitate" && <ImitationPanel sessionId={sessionId} hasTake={rec.takes.length > 0} locked={locked} native={native} lastTakeAssetId={rec.takes.at(-1)?.asset.assetId} />}
       {exercise.type === "repeat" && (
-        <FollowUpPanel prompt={prompt} sessionId={sessionId} lastTakeId={rec.takes.at(-1)?.asset.assetId} takeCount={rec.takes.length} native={native} locked={locked} />
+        <FollowUpPanel prompt={prompt} sessionId={sessionId} lastTakeId={lastTakeId} takeCount={allTakeCount} native={native} locked={locked} />
       )}
       {exercise.type === "repeat" && !prompt.conditions.followUp && <RepeatFocus sessionId={sessionId} takeCount={rec.takes.length} locked={locked} native={native} />}
 
@@ -283,7 +311,28 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
         <h2 id="takes-heading" className="mb-3 font-semibold">
           Takes
         </h2>
+        {continuing && earlier.data && (
+          <p className="mb-3 text-meta text-muted-foreground">
+            Continuing “{earlier.data.title}”: new takes are added to this session. <Link className="underline" to={`/sessions/${continuing}`}>Open the session</Link>
+          </p>
+        )}
+        {continuing && earlier.error && <p role="alert" className="mb-3 text-meta text-destructive">{earlier.error.message} New takes start a new session.</p>}
+        {shownEarlier.length > 0 && (
+          <ol className="mb-3 divide-y rounded-panel border bg-card" aria-label="Earlier takes in this session">
+            {shownEarlier.map((a) => (
+              <li key={a.id} className="space-y-3 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 aria-hidden className="size-4 text-muted-foreground" />
+                  <span className="flex-1">Take {a.ordinal} <span className="text-meta text-muted-foreground">· earlier</span></span>
+                  <span className="text-meta text-muted-foreground tabular-nums">{formatClock(a.durationMs)}</span>
+                </div>
+                <TakeWithTranscript attemptId={a.id} />
+              </li>
+            ))}
+          </ol>
+        )}
         {rec.takes.length === 0 ? (
+          shownEarlier.length === 0 && 
           <p className="text-muted-foreground">No takes yet. {native ? "Each take is saved as soon as you stop." : "This preview simulates the recording flow."}</p>
         ) : (
           <ol className="divide-y rounded-panel border bg-card">
@@ -305,6 +354,8 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
                 </div>
                 {trashed.has(t.asset.assetId) ? (
                   <p className="text-meta text-muted-foreground">Moved to Trash. Restore it from the toast or from Sessions → Trash.</p>
+                ) : native ? (
+                  <TakeWithTranscript attemptId={t.asset.assetId} recording={t.asset} />
                 ) : (
                   <SavedAudio recording={t.asset} />
                 )}
@@ -312,7 +363,7 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
             ))}
           </ol>
         )}
-        {rec.takes.length > 0 && !locked && (
+        {allTakeCount > 0 && !locked && (
           <div className="mt-4 flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => navigate("/")}>
               Return to Today

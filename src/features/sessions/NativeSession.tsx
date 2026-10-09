@@ -14,10 +14,26 @@ import { SavedAudio } from "@/features/practice/RecordingLibrary";
 import { MoveTakeToTrashButton, MoveToTrashButton } from "./TrashPage";
 import { TakeTranscript } from "@/features/review/TakeTranscript";
 import { IntonationTrack } from "@/features/review/IntonationTrack";
-import { BookmarkPlus, Columns2, Download } from "lucide-react";
+import { BookmarkPlus, Columns2, Download, Mic } from "lucide-react";
 import { PhraseForm } from "@/features/phrases/PhrasesPage";
 import { TakeCoaching } from "@/features/review/TakeCoaching";
 import { Checkbox } from "@/components/ui/checkbox";
+
+/**
+ * Where to continue a session (user request 2026-10-09): the same exercise and
+ * prompt, so the next take is added to this session. Null when the session
+ * did not record what it practised.
+ */
+export function continueUrl(session: SessionDetail): string | null {
+  const type = session.exerciseType;
+  if (!type) return null;
+  const base = `/practice/ex-${type.replace("_", "-")}?session=${encodeURIComponent(session.id)}`;
+  const content = session.contentId;
+  if (type === "imitate") return base;
+  if (!content) return null;
+  const key = type === "thought_groups" ? "passage" : type === "expression" ? "phrase" : "prompt";
+  return `${base}&${key}=${encodeURIComponent(content)}`;
+}
 
 /** Real saved audio never falls through to simulated review or mock observations. */
 export function NativeSession({ session, selectedOrdinal }: { session: SessionDetail; selectedOrdinal?: number }) {
@@ -36,8 +52,15 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
   return <div className="space-y-4">
     <PageHeader
       title={session.title}
-      description={`${formatLongDay(session.localDate)} · ${session.attemptCount} saved takes · ${formatClock(session.durationMs)}${session.curriculumVersion ? ` · curriculum v${session.curriculumVersion}` : ""}`}
-      actions={session.attempts.length > 1 ? <Button variant="outline" asChild><Link to={`/sessions/${session.id}/compare`}><Columns2 aria-hidden /> Compare takes</Link></Button> : undefined}
+      description={`${formatLongDay(session.localDate)} · ${session.attemptCount} saved ${session.attemptCount === 1 ? "take" : "takes"} · ${formatClock(session.durationMs)}${session.curriculumVersion ? ` · curriculum v${session.curriculumVersion}` : ""}`}
+      actions={
+        <div className="flex flex-wrap gap-2">
+          {continueUrl(session) && (
+            <Button asChild><Link to={continueUrl(session)!} state={{ section: "sessions" }}><Mic aria-hidden /> Continue in the Studio</Link></Button>
+          )}
+          {session.attempts.length > 1 && <Button variant="outline" asChild><Link to={`/sessions/${session.id}/compare`}><Columns2 aria-hidden /> Compare takes</Link></Button>}
+        </div>
+      }
     />
     {session.prompt && <Panel><p>{session.prompt}</p></Panel>}
     {session.focus && <p className="text-meta"><span className="text-muted-foreground">Your focus for the retakes:</span> {session.focus}</p>}

@@ -65,3 +65,14 @@ it("saves a phrase from a session, starting from the selected transcript words (
   await waitFor(() => expect(client.addPhrase).toHaveBeenCalledWith(expect.objectContaining({ original: "I want to say my opinion", expression: "I'd like to share my view" }), "session-7"));
   expect(await screen.findByRole("link", { name: "Open Phrases" })).toHaveAttribute("href", "/phrases");
 });
+
+it("continues a session in the Studio with the same exercise and prompt, so the next take joins it", async () => {
+  const { continueUrl } = await import("./NativeSession");
+  const base = { id: "s 1", exerciseType: "repeat", contentId: "p-decision" } as never;
+  expect(continueUrl(base)).toBe("/practice/ex-repeat?session=s%201&prompt=p-decision");
+  expect(continueUrl({ ...(base as object), exerciseType: "thought_groups", contentId: "tg-tests" } as never)).toBe("/practice/ex-thought-groups?session=s%201&passage=tg-tests");
+  expect(continueUrl({ ...(base as object), exerciseType: "expression", contentId: "ph-1" } as never)).toBe("/practice/ex-expression?session=s%201&phrase=ph-1");
+  expect(continueUrl({ ...(base as object), exerciseType: "imitate", contentId: null } as never)).toBe("/practice/ex-imitate?session=s%201");
+  expect(continueUrl({ ...(base as object), contentId: null } as never)).toBeNull();
+  expect(continueUrl({ ...(base as object), exerciseType: null } as never)).toBeNull();
+});
