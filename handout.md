@@ -72,6 +72,8 @@ E (environment) → **M0 Feasibility** (audio, Whisper, text API spike; optional
 
 **Late on 9 October (completeness pass):** Settings has no dead controls left: a working daily reminder (in-app, once a day, only if you have not practised), plain Languages facts, the setup-file note instead of a disabled Acceleration control, and Transcription Off. Hear it plays filler words timed by a cloud transcript. Practice complete can save a phrase. Thought groups has Listen with an offline Windows voice. Coaching prices are editable with a date. AI follow-ups work with the local model. Ctrl+K searches real phrases, all prompts and full guide text. The session export now carries transcripts, corrections, measures and AI feedback. Today's status line shows the real coaching mode and last backup. Tests: Rust 120, Vitest 139+.
 
+**Night of 9 October:** installers built (`src-tauri/target/release/bundle/nsis/ClearPractice_0.1.0_x64-setup.exe` and the `.msi`, about 212 MB each with the offline WebView2 installer; build downloads kept on D: via a junction from `%LOCALAPPDATA%	auri` to `D:\Tools	auri-cache`). Gate P passed against Praat 7.0.02 (`D:\Tools\praat`): 0.30% octave errors, 99.6% within 1 semitone on 11 recordings; YIN 0.15 kept. A click-through of the whole routine in the browser preview found and fixed: Listen and imitate showing an unrelated prompt, and Practice complete listing skipped steps as unavailable.
+
 ## 5. Answers and decisions so far
 
 | Topic | Answer / decision |
