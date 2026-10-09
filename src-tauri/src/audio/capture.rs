@@ -17,9 +17,11 @@ use std::{
 
 type Result<T> = std::result::Result<T, String>;
 const BLOCK_SAMPLES: usize = 4096;
-const QUEUE_BLOCKS: usize = 16;
-/// Device-level glitch reports tolerated per take before it is stopped.
-const MAX_GLITCHES: u32 = 20;
+/// About 20 s of 48 kHz stereo (8 MiB). Each second of audio is written and
+/// synced to disk as its own chunk; on a busy or slow drive, or while antivirus
+/// scans the new file, one sync can take longer than a second. 16 blocks (0.7 s)
+/// stopped real takes on 9 Oct; the queue only overflows if the disk stalls ~20 s.
+const QUEUE_BLOCKS: usize = 512;
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -296,7 +298,6 @@ where
     let channels = config.channels as usize;
     let block_size = (BLOCK_SAMPLES / channels) * channels;
     let error_fault = fault.clone();
-    let mut glitches = 0u32;
     device
         .build_input_stream::<T, _, _>(
             config,
@@ -328,13 +329,11 @@ where
                 #[cfg(test)]
                 eprintln!("Capture diagnostic: {error}");
                 if error.kind() == cpal::ErrorKind::Xrun {
-                    // WASAPI flags a "discontinuity" for brief glitches, often right
-                    // after the stream starts. Only a device that keeps glitching
-                    // stops the take; a single report lost a few milliseconds at most.
-                    glitches += 1;
-                    if glitches > MAX_GLITCHES {
-                        error_fault.store(2, Ordering::Release);
-                    }
+                    // WASAPI flags a "discontinuity" for brief glitches (often at the
+                    // start, and repeatedly on some USB, Bluetooth or array mics). Each
+                    // loses a few milliseconds at most, so the take continues; a
+                    // device that really stops sending audio is caught by the 3 s
+                    // silence check in the writer loop.
                     return;
                 }
                 error_fault.store(1, Ordering::Release);
@@ -531,7 +530,7 @@ fn run_capture(
     }
     match fault.load(Ordering::Acquire) {
         1 => return Err("The microphone disconnected or stopped sending audio. Completed chunks are recoverable.".into()),
-        2 => return Err("Recording could not keep up with incoming audio. The take was stopped; completed chunks are recoverable.".into()),
+        2 => return Err("Saving to the data folder fell more than 20 seconds behind, so the take was stopped. Completed chunks are recoverable. Check that the drive is not busy or full.".into()),
         3 => return Err("The microphone returned incomplete audio frames. Completed chunks are recoverable.".into()),
         _ => {},
     }
