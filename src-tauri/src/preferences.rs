@@ -28,13 +28,17 @@ pub struct Preferences {
     pub goal_note: String,
     /// Where the difficulty shows: "english" or "both" (also your strongest language).
     pub difficulty_language: Option<String>,
+    /// Local LLM (5.4): a loopback server address and an optional model name.
+    pub local_endpoint: String,
+    pub local_model: String,
 }
 
 impl Default for Preferences {
     fn default() -> Self {
         Self { recording_sounds: true, recording_shortcuts: true, input_device_id: None, session_length: "standard".into(),
             coaching_mode: "api".into(), coaching_model: CoachingModel::default(), delivery_impressions: false,
-            onboarded: false, goals: Vec::new(), goal_note: String::new(), difficulty_language: None }
+            onboarded: false, goals: Vec::new(), goal_note: String::new(), difficulty_language: None,
+            local_endpoint: "http://127.0.0.1:8080".into(), local_model: String::new() }
     }
 }
 
@@ -42,8 +46,13 @@ fn validate(mut p: Preferences) -> Result<Preferences, String> {
     if !matches!(p.session_length.as_str(), "standard" | "short") {
         return Err("Unknown session length.".into());
     }
-    if !matches!(p.coaching_mode.as_str(), "api" | "off") {
+    if !matches!(p.coaching_mode.as_str(), "api" | "local" | "off") {
         return Err("Unknown coaching mode.".into());
+    }
+    p.local_endpoint = crate::api::local_llm::validate_endpoint(&p.local_endpoint)?;
+    p.local_model = p.local_model.trim().to_string();
+    if p.local_model.chars().count() > 120 || p.local_model.chars().any(char::is_control) {
+        return Err("Keep the model name under 120 characters.".into());
     }
     p.goals.dedup();
     if p.goals.len() > 4 || p.goals.iter().any(|g| !matches!(g.as_str(), "clarity" | "hesitation" | "phrasing" | "confidence")) {
@@ -91,7 +100,9 @@ mod tests {
         assert_eq!(save(&db, chosen.clone()).unwrap(), chosen);
         assert_eq!(load(&db).unwrap(), chosen);
         assert!(save(&db, Preferences { session_length: "long".into(), ..Default::default() }).is_err());
-        assert!(save(&db, Preferences { coaching_mode: "local".into(), ..Default::default() }).is_err());
+        assert!(save(&db, Preferences { coaching_mode: "cloud".into(), ..Default::default() }).is_err());
+        assert!(save(&db, Preferences { coaching_mode: "local".into(), local_endpoint: "http://192.168.0.9:8080".into(), ..Default::default() }).is_err(), "loopback only");
+        assert_eq!(save(&db, Preferences { coaching_mode: "local".into(), local_endpoint: "http://localhost:8080/".into(), ..Default::default() }).unwrap().local_endpoint, "http://localhost:8080");
         assert!(save(&db, Preferences { goals: vec!["fluency score".into()], ..Default::default() }).is_err());
         let goals = save(&db, Preferences { goals: vec!["clarity".into(), "hesitation".into()], goal_note: "  Explain designs at work ".into(), difficulty_language: Some("both".into()), onboarded: true, ..Default::default() }).unwrap();
         assert_eq!((goals.goal_note.as_str(), goals.onboarded), ("Explain designs at work", true));

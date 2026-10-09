@@ -685,13 +685,16 @@ export const Preferences = z
     recordingShortcuts: z.boolean(),
     inputDeviceId: z.string().min(1).max(512).nullable(),
     sessionLength: SessionLength,
-    coachingMode: z.enum(["api", "off"]),
+    coachingMode: z.enum(["api", "local", "off"]),
     coachingModel: CoachingModel,
     deliveryImpressions: z.boolean(),
     onboarded: z.boolean(),
     goals: z.array(z.enum(["clarity", "hesitation", "phrasing", "confidence"])).max(4),
     goalNote: z.string().max(300),
     difficultyLanguage: z.enum(["english", "both"]).nullable(),
+    /** Local LLM (5.4): a server on this computer only. */
+    localEndpoint: z.string().min(1),
+    localModel: z.string(),
   })
   .strict();
 export type Preferences = z.infer<typeof Preferences>;
@@ -699,6 +702,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   recordingSounds: true, recordingShortcuts: true, inputDeviceId: null, sessionLength: "standard",
   coachingMode: "api", coachingModel: "gpt-6-luna", deliveryImpressions: false,
   onboarded: false, goals: [], goalNote: "", difficultyLanguage: null,
+  localEndpoint: "http://127.0.0.1:8080", localModel: "",
 };
 
 export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api"]), provider: AudioProvider }).strict();
@@ -768,10 +772,11 @@ export type BudgetSummary = z.infer<typeof BudgetSummary>;
 
 export const CoachingPreview = z.object({
   version: z.literal(1), requestId: Id, payloadSha256: z.string().regex(/^[a-f0-9]{64}$/),
-  recipient: z.literal("https://api.openai.com/v1/responses"), model: z.string().min(1),
+  /** OpenAI's endpoint, or a local model server's address on this computer (5.4). */
+  recipient: z.string().min(1), model: z.string().min(1),
   selectedText: z.string().min(1), prompt: z.string(), focus: z.string(), instructions: z.string(),
   maximumOutputTokens: z.number().int().positive(), estimatedMaximumCostMicroUsd: MicroUsd,
-  priceDate: z.string(), priceSource: z.url(), inputUsdPerMillionTokens: z.string(), outputUsdPerMillionTokens: z.string(),
+  priceDate: z.string(), priceSource: z.string(), inputUsdPerMillionTokens: z.string(), outputUsdPerMillionTokens: z.string(),
   costExplanation: z.string(), expiresAtMs: z.number().int().nonnegative(),
 }).strict();
 export type CoachingPreview = z.infer<typeof CoachingPreview>;
@@ -798,7 +803,7 @@ export const TakeFeedback = z.object({
 export type TakeFeedback = z.infer<typeof TakeFeedback>;
 
 export const CoachingRun = z.object({
-  id: Id, attemptId: Id, revisionId: Id, provider: z.literal("OpenAI"), model: z.string().min(1),
+  id: Id, attemptId: Id, revisionId: Id, provider: z.enum(["OpenAI", "Local LLM"]), model: z.string().min(1),
   payloadSha256: z.string().regex(/^[a-f0-9]{64}$/), sentText: z.string().min(1), transcriptText: z.string().min(1),
   deliveryImpressions: z.boolean(), feedback: TakeFeedback,
   inputTokens: z.number().int().nonnegative().nullable(), outputTokens: z.number().int().nonnegative().nullable(),

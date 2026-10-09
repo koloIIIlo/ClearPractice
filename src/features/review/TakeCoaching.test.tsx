@@ -122,3 +122,25 @@ it("is hidden when coaching is set to Off", async () => {
   await waitFor(() => expect(screen.queryByRole("region", { name: "AI feedback" })).not.toBeInTheDocument());
   expect(screen.queryByRole("button", { name: /AI feedback/ })).not.toBeInTheDocument();
 });
+
+it("in Local LLM mode, previews a request to this computer that is free and needs no key (5.4)", async () => {
+  const user = userEvent.setup();
+  const local = preview(null);
+  let stored: CoachingRun[] = [];
+  local.preview = { ...local.preview, recipient: "http://127.0.0.1:8080/v1/chat/completions", model: "qwen3-8b", estimatedMaximumCostMicroUsd: 0, costExplanation: "Runs on this computer: nothing leaves it and nothing is billed." };
+  const client = setup({
+    getPreferences: async () => ({ ...DEFAULT_PREFERENCES, coachingMode: "local" }),
+    getApiKeyStatus: async () => ({ provider: "OpenAI", present: false }),
+    listTakeCoaching: async () => stored,
+    previewTakeCoaching: vi.fn(async () => local),
+    requestTakeCoaching: vi.fn(async () => { stored = [{ ...run("take-1--1"), provider: "Local LLM" as const, model: "qwen3-8b", estimatedCostMicroUsd: 0, costUnavailableReason: null }]; return stored[0]; }),
+  });
+  await user.click(await screen.findByRole("button", { name: "Get AI feedback…" }));
+  expect(await screen.findByText("Local model on this computer · free")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Model")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Preview request" }));
+  expect((await screen.findAllByText(/nothing leaves it and nothing is billed/)).length).toBeGreaterThan(0);
+  await user.click(screen.getByRole("button", { name: "Send to the local model" }));
+  expect(client.requestTakeCoaching).toHaveBeenCalled();
+  expect(await screen.findByText(/qwen3-8b \(local\)/)).toBeInTheDocument();
+});

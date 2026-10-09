@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { Input } from "@/components/ui/input";
 import { NavLink, useParams } from "react-router";
 import { useTheme, type ThemePreference } from "@/app/theme";
 import { Page, PageHeader, Panel } from "@/components/page";
@@ -254,11 +256,11 @@ function CoachingSettings() {
         title="Coaching provider"
         description="Independent of transcription. Switching never uploads audio or downloads a model, and nothing is sent until you approve a preview."
       >
-        <RadioGroup value={mode} onValueChange={(v) => update({ coachingMode: v as "api" | "off" })} className="gap-3">
+        <RadioGroup value={mode} onValueChange={(v) => update({ coachingMode: v as Preferences["coachingMode"] })} className="gap-3">
           {(
             [
               ["api", "API", "Your own OpenAI account. A take's transcript text and measures leave this computer only when you press Send on a preview.", false],
-              ["local_llm", "Local LLM", "A server you run yourself on this computer (loopback only). Not available yet.", true],
+              ["local", "Local LLM", "A llama.cpp-compatible server you run on this computer (loopback only). Nothing leaves the computer and nothing is billed.", false],
               ["off", "Off", "No text is sent anywhere and AI feedback is hidden. Playback, transcripts and your own review still work.", false],
             ] as const
           ).map(([v, l, hint, disabled]) => (
@@ -272,6 +274,8 @@ function CoachingSettings() {
           ))}
         </RadioGroup>
       </Section>
+
+      {mode === "local" && <LocalModelSettings />}
 
       {mode === "api" && (
         <Section title="API connection" description="Requests may be billed by OpenAI. Their data-retention terms apply to text you send; provider storage is switched off on every request.">
@@ -299,6 +303,39 @@ function CoachingSettings() {
         </Section>
       )}
     </>
+  );
+}
+
+/** Local LLM (5.4, 5.10): address on this computer, optional model name, Test connection. */
+function LocalModelSettings() {
+  const ipc = useIpc();
+  const { preferences, update } = usePreferences();
+  const [endpoint, setEndpoint] = useState(preferences.localEndpoint);
+  const [model, setModel] = useState(preferences.localModel);
+  const test = useMutation({ mutationFn: () => ipc.testLocalLlm(endpoint) });
+  const save = useMutation({ mutationFn: () => ipc.setPreferences({ ...preferences, localEndpoint: endpoint, localModel: model }) });
+  return (
+    <Section title="Local model" description="Only a server on this computer (127.0.0.1, localhost or [::1]) is accepted. A server elsewhere belongs to API mode. Nothing is downloaded by the app.">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label htmlFor="llm-endpoint">Server address</Label>
+          <Input id="llm-endpoint" value={endpoint} placeholder="http://127.0.0.1:8080" onChange={(e) => { setEndpoint(e.target.value); test.reset(); save.reset(); }} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="llm-model">Model name (optional)</Label>
+          <Input id="llm-model" value={model} placeholder="The server's loaded model" onChange={(e) => { setModel(e.target.value); save.reset(); }} />
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" disabled={test.isPending} onClick={() => test.mutate()}>{test.isPending ? "Testing…" : "Test connection"}</Button>
+        <Button disabled={save.isPending || (endpoint === preferences.localEndpoint && model === preferences.localModel)}
+          onClick={() => save.mutate(undefined, { onSuccess: (saved) => update({ localEndpoint: saved.localEndpoint, localModel: saved.localModel }) })}>Save</Button>
+      </div>
+      {test.data && <p role="status" className="text-meta">Connected. {test.data.length ? `Models: ${test.data.join(", ")}.` : "The server listed no models; its loaded model is used."}</p>}
+      {(test.error ?? save.error) && <p role="alert" className="text-meta text-destructive">{(test.error ?? save.error)!.message}</p>}
+      {save.isSuccess && <p role="status" className="text-meta">Saved.</p>}
+      <p className="text-meta text-muted-foreground">For example, start llama.cpp with <code>llama-server -m your-model.gguf --port 8080</code>. Feedback requests are previewed the same way; quotes are checked against your transcript.</p>
+    </Section>
   );
 }
 

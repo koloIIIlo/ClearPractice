@@ -53,6 +53,7 @@ export function createMockClient(): IpcClient {
     requestTakeCoaching: async () => { throw new IpcError("desktop_required", "AI feedback on takes is available in the desktop app."); },
     stopTakeCoaching: async () => {},
     listTakeCoaching: async () => [],
+    testLocalLlm: async () => { throw new IpcError("desktop_required", "A local model is tested from the desktop app."); },
     buildDiagnostics: async () => { throw new IpcError("desktop_required", "Diagnostic reports are made in the desktop app."); },
     saveDiagnostics: async () => null,
     getStorageUsage: async () => { throw new IpcError("desktop_required", "Storage is measured in the desktop app."); },

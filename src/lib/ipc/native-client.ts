@@ -242,6 +242,7 @@ export function createNativeClient(): IpcClient {
     stopTakeCoaching: async (requestId) => { await invoke("cancel_api_transcription", { requestId }); },
     listTakeCoaching: (attemptId) => command("list_take_coaching", S.CoachingRun.array(), { attemptId }),
     getStorageUsage: () => command("get_storage_usage", S.StorageCategory.array()),
+    testLocalLlm: (endpoint) => command("test_local_llm", z.string().array(), { endpoint }),
     buildDiagnostics: () => command("build_diagnostics", z.string()),
     saveDiagnostics: (text) => command("save_diagnostics", z.string().nullable(), { text }),
     clearCache: () => command("clear_cache", z.number().int().nonnegative()),

@@ -14,6 +14,9 @@ import { formatLongDay } from "@/lib/format";
 import { COACHING_MODELS } from "@/features/settings/CoachingSpike";
 import { money } from "./ApiTranscribe";
 
+/** A preview addressed to a local model server rather than OpenAI. */
+const isLocal = (p: TakeCoachingPreview) => !p.preview.recipient.startsWith("https://api.openai.com/");
+
 const time = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 
 /**
@@ -60,6 +63,7 @@ export function TakeCoaching({ attemptId }: { attemptId: string }) {
 
   if (prefs.coachingMode === "off") return null;
   const hasTranscript = !!transcript.data?.revision;
+  const local = prefs.coachingMode === "local";
   const currentRevision = transcript.data?.correction?.id ?? transcript.data?.revision?.id ?? null;
   const list = runs.data ?? [];
 
@@ -111,6 +115,9 @@ export function TakeCoaching({ attemptId }: { attemptId: string }) {
       {open && (
         <div className="space-y-3 rounded-lg border p-3" role="group" aria-label="Prepare AI feedback">
           <div className="grid gap-3 sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] sm:items-end">
+            {local ? (
+              <p className="flex h-10 items-center text-meta text-muted-foreground">Local model on this computer · free</p>
+            ) : (
             <div className="space-y-1">
               <Label htmlFor={`coach-model-${attemptId}`}>Model</Label>
               <NativeSelect id={`coach-model-${attemptId}`} className="w-full" value={chosenModel} disabled={busy}
@@ -118,6 +125,7 @@ export function TakeCoaching({ attemptId }: { attemptId: string }) {
                 {COACHING_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
               </NativeSelect>
             </div>
+            )}
             <div className="flex h-10 items-center gap-2">
               <Switch id={`coach-delivery-${attemptId}`} checked={chosenDelivery} disabled={busy} onCheckedChange={(v) => { discard(); setDelivery(v); }} />
               <Label htmlFor={`coach-delivery-${attemptId}`} className="font-normal">Delivery impressions (experimental)</Label>
@@ -142,12 +150,16 @@ export function TakeCoaching({ attemptId }: { attemptId: string }) {
 
       {prepared && (
         <div className="space-y-2 rounded-lg border p-3" role="group" aria-label="AI feedback request preview">
-          <p className="font-medium">Recipient: OpenAI · {prepared.preview.model}</p>
+          <p className="font-medium">Recipient: {isLocal(prepared) ? "local model on this computer" : "OpenAI"} · {prepared.preview.model}</p>
           <p className="text-meta break-all text-muted-foreground">{prepared.preview.recipient}</p>
-          <p className="text-meta">
-            Estimated upper reservation: {money(prepared.preview.estimatedMaximumCostMicroUsd)} (price checked {prepared.preview.priceDate}: ${prepared.preview.inputUsdPerMillionTokens} / ${prepared.preview.outputUsdPerMillionTokens} per million input / output tokens).
-            {usage.data && ` Remaining this month: ${money(usage.data.remainingMicroUsd)} of ${money(usage.data.stopMicroUsd)}.`}
-          </p>
+          {isLocal(prepared) ? (
+            <p className="text-meta">{prepared.preview.costExplanation}</p>
+          ) : (
+            <p className="text-meta">
+              Estimated upper reservation: {money(prepared.preview.estimatedMaximumCostMicroUsd)} (price checked {prepared.preview.priceDate}: ${prepared.preview.inputUsdPerMillionTokens} / ${prepared.preview.outputUsdPerMillionTokens} per million input / output tokens).
+              {usage.data && ` Remaining this month: ${money(usage.data.remainingMicroUsd)} of ${money(usage.data.stopMicroUsd)}.`}
+            </p>
+          )}
           <p className="text-meta text-muted-foreground">
             {prepared.timedParts > 0 ? `${prepared.timedParts} timed ${prepared.timedParts === 1 ? "part" : "parts"} with measured delivery.` : "No timed parts: delivery per part is left out."}
             {prepared.corrected && " Your correction is sent instead of the automatic transcript."}
@@ -166,9 +178,11 @@ export function TakeCoaching({ attemptId }: { attemptId: string }) {
             <p className="mt-2">{prepared.preview.instructions}</p>
             <p className="mt-2">Output cap: {prepared.preview.maximumOutputTokens} tokens. Provider storage: off. The preview expires in five minutes. {prepared.preview.costExplanation}</p>
           </details>
-          {key.data && !key.data.present && <p className="text-meta">Store your OpenAI key in Settings → Coaching before sending.</p>}
+          {!isLocal(prepared) && key.data && !key.data.present && <p className="text-meta">Store your OpenAI key in Settings → Coaching before sending.</p>}
           <div className="flex flex-wrap gap-2">
-            <Button disabled={busy || !key.data?.present} onClick={() => void send()}>{prepared.answeredAt ? "Ask again · may be billed" : "Send · may be billed"}</Button>
+            <Button disabled={busy || (!isLocal(prepared) && !key.data?.present)} onClick={() => void send()}>
+              {isLocal(prepared) ? (prepared.answeredAt ? "Ask again" : "Send to the local model") : prepared.answeredAt ? "Ask again · may be billed" : "Send · may be billed"}
+            </Button>
             <Button variant="outline" disabled={busy} onClick={discard}>Cancel preview</Button>
           </div>
         </div>
@@ -176,7 +190,7 @@ export function TakeCoaching({ attemptId }: { attemptId: string }) {
 
       {busy && (
         <div className="flex flex-wrap items-center gap-2">
-          <p role="status" className="text-meta">{sending ? `Waiting for OpenAI… ${elapsed} s` : "Preparing the text…"}</p>
+          <p role="status" className="text-meta">{sending ? `Waiting for ${local ? "the local model" : "OpenAI"}… ${elapsed} s` : "Preparing the text…"}</p>
           {sending && <Button variant="outline" size="sm" onClick={() => void ipc.stopTakeCoaching(sending)}>Stop waiting</Button>}
         </div>
       )}
@@ -200,7 +214,7 @@ function FeedbackCard({ run, stale }: { run: CoachingRun; stale: boolean }) {
   return (
     <article className="space-y-2 rounded-lg border p-3" aria-label={`AI feedback from ${formatLongDay(run.createdAt.slice(0, 10))}`}>
       <p className="text-meta text-muted-foreground">
-        {run.model} · {formatLongDay(run.createdAt.slice(0, 10))} {time(run.createdAt)}
+        {run.provider === "Local LLM" ? `${run.model} (local)` : run.model} · {formatLongDay(run.createdAt.slice(0, 10))} {time(run.createdAt)}
         {run.deliveryImpressions && " · with delivery impressions"}
       </p>
       {stale && <p className="text-meta">Based on an earlier version of the transcript.</p>}

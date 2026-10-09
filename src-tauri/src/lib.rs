@@ -1545,6 +1545,10 @@ async fn preview_take_coaching(
 ) -> Result<TakeCoachingPreview, String> {
     let owner = owner.inner().clone();
     with_storage(&storage, move |db| {
+        let prefs = preferences::load(db)?;
+        let local = (prefs.coaching_mode == "local")
+            .then(|| api::local_llm::validate_endpoint(&prefs.local_endpoint).map(|base| api::local_llm::LocalTarget { base, model: prefs.local_model.clone() }))
+            .transpose()?;
         let input = db.take_coaching_input(&attempt_id)?;
         let parts = if input.timed_parts.is_empty() {
             Vec::new()
@@ -1557,7 +1561,7 @@ async fn preview_take_coaching(
         };
         let text = take_coaching::build(&input, &parts, &hide)?;
         let timed_parts = text.parts;
-        let preview = owner.preview_take(text, model.unwrap_or_default(), delivery_impressions)?;
+        let preview = owner.preview_take(text, model.unwrap_or_default(), delivery_impressions, local)?;
         let answered_at = db.coaching_answered_at(&attempt_id, &preview.payload_sha256)?;
         Ok(TakeCoachingPreview { preview, answered_at, timed_parts, corrected: input.corrected })
     })
@@ -1584,11 +1588,17 @@ async fn request_take_coaching(
     }
     let owner = owner.inner().clone();
     let accounting = accounting.inner().clone();
-    accounting.0.as_ref().map_err(Clone::clone)?;
+    let local = owner.is_local(&request_id);
+    if !local {
+        accounting.0.as_ref().map_err(Clone::clone)?;
+    }
     let inflight = inflight.inner().clone();
     let task = {
         let (accounting, attempt_id, request_id, payload_sha256) = (accounting.clone(), attempt_id.clone(), request_id.clone(), payload_sha256.clone());
         tauri::async_runtime::spawn(async move {
+            if local {
+                return owner.send_take_local(&attempt_id, &request_id, &payload_sha256).await;
+            }
             let budget = accounting.0.as_ref().map_err(Clone::clone)?;
             owner.send_take(budget, &accounting.1, &attempt_id, &request_id, &payload_sha256).await
         })
@@ -1603,6 +1613,7 @@ async fn request_take_coaching(
     }
     let answer = match outcome {
         Ok(result) => result?,
+        Err(_) if local => return Err("Stopped waiting for the local model. Nothing left this computer.".into()),
         Err(_) => return Err(api::audio::stopped(accounting.0.as_ref().map_err(Clone::clone)?, &request_id)),
     };
     // The raw answer is already in cache/coaching/<id>; if the database cannot
@@ -1613,7 +1624,7 @@ async fn request_take_coaching(
             id: &id,
             attempt_id: &answer.request.attempt_id,
             revision_id: &answer.request.revision_id,
-            provider: "OpenAI",
+            provider: &answer.provider,
             model: &answer.model,
             payload_sha256: &answer.payload_sha256,
             sent_text: &answer.sent_text,
@@ -1743,6 +1754,12 @@ async fn save_diagnostics(app: tauri::AppHandle, text: String) -> Result<Option<
     })
     .await
     .map_err(|_| "Saving failed.".to_string())?
+}
+
+/// Test connection for a local model server (5.10): the models it offers.
+#[tauri::command]
+async fn test_local_llm(endpoint: String) -> Result<Vec<String>, String> {
+    api::local_llm::models(&endpoint).await
 }
 
 /// A take's saved AI feedback, newest first.
@@ -2415,6 +2432,7 @@ pub fn run() {
             request_take_coaching,
             list_take_coaching,
             get_storage_usage,
+            test_local_llm,
             build_diagnostics,
             save_diagnostics,
             clear_cache,

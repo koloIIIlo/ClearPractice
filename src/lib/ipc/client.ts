@@ -276,6 +276,8 @@ export interface IpcClient {
   listTakeCoaching(attemptId: string): Promise<CoachingRun[]>;
   /** Storage by category; clearing removes only the rebuildable cache (6.6). Returns bytes freed. */
   getStorageUsage(): Promise<StorageCategory[]>;
+  /** Test connection to a local model server on this computer (5.4, 5.10); returns its models. */
+  testLocalLlm(endpoint: string): Promise<string[]>;
   /** Diagnostic report (6.7): counts, versions, states; no personal content. Read it, then save it. */
   buildDiagnostics(): Promise<string>;
   /** Returns the saved file's name, or null when cancelled. */
