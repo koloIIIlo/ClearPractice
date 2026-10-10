@@ -43,7 +43,7 @@ export function Panel({ children, className, ...rest }: React.ComponentProps<"se
 export function SectionTitle({ children, id, action }: { children: ReactNode; id?: string; action?: ReactNode }) {
   return (
     <div className="mb-3 flex items-center justify-between gap-2">
-      <h2 id={id} className="text-base font-semibold">
+      <h2 id={id} className="text-body font-semibold">
         {children}
       </h2>
       {action}

@@ -70,7 +70,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                   <Icon aria-hidden />
                   <div className="min-w-0">
                     <div className="truncate">{h.title}</div>
-                    {h.excerpt && <div className="truncate text-xs text-muted-foreground">{h.excerpt}</div>}
+                    {h.excerpt && <div className="truncate text-meta text-muted-foreground">{h.excerpt}</div>}
                   </div>
                 </CommandItem>
               ))}

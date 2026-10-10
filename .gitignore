@@ -30,3 +30,6 @@ src-tauri/target
 models/
 bench/samples/
 *.wav
+
+# Local design research (videos, site captures, audit screenshots)
+research/

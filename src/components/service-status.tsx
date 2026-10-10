@@ -3,12 +3,23 @@ import { HardDrive } from "lucide-react";
 import { useServiceStatus } from "@/lib/ipc/queries";
 import type { ServiceStatus } from "@/lib/ipc/schemas";
 
-const STATE_TEXT = { ready: "ready", needs_setup: "needs setup", unavailable: "unavailable", busy: "working" } as const;
+const STATE_TEXT = { ready: "Ready", needs_setup: "Needs setup", unavailable: "Unavailable", busy: "Working" } as const;
 
+/** Plain words here; the model name lives in Settings (and in the tooltip). */
 function transcriptionLabel(t: ServiceStatus["transcription"]) {
   if (t.mode === "off") return "Off";
-  if (t.mode === "api") return `Cloud${t.model ? ` (${t.model})` : ""}`;
-  return `Local${t.model ? ` (${t.model})` : ""}`;
+  if (t.mode === "api") return `Cloud${t.model ? ` (${t.model})` : ""}`; // the provider, e.g. AssemblyAI
+  return "On this computer";
+}
+
+/** Only a state that needs attention stands out; a ready service stays quiet grey text (§3.4). */
+function StateChip({ state }: { state: keyof typeof STATE_TEXT }) {
+  if (state === "ready") return null;
+  return (
+    <span className="ml-1.5 inline-flex h-5 items-center rounded-md bg-highlight px-1.5 font-medium text-highlight-foreground">
+      {STATE_TEXT[state]}
+    </span>
+  );
 }
 
 function coachingLabel(c: ServiceStatus["coaching"]) {
@@ -31,13 +42,13 @@ export function ServiceStatusLine() {
       </span>
       {data && (
         <>
-          <Link to="/settings/transcription" className="hover:text-foreground hover:underline">
+          <Link to="/settings/transcription" title={data.transcription.model ?? undefined} className="inline-flex items-center hover:text-foreground hover:underline">
             Transcription: {transcriptionLabel(data.transcription)}
-            {data.transcription.state !== "ready" && ` · ${STATE_TEXT[data.transcription.state]}`}
+            <StateChip state={data.transcription.state} />
           </Link>
-          <Link to="/settings/coaching" className="hover:text-foreground hover:underline">
+          <Link to="/settings/coaching" className="inline-flex items-center hover:text-foreground hover:underline">
             Coaching: {coachingLabel(data.coaching)}
-            {data.coaching.mode !== "off" && data.coaching.state !== "ready" && ` · ${STATE_TEXT[data.coaching.state]}`}
+            {data.coaching.mode !== "off" && <StateChip state={data.coaching.state} />}
           </Link>
         </>
       )}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Outlet, ScrollRestoration } from "react-router";
+import { Outlet, ScrollRestoration, useLocation } from "react-router";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { CommandPalette } from "./CommandPalette";
@@ -14,6 +14,8 @@ let startupMeasured = false;
 export function AppShell() {
   const ipc = useIpc();
   const [searchOpen, setSearchOpen] = useState(false);
+  // First-launch setup is one focused task: no app navigation around it (§3.10).
+  const setup = useLocation().pathname === "/welcome";
 
   useEffect(() => {
     if (startupMeasured || ipc.recordingMode !== "native") return;
@@ -46,15 +48,16 @@ export function AppShell() {
       >
         Skip to content
       </a>
-      <AppSidebar />
+      {!setup && <AppSidebar />}
       <SidebarInset>
-        <TopBar onOpenSearch={() => setSearchOpen(true)} />
-        {ipc.recordingMode !== "native" && (
-          <p role="note" className="border-b px-4 py-2 text-meta text-muted-foreground">Browser preview with sample data. Open the desktop app for real recording.</p>
-        )}
-        <RecoveryNotice />
-        <DailyReminder />
+        <TopBar onOpenSearch={() => setSearchOpen(true)} showNavToggle={!setup} />
+        {/* The one main landmark; app-wide notices sit inside it so no content is outside a landmark. */}
         <main id="main" tabIndex={-1} className="flex-1 outline-none">
+          {ipc.recordingMode !== "native" && (
+            <p role="note" className="border-b px-4 py-2 text-meta text-muted-foreground">Browser preview with sample data. Open the desktop app for real recording.</p>
+          )}
+          <RecoveryNotice />
+          <DailyReminder />
           <Outlet />
         </main>
       </SidebarInset>

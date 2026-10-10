@@ -22,11 +22,11 @@ export function Transport({ playback, segments }: { playback: Playback; segments
         >
           {playing ? <Pause aria-hidden /> : <Play aria-hidden />}
         </Button>
-        <Button variant="ghost" size="icon" aria-label="Back 5 seconds" onClick={() => playback.skip(-5000)}>
-          <RotateCcw aria-hidden />
+        <Button variant="ghost" className="px-3" aria-label="Back 5 seconds" onClick={() => playback.skip(-5000)}>
+          <RotateCcw aria-hidden /> <span className="tabular-nums">5 s</span>
         </Button>
-        <Button variant="ghost" size="icon" aria-label="Forward 5 seconds" onClick={() => playback.skip(5000)}>
-          <RotateCw aria-hidden />
+        <Button variant="ghost" className="px-3" aria-label="Forward 5 seconds" onClick={() => playback.skip(5000)}>
+          <RotateCw aria-hidden /> <span className="tabular-nums">5 s</span>
         </Button>
         <span className="ml-1 text-meta tabular-nums">
           {formatClock(positionMs)} <span className="text-muted-foreground">/ {formatClock(durationMs)}</span>
@@ -36,7 +36,7 @@ export function Transport({ playback, segments }: { playback: Playback; segments
             Speed
           </span>
           <Select value={String(rate)} onValueChange={(v) => playback.setRate(Number(v))}>
-            <SelectTrigger size="sm" className="w-24" aria-labelledby="speed-label">
+            <SelectTrigger className="w-24" aria-labelledby="speed-label">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

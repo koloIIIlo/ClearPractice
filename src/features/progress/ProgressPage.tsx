@@ -27,6 +27,17 @@ const VIEW_LABELS: Record<ProgressView, string> = {
 /** Below this many comparable values, show the recordings instead of a trend (§6 Progress). */
 const MIN_POINTS_FOR_TREND = 4;
 
+/** A pace axis on round numbers: tens with some headroom, every 10 (or 20 for a wide spread). */
+function paceAxis(values: number[]): { domain: [number, number]; ticks: number[] } {
+  const lo = Math.floor((Math.min(...values) - 5) / 10) * 10;
+  const hi = Math.ceil((Math.max(...values) + 5) / 10) * 10;
+  const step = hi - lo > 60 ? 20 : 10;
+  const start = Math.floor(lo / step) * step;
+  const ticks: number[] = [];
+  for (let v = start; v <= hi; v += step) ticks.push(v);
+  return { domain: [start, ticks.at(-1)!], ticks };
+}
+
 export function ProgressPage() {
   const [params, setParams] = useSearchParams();
   const view = ProgressView.safeParse(params.get("view")).data ?? "rehearsed";
@@ -66,6 +77,7 @@ function ViewContent({ view }: { view: ProgressView }) {
 
 function Summary({ p }: { p: ProgressSummary }) {
   const withPace = p.points.filter((x) => x.estimatedPaceWpm !== null);
+  const axis = withPace.length > 0 ? paceAxis(withPace.map((x) => x.estimatedPaceWpm!)) : null;
 
   return (
     <div className="space-y-6">
@@ -88,10 +100,12 @@ function Summary({ p }: { p: ProgressSummary }) {
         <div className="rounded-panel border bg-card p-4">
           <dt className="text-meta text-muted-foreground">Practice time</dt>
           <dd className="text-2xl font-semibold tabular-nums">{p.practiceMinutes} min</dd>
+          <dd className="text-meta text-muted-foreground">Recorded in your takes</dd>
         </div>
         <div className="rounded-panel border bg-card p-4">
           <dt className="text-meta text-muted-foreground">Sessions</dt>
           <dd className="text-2xl font-semibold tabular-nums">{p.completedSessions}</dd>
+          <dd className="text-meta text-muted-foreground">With at least one take</dd>
         </div>
       </dl>
 
@@ -120,22 +134,25 @@ function Summary({ p }: { p: ProgressSummary }) {
           </EmptyState>
         ) : (
           <>
+            {/* Hidden from assistive technology and the Tab order: the table below carries the same data. */}
             <div className="h-64" aria-hidden>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={p.points} margin={{ top: 8, right: 16, bottom: 20, left: 8 }}>
+                <LineChart data={p.points} margin={{ top: 8, right: 16, bottom: 20, left: 8 }} accessibilityLayer={false} tabIndex={-1}>
                   <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
                   <XAxis
                     dataKey="date"
                     tickFormatter={formatDay}
                     stroke="var(--muted-foreground)"
-                    fontSize={12}
-                    label={{ value: "Session date", position: "insideBottom", offset: -12, fill: "var(--muted-foreground)", fontSize: 12 }}
+                    fontSize={13}
+                    label={{ value: "Session date", position: "insideBottom", offset: -12, fill: "var(--muted-foreground)", fontSize: 13 }}
                   />
                   <YAxis
                     stroke="var(--muted-foreground)"
-                    fontSize={12}
-                    domain={["dataMin - 15", "dataMax + 15"]}
-                    label={{ value: "words / min", angle: -90, position: "insideLeft", fill: "var(--muted-foreground)", fontSize: 12 }}
+                    fontSize={13}
+                    domain={axis?.domain}
+                    ticks={axis?.ticks}
+                    allowDecimals={false}
+                    label={{ value: "words / min", angle: -90, position: "insideLeft", fill: "var(--muted-foreground)", fontSize: 13 }}
                   />
                   <Tooltip
                     labelFormatter={(d) => formatDay(String(d))}
@@ -311,7 +328,7 @@ function Reflection({ review: r }: { review: TransferReview }) {
           <p className="font-medium">{r.situation}</p>
           <p className="text-meta text-muted-foreground">{formatDay(r.localDate)}{r.preparation && ` · prepared: ${r.preparation}`}</p>
         </div>
-        <Button variant="ghost" size="icon-sm" aria-label={`Remove the reflection “${r.situation}”`} onClick={() => setConfirm(true)}><Trash2 aria-hidden /></Button>
+        <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label={`Remove the reflection “${r.situation}”`} onClick={() => setConfirm(true)}><Trash2 aria-hidden /></Button>
       </div>
       {r.listenerText && (
         <div className="mt-3 border-l-2 border-primary pl-3">

@@ -52,7 +52,7 @@ export function WelcomePage() {
                 i === step ? "border-primary bg-secondary font-medium" : "text-muted-foreground hover:bg-secondary/60",
               )}
             >
-              <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border text-xs tabular-nums", i < step && "border-primary bg-primary text-primary-foreground")}>
+              <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-full border text-meta tabular-nums", i < step && "border-primary bg-primary text-primary-foreground")}>
                 {i < step ? <Check aria-hidden className="size-3" /> : i + 1}
               </span>
               <span className="truncate">{label}</span>

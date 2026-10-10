@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router";
 import { useMutation, useQueries } from "@tanstack/react-query";
-import { BookmarkPlus, CheckCircle2 } from "lucide-react";
+import { BookmarkPlus, Check, CheckCircle2 } from "lucide-react";
 import { PhraseForm } from "@/features/phrases/PhrasesPage";
-import { Page, PageHeader, Panel } from "@/components/page";
+import { Page, Panel } from "@/components/page";
 import { EvidenceLabel } from "@/components/evidence";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,40 +38,66 @@ export function CompletionPage() {
   });
   const focuses = loaded.flatMap((s) => (s.focus ? [s.focus] : []));
 
+  const spokenMs = loaded.reduce((n, s) => n + s.durationMs, 0);
+  const hasTakes = loaded.length > 0;
+
   return (
     <Page className="max-w-3xl">
-      <PageHeader title="Practice complete" description="Well done for showing up. Here is what you did today." />
+      {/* The day's peak-end moment (§3.13): one short celebration, three numbers, one button. */}
+      <header className="mb-8 flex items-center gap-4">
+        <span aria-hidden className="flex size-14 shrink-0 animate-pop items-center justify-center rounded-full bg-primary text-primary-foreground">
+          <Check className="size-7" strokeWidth={2.5} />
+        </span>
+        <div className="min-w-0 space-y-1">
+          <h1 className="text-title font-semibold tracking-tight">Practice complete</h1>
+          <p className="text-muted-foreground">Well done for showing up. Here is what you did today.</p>
+        </div>
+      </header>
       <div className="space-y-6">
-        <Panel className="space-y-3">
-          <h2 className="flex items-center gap-2 font-semibold"><CheckCircle2 aria-hidden className="size-5 text-primary" /> What you practised</h2>
-          {loaded.length === 0 && !anyPending ? (
+        {!hasTakes && !anyPending ? (
+          <Panel>
             <p className="text-muted-foreground">No takes were saved in this sequence. That's fine: listening and reading count too.</p>
-          ) : (
-            <>
-              <p>
-                {takes} {takes === 1 ? "take" : "takes"} in {loaded.length} {loaded.length === 1 ? "exercise" : "exercises"}
-                {skipped > 0 && ` · ${skipped} ${skipped === 1 ? "step" : "steps"} without a take`}.
-              </p>
-              <ul className="space-y-1">
-                {loaded.map((s) => (
-                  <li key={s.id}>
-                    <Link className="underline" to={`/sessions/${s.id}`}>
-                      {s.title} · {s.attemptCount} {s.attemptCount === 1 ? "take" : "takes"} · {formatClock(s.durationMs)}
-                    </Link>
-                  </li>
-                ))}
-                {anyPending && <li className="text-muted-foreground">Loading…</li>}
-              </ul>
-              {focuses.length > 0 && (
-                <p className="text-meta"><span className="text-muted-foreground">What you worked on:</span> {focuses.join(" · ")}</p>
+          </Panel>
+        ) : (
+          <section aria-labelledby="practised-heading" className="space-y-4">
+            <h2 id="practised-heading" className="sr-only">What you practised</h2>
+            <dl className="grid grid-cols-3 gap-3">
+              {[
+                { label: "Takes", value: anyPending && !hasTakes ? "…" : String(takes) },
+                { label: loaded.length === 1 ? "Exercise" : "Exercises", value: anyPending && !hasTakes ? "…" : String(loaded.length) },
+                { label: "Speaking time", value: anyPending && !hasTakes ? "…" : formatClock(spokenMs) },
+              ].map((stat) => (
+                <div key={stat.label} className="rounded-panel border bg-card px-4 py-3">
+                  <dt className="text-meta text-muted-foreground">{stat.label}</dt>
+                  <dd className="text-2xl font-semibold tabular-nums">{stat.value}</dd>
+                </div>
+              ))}
+            </dl>
+            <ul className="space-y-1 text-meta">
+              {loaded.map((s) => (
+                <li key={s.id} className="flex items-center gap-2">
+                  <CheckCircle2 aria-hidden className="size-4 shrink-0 text-primary" />
+                  <Link className="hover:underline" to={`/sessions/${s.id}`}>
+                    {s.title} · {s.attemptCount} {s.attemptCount === 1 ? "take" : "takes"} · {formatClock(s.durationMs)}
+                  </Link>
+                </li>
+              ))}
+              {anyPending && <li className="text-muted-foreground">Loading…</li>}
+              {skipped > 0 && (
+                <li className="text-muted-foreground">
+                  {skipped} {skipped === 1 ? "step" : "steps"} without a take
+                </li>
               )}
-            </>
-          )}
-        </Panel>
+            </ul>
+            {focuses.length > 0 && (
+              <p className="text-meta"><span className="text-muted-foreground">What you worked on:</span> {focuses.join(" · ")}</p>
+            )}
+          </section>
+        )}
 
-        {loaded.length > 0 && (
+        {hasTakes && (
           <Panel className="space-y-4">
-            <h2 className="font-semibold">Before you go</h2>
+            <h2 className="font-semibold">Before you go <span className="text-meta font-normal text-muted-foreground">· optional</span></h2>
             <fieldset className="space-y-2">
               <legend className="flex items-center gap-2 font-medium">How easy did today feel? <EvidenceLabel source="note" /></legend>
               <RadioGroup value={ease ? String(ease) : ""} onValueChange={(v) => setEase(Number(v))} className="flex flex-wrap gap-2">
@@ -88,7 +114,7 @@ export function CompletionPage() {
               <Input id="takeaway" className="h-10" maxLength={500} value={takeaway} onChange={(e) => setTakeaway(e.target.value)} placeholder="For example: pause before the example" />
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button disabled={save.isPending || (ease === null && !takeaway.trim())} onClick={() => save.mutate()}>Save reflection</Button>
+              <Button variant="outline" disabled={save.isPending || (ease === null && !takeaway.trim())} onClick={() => save.mutate()}>Save reflection</Button>
               {save.isSuccess && <span role="status" className="text-meta">Saved with today's sessions.</span>}
               {save.error && <span role="alert" className="text-meta text-destructive">{save.error.message}</span>}
             </div>
@@ -105,9 +131,9 @@ export function CompletionPage() {
           </Panel>
         )}
 
-        <div className="flex flex-wrap gap-2">
-          <Button asChild><Link to="/">Back to Today</Link></Button>
-          <Button variant="outline" asChild><Link to="/sessions">Open sessions</Link></Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild><Link to="/">Done</Link></Button>
+          <Button variant="ghost" asChild><Link to="/sessions">Open sessions</Link></Button>
         </div>
       </div>
     </Page>

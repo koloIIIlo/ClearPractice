@@ -152,13 +152,16 @@ function PhraseRow({ p, focus, today }: { p: PhraseCard; focus: string | null; t
       </div>
       <div className="flex items-start gap-3 sm:justify-end">
         <div className="text-meta text-muted-foreground sm:text-right">
-          <div className={cn(p.dueDate <= today && "font-medium text-foreground")}>
-            {p.dueDate <= today ? "Due now" : `Due ${formatRelativeDay(p.dueDate, today).toLowerCase()}`}
-          </div>
+          {p.dueDate <= today ? (
+            <span className="inline-flex h-6 items-center rounded-md bg-highlight px-2 font-medium text-highlight-foreground">Due now</span>
+          ) : (
+            // Only the relative words go lower case mid-sentence; dates keep their capitals ("Due Wed 21 Oct").
+            <div>Due {formatRelativeDay(p.dueDate, today).replace(/^(Tomorrow|In )/, (w) => w.toLowerCase())}</div>
+          )}
           <div className="tabular-nums">{p.intervalDays === 0 ? "New" : `Every ${p.intervalDays} ${p.intervalDays === 1 ? "day" : "days"}`}</div>
         </div>
         <Button variant="ghost" size="icon-sm" aria-label={`Edit ${p.expression}`} onClick={() => setEditing(true)}><Pencil aria-hidden /></Button>
-        <Button variant="ghost" size="icon-sm" aria-label={`Remove ${p.expression}`} onClick={() => setConfirm(true)}><Trash2 aria-hidden /></Button>
+        <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label={`Remove ${p.expression}`} onClick={() => setConfirm(true)}><Trash2 aria-hidden /></Button>
       </div>
     </li>
   );
@@ -227,7 +230,7 @@ function PhraseReview({ due, onDone }: { due: PhraseCard[]; onDone: () => void }
 
       {revealed ? (
         <div className="mt-6 space-y-3 border-t pt-4">
-          <p className="text-xl font-semibold">{card.expression}</p>
+          <p className="text-2xl font-semibold">{card.expression}</p>
           <p className="text-muted-foreground">{card.explanation}</p>
           {card.examples.length > 0 && (
             <ul className="list-disc pl-5 text-muted-foreground">

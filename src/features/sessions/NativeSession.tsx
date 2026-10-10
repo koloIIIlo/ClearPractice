@@ -99,7 +99,7 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
       <Button variant="outline" disabled={exporting.isPending} onClick={() => exporting.mutate()}>
         <Download aria-hidden /> {exporting.isPending ? "Exporting…" : "Export…"}
       </Button>
-      <MoveToTrashButton session={session} />
+      <div className="ml-auto"><MoveToTrashButton session={session} /></div>
     </div>
     <div aria-live="polite">
       {exporting.data && (

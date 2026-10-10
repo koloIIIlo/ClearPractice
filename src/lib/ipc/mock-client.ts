@@ -2,8 +2,8 @@
  * In-memory IpcClient used for UI development (M1) and component tests.
  * Replaced by the Tauri `invoke` client once the native commands exist (M2).
  */
-import { addLocalDays, nextIntervalDays } from "@/lib/phrase-schedule";
-import { IpcError, type IpcClient } from "./client";
+import { addLocalDays, nextIntervalDays, toLocalDate } from "@/lib/phrase-schedule";
+import { IpcError, type IpcClient, type PracticeContext } from "./client";
 import * as data from "./mock-data";
 import * as S from "./schemas";
 import { searchLibrary } from "../search";
@@ -39,7 +39,32 @@ export function createMockClient(): IpcClient {
   let recording: S.RecordingStatus | null = null;
   let started = 0;
   let timer: ReturnType<typeof setInterval> | undefined;
+  let recordingFor: { title: string; context?: PracticeContext } | null = null;
   const notify = () => { if (recording) recordingListeners.forEach((listener) => listener(structuredClone(recording!))); };
+
+  /**
+   * A simulated take joins its practice session (created on the first take), as a
+   * real take does, so the preview's sessions, Practice complete and focus panels
+   * behave like the desktop app. No audio exists; review shows sample data.
+   */
+  const addSimulatedTake = (attemptId: string, durationMs: number) => {
+    const ctx = recordingFor?.context;
+    if (!ctx) return;
+    let session = sessions.find((s) => s.id === ctx.sessionId);
+    if (!session) {
+      const now = new Date();
+      session = S.SessionDetail.parse({
+        id: ctx.sessionId, title: recordingFor!.title, localDate: toLocalDate(now), startedAt: now.toISOString(),
+        exerciseType: ctx.exerciseType, durationMs: 0, attemptCount: 0, favorite: false, hasNote: false, tags: [],
+        status: "completed", prompt: ctx.prompt, outline: ctx.outline, focus: null, notes: "", conditions: ctx.conditions,
+        attempts: [], curriculumVersion: ctx.curriculumVersion ?? null, contentId: ctx.contentId ?? null,
+      });
+      sessions.unshift(session);
+    }
+    session.attempts.push({ id: attemptId, ordinal: session.attempts.length + 1, captureState: "saved", analysisState: null, durationMs, createdAt: new Date().toISOString(), firstTake: session.attempts.length === 0 });
+    session.attemptCount = session.attempts.length;
+    session.durationMs += durationMs;
+  };
 
   return {
     recordingMode: "simulated",
@@ -348,6 +373,7 @@ export function createMockClient(): IpcClient {
       if (recording?.attemptId === request.attemptId) return S.RecordingStatus.parse(recording);
       if (recording?.phase === "recording") throw new IpcError("busy", "Another recording is already active.");
       started = performance.now();
+      recordingFor = { title: request.title, context: request.context };
       recording = S.RecordingStatus.parse({
         attemptId: request.attemptId, phase: "recording", elapsedMs: 0, monotonicMs: 0,
         level: 0, clipping: false, error: null, asset: null,
@@ -375,6 +401,7 @@ export function createMockClient(): IpcClient {
         sourceChannels: 2, sourceFormat: "F32", bytes: 0, sha256: "0".repeat(64), recovered: false,
       });
       recording = { ...recording, phase: "saved", elapsedMs: asset.durationMs, level: 0, asset };
+      addSimulatedTake(attemptId, asset.durationMs);
       notify();
       return asset;
     },

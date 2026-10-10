@@ -89,3 +89,18 @@ it("lets the user choose one feature to imitate and stores it after the first ta
   );
   await waitFor(() => expect(client.setSessionFocus).toHaveBeenCalledWith("s-2", "Phrase rhythm"));
 });
+
+it("preselects today's focus for the next take and says where it came from (§7 smart defaults)", async () => {
+  const client = { ...createMockClient(), setSessionFocus: vi.fn(async () => {}) };
+  const qc = new QueryClient();
+  qc.setQueryData(["today", "standard"], { focus: "Give one concrete example." });
+  render(
+    <MemoryRouter><QueryClientProvider client={qc}><IpcContext.Provider value={client}>
+      <RepeatFocus sessionId="s-3" takeCount={1} locked={false} native />
+    </IpcContext.Provider></QueryClientProvider></MemoryRouter>,
+  );
+  await waitFor(() => expect(client.setSessionFocus).toHaveBeenCalledWith("s-3", "Give one concrete example"));
+  expect(await screen.findByRole("radio", { name: /Give one concrete example/ })).toBeChecked();
+  expect(screen.getByText("· Today's focus")).toBeInTheDocument();
+  expect(screen.getByText(/Suggested from today's focus/)).toBeInTheDocument();
+});

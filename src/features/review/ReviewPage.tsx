@@ -75,7 +75,9 @@ function Review({ session, attemptId, ordinal }: { session: SessionDetail; attem
           <h1 className="text-title font-semibold tracking-tight">{session.title}</h1>
           <p className="text-muted-foreground">{session.prompt}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <MoveToTrashButton session={session} />
+          <span aria-hidden className="mx-1 h-6 w-px bg-border" />
           {session.attempts.length > 1 && (
             <Button variant="outline" asChild>
               <Link to={`/sessions/${session.id}/compare`}>
@@ -90,7 +92,6 @@ function Review({ session, attemptId, ordinal }: { session: SessionDetail; attem
           >
             <Mic aria-hidden /> Try again
           </Button>
-          <MoveToTrashButton session={session} />
         </div>
       </header>
 
@@ -135,7 +136,7 @@ function ReviewBody({ session, review, durationMs }: { session: SessionDetail; r
       <Transport playback={playback} segments={raw?.segments ?? []} />
 
       {/* Two columns from 1100px; feedback stacks below the transcript on narrower windows (§4). */}
-      <div className="grid gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid items-start gap-4 min-[1100px]:grid-cols-[minmax(0,1fr)_20rem]">
         <Panel className="p-3 sm:p-4">
           <Tabs defaultValue="raw">
             <TabsList className="mb-3">
@@ -250,7 +251,8 @@ function ObservationBody({ o, onSeekSegment, hideTitle }: { o: Observation; onSe
           {o.segmentId && (
             <button
               type="button"
-              className="ml-2 text-meta text-primary hover:underline"
+              // Padding offset by negative margins: the target grows past 24 px, the line stays put.
+              className="-my-1 ml-2 inline-block rounded py-1 text-meta text-primary hover:underline"
               onClick={() => onSeekSegment(o.segmentId!)}
             >
               Find in recording

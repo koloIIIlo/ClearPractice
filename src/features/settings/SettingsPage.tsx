@@ -190,7 +190,7 @@ function AppearanceSettings() {
   return (
     <Section title="Appearance">
       <fieldset>
-        <legend className="mb-2 text-sm font-medium">Theme</legend>
+        <legend className="mb-2 text-body font-medium">Theme</legend>
         <RadioGroup value={theme.preference} onValueChange={(v) => theme.setPreference(v as ThemePreference)} className="gap-2">
           {(
             [

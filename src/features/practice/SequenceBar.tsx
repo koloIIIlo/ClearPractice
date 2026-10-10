@@ -29,7 +29,8 @@ export function SequenceBar({ sessionId, takeCount, locked }: { sessionId: strin
         <Button variant="ghost" size="sm" disabled={locked} onClick={() => { saveSequence(null); navigate("/"); }}>
           Leave sequence
         </Button>
-        <Button size="sm" disabled={locked} onClick={next}>
+        {/* Solid only once this step has a take; before that, Record is the one primary. */}
+        <Button size="sm" variant={takeCount > 0 ? "default" : "outline"} disabled={locked} onClick={next}>
           {last ? <><Check aria-hidden /> Finish</> : <>Next step <ArrowRight aria-hidden /></>}
         </Button>
       </div>

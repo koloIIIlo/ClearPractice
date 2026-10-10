@@ -224,10 +224,6 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
         />
       )}
       {exercise.type === "imitate" && <ImitationPanel sessionId={sessionId} hasTake={rec.takes.length > 0} locked={locked} native={native} lastTakeAssetId={rec.takes.at(-1)?.asset.assetId} />}
-      {exercise.type === "repeat" && (
-        <FollowUpPanel prompt={prompt} sessionId={sessionId} lastTakeId={lastTakeId} takeCount={allTakeCount} native={native} locked={locked} />
-      )}
-      {exercise.type === "repeat" && !prompt.conditions.followUp && <RepeatFocus sessionId={sessionId} takeCount={rec.takes.length} locked={locked} native={native} />}
 
       {!passage && !phrase && exercise.type !== "imitate" && <fieldset disabled={locked} className="grid gap-3 sm:grid-cols-3">
         <legend className="mb-2 text-meta font-medium">Outline (optional, up to three keywords)</legend>
@@ -276,7 +272,8 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
           size="lg"
           onClick={primary}
           disabled={!canUsePrimary}
-          variant={rec.phase === "recording" ? "outline" : "default"}
+          // One solid primary: Stop while recording; in a sequence, Next step takes over once a take exists.
+          variant={rec.phase !== "recording" && inSequence && rec.takes.length > 0 ? "outline" : "default"}
           className="min-w-44"
           aria-keyshortcuts="Control+Enter"
         >
@@ -306,6 +303,12 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
           {shortcuts ? "Ctrl+Enter to record or stop. " : ""}The timer is for information only, so there's no need to rush.
         </p>
       </Panel>
+
+      {/* Between-takes guidance appears below the recorder, so Record never moves when it shows up (§3.2). */}
+      {exercise.type === "repeat" && (
+        <FollowUpPanel prompt={prompt} sessionId={sessionId} lastTakeId={lastTakeId} takeCount={allTakeCount} native={native} locked={locked} />
+      )}
+      {exercise.type === "repeat" && !prompt.conditions.followUp && <RepeatFocus sessionId={sessionId} takeCount={rec.takes.length} locked={locked} native={native} />}
 
       <section aria-labelledby="takes-heading">
         <h2 id="takes-heading" className="mb-3 font-semibold">
@@ -363,7 +366,8 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
             ))}
           </ol>
         )}
-        {allTakeCount > 0 && !locked && (
+        {/* In a sequence the step bar's Leave sequence is the one way out. */}
+        {allTakeCount > 0 && !locked && !inSequence && (
           <div className="mt-4 flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => navigate("/")}>
               Return to Today

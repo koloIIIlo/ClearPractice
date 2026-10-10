@@ -199,11 +199,11 @@ export function WaveformPlayer({ url, peaks, label, link }: { url: string; peaks
         <Button size="icon" onClick={toggle} aria-label={playing ? `Pause ${label}` : `Play ${label}`}>
           {playing ? <Pause aria-hidden /> : <Play aria-hidden />}
         </Button>
-        <Button variant="ghost" size="icon" aria-label="Back 5 seconds" onClick={() => seek(positionMs - 5000)}>
-          <RotateCcw aria-hidden />
+        <Button variant="ghost" className="px-3" aria-label="Back 5 seconds" onClick={() => seek(positionMs - 5000)}>
+          <RotateCcw aria-hidden /> <span className="tabular-nums">5 s</span>
         </Button>
-        <Button variant="ghost" size="icon" aria-label="Forward 5 seconds" onClick={() => seek(positionMs + 5000)}>
-          <RotateCw aria-hidden />
+        <Button variant="ghost" className="px-3" aria-label="Forward 5 seconds" onClick={() => seek(positionMs + 5000)}>
+          <RotateCw aria-hidden /> <span className="tabular-nums">5 s</span>
         </Button>
         <span className="ml-1 text-meta tabular-nums">
           {formatClock(positionMs)} <span className="text-muted-foreground">/ {formatClock(durationMs)}</span>
@@ -211,7 +211,7 @@ export function WaveformPlayer({ url, peaks, label, link }: { url: string; peaks
         <div className="ml-auto flex items-center gap-2">
           <span id={`${id}-speed`} className="text-meta text-muted-foreground">Speed</span>
           <Select value={String(rate)} onValueChange={(v) => changeRate(Number(v))}>
-            <SelectTrigger size="sm" className="w-24" aria-labelledby={`${id}-speed`}>
+            <SelectTrigger className="w-24" aria-labelledby={`${id}-speed`}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

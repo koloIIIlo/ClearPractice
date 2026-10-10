@@ -140,6 +140,14 @@
 
   /* Compact navigation below 800px (§4); used by the sidebar. Keep in sync with use-mobile.ts. */
   --breakpoint-nav: 50rem;
+
+  /* A short, single celebration (the session-complete check, §3.13); reduced motion shortens it to nothing. */
+  --animate-pop: cp-pop 420ms var(--ease-standard) both;
+  @keyframes cp-pop {
+    0% { transform: scale(0.6); opacity: 0; }
+    60% { transform: scale(1.08); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
 }
 
 @layer base {
@@ -154,9 +162,39 @@
     @apply bg-background text-foreground text-body antialiased;
   }
   /* Visible focus for keyboard users on every interactive element (§14). */
-  :where(a, button, [role="button"], input, select, textarea, [tabindex]):focus-visible {
+  :where(a, button, [role="button"], input, select, textarea, summary, [tabindex]):focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
+  }
+  /* Disclosures: a chevron in the text colour replaces the browser's ▶ marker. A
+     summary marked list-none draws its own affordance (the Exercises guide cards). */
+  summary {
+    cursor: pointer;
+    list-style: none;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  summary:not(.list-none) {
+    display: flex;
+    width: fit-content;
+    min-height: 1.75rem;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: var(--radius-sm);
+  }
+  summary:not(.list-none)::before {
+    content: "";
+    flex-shrink: 0;
+    width: 0.4rem;
+    height: 0.4rem;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateX(-1px) rotate(-45deg);
+    transition: transform 150ms var(--ease-standard);
+  }
+  details[open] > summary:not(.list-none)::before {
+    transform: translateY(-2px) rotate(45deg);
   }
 }
 

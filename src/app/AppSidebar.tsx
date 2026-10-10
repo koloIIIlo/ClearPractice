@@ -45,29 +45,32 @@ export function AppSidebar() {
   const current = activeSection(location.pathname, (location.state as { section?: string } | null)?.section);
 
   return (
-    <Sidebar collapsible="icon" aria-label="Main navigation">
-      <SidebarHeader className="h-14 justify-center border-b">
-        <Link to="/" className="flex items-center gap-2 px-2 font-semibold tracking-tight">
-          <Logo className="size-6" />
-          <span className="truncate group-data-[collapsible=icon]:hidden">ClearPractice</span>
-        </Link>
-      </SidebarHeader>
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {PRIMARY_NAV.map((item) => (
-                <NavEntry key={item.id} item={item} active={current === item.id} />
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-      <SidebarFooter>
-        <SidebarMenu>
-          <NavEntry item={SETTINGS_NAV} active={current === "settings"} />
-        </SidebarMenu>
-      </SidebarFooter>
+    <Sidebar collapsible="icon">
+      {/* The shadcn sidebar is a div; this nav makes it a labelled landmark so nothing sits outside one. */}
+      <nav aria-label="Main navigation" className="flex h-full w-full flex-col">
+        <SidebarHeader className="h-14 justify-center border-b">
+          <Link to="/" className="flex items-center gap-2 px-2 font-semibold tracking-tight">
+            <Logo className="size-6" />
+            <span className="truncate group-data-[collapsible=icon]:hidden">ClearPractice</span>
+          </Link>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {PRIMARY_NAV.map((item) => (
+                  <NavEntry key={item.id} item={item} active={current === item.id} />
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+        <SidebarFooter>
+          <SidebarMenu>
+            <NavEntry item={SETTINGS_NAV} active={current === "settings"} />
+          </SidebarMenu>
+        </SidebarFooter>
+      </nav>
     </Sidebar>
   );
 }

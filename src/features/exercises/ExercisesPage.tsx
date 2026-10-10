@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Heart, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { BookOpen, Headphones, Heart, MessageSquareQuote, Mic, Pencil, Plus, Repeat2, Search, TextQuote, Trash2, type LucideIcon } from "lucide-react";
 import { EmptyState, Page, PageHeader, QueryView } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useExercises, useGuides, usePrompts, useSetPromptFavorite } from "@/lib/ipc/queries";
-import { PromptTag, type PracticePrompt } from "@/lib/ipc/schemas";
+import { PromptTag, type ExerciseType, type PracticePrompt } from "@/lib/ipc/schemas";
 import { cn } from "@/lib/utils";
 import { useIpc } from "@/lib/ipc";
 import { TAG_LABELS, describeDemands } from "./describe";
@@ -54,6 +54,14 @@ export function ExercisesPage() {
   );
 }
 
+/** One recognisable icon per exercise, so the four cards can be told apart at a glance (§3.5). */
+const EXERCISE_ICONS: Record<ExerciseType, LucideIcon> = {
+  repeat: Repeat2,
+  thought_groups: TextQuote,
+  imitate: Headphones,
+  expression: MessageSquareQuote,
+};
+
 function ExerciseList() {
   const exercises = useExercises();
   return (
@@ -65,26 +73,33 @@ function ExerciseList() {
           </EmptyState>
         ) : (
           <ul className="grid gap-4 md:grid-cols-2">
-            {list.map((ex) => (
+            {list.map((ex) => {
+              const Icon = EXERCISE_ICONS[ex.type];
+              return (
               <li key={ex.id} className="flex flex-col rounded-panel border bg-card p-5">
-                <div className="flex items-baseline justify-between gap-2">
-                  <h2 className="text-lg font-semibold">{ex.title}</h2>
+                <div className="flex items-center gap-3">
+                  <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-primary">
+                    <Icon className="size-5" />
+                  </span>
+                  <h2 className="min-w-0 flex-1 text-lg font-semibold">{ex.title}</h2>
                   <span className="text-meta text-muted-foreground tabular-nums">~{ex.typicalMinutes} min</span>
                 </div>
                 <p className="mt-1">{ex.purpose}</p>
                 <p className="mt-2 text-meta text-muted-foreground">Example: {ex.example}</p>
-                <div className="mt-4 flex gap-2 pt-1">
-                  <Button asChild>
+                {/* Four equal choices: no solid buttons competing; Start leads within each card (§3.4). */}
+                <div className="mt-auto flex gap-2 pt-5">
+                  <Button variant="outline" asChild>
                     <Link to={`/practice/${ex.id}`} state={{ section: "exercises" }}>
-                      Start
+                      <Mic aria-hidden /> Start
                     </Link>
                   </Button>
-                  <Button variant="outline" asChild>
+                  <Button variant="ghost" asChild>
                     <Link to={`/exercises/${ex.id}`}>Instructions</Link>
                   </Button>
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )
       }

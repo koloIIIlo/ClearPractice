@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { Panel } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { ReferenceClips } from "./ReferenceClips";
 import { useIpc } from "@/lib/ipc";
-import type { PhraseCard, PracticePrompt, ReferenceClip } from "@/lib/ipc/schemas";
+import type { PhraseCard, PracticePrompt, ReferenceClip, TodayPlan } from "@/lib/ipc/schemas";
+import { DAILY_FOCUSES } from "@/lib/today-plan";
 import { ImitationOverlay } from "./ImitationOverlay";
 
 // ── Repeat an answer (4.6) ───────────────────────────────────────────────────
@@ -24,9 +25,17 @@ export const REPEAT_FOCUSES = [
   "Slow down a little",
 ] as const;
 
+/** Today's focus as the matching option, if Today has loaded it (the two lists share an order). */
+function todaysRepeatFocus(qc: QueryClient): string | null {
+  const focus = qc.getQueriesData<TodayPlan>({ queryKey: ["today"] }).map(([, plan]) => plan?.focus).find(Boolean);
+  const i = focus ? (DAILY_FOCUSES as readonly string[]).indexOf(focus) : -1;
+  return i >= 0 ? (REPEAT_FOCUSES[i] ?? null) : null;
+}
+
 /**
  * Between takes of a repeated answer: choose one thing to improve. The choice is
  * stored on the session (Your note), so review shows what each retake tried.
+ * Today's focus is preselected and says so; any other option replaces it.
  * Two or three takes are enough; after the third the panel says so.
  */
 export function RepeatFocus({ sessionId, takeCount, locked, native }: { sessionId: string; takeCount: number; locked: boolean; native: boolean }) {
@@ -34,6 +43,7 @@ export function RepeatFocus({ sessionId, takeCount, locked, native }: { sessionI
   const qc = useQueryClient();
   const [focus, setFocus] = useState<string | null>(null);
   const [custom, setCustom] = useState("");
+  const [suggested] = useState(() => todaysRepeatFocus(qc));
   const save = useMutation({
     mutationFn: (value: string | null) => (native ? ipc.setSessionFocus(sessionId, value) : Promise.resolve()),
     onSuccess: (_, value) => {
@@ -41,6 +51,12 @@ export function RepeatFocus({ sessionId, takeCount, locked, native }: { sessionI
       void qc.invalidateQueries({ queryKey: ["session", sessionId] });
     },
   });
+  const applied = useRef(false);
+  useEffect(() => {
+    if (takeCount === 0 || takeCount >= 3 || !suggested || focus !== null || applied.current) return;
+    applied.current = true;
+    save.mutate(suggested);
+  }, [takeCount]);
   if (takeCount === 0) return null;
   return (
     <Panel className="space-y-3" aria-labelledby="repeat-focus-heading">
@@ -61,6 +77,7 @@ export function RepeatFocus({ sessionId, takeCount, locked, native }: { sessionI
           {REPEAT_FOCUSES.map((f, i) => (
             <Label key={f} htmlFor={`repeat-focus-${i}`} className="flex min-h-9 items-center gap-2 font-normal">
               <RadioGroupItem id={`repeat-focus-${i}`} value={f} /> {f}
+              {f === suggested && <span className="text-meta text-muted-foreground">· Today's focus</span>}
             </Label>
           ))}
         </RadioGroup>
@@ -78,6 +95,7 @@ export function RepeatFocus({ sessionId, takeCount, locked, native }: { sessionI
       </fieldset>
       <p className="text-meta" aria-live="polite">
         {focus ? `Focus for the next take: ${focus}.` : "No focus chosen yet."}
+        {focus !== null && focus === suggested && " Suggested from today's focus; pick another if something else matters more."}
       </p>
       {save.error && <p role="alert" className="text-meta text-destructive">{save.error.message}</p>}
     </Panel>

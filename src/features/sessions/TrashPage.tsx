@@ -94,7 +94,8 @@ export function MoveToTrashButton({ session }: { session: Pick<SessionSummary, "
   return (
     <AlertDialog open={open} onOpenChange={(next) => { setOpen(next); move.reset(); }}>
       <AlertDialogTrigger asChild>
-        <Button variant="outline">
+        {/* Quiet until hovered: a destructive action never competes with the screen's primary (§3.4). */}
+        <Button variant="ghost" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
           <Trash2 aria-hidden /> Move to Trash
         </Button>
       </AlertDialogTrigger>

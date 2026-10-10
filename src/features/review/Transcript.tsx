@@ -58,7 +58,8 @@ export function Transcript({
               <button
                 type="button"
                 onClick={() => onSeek(seg.startMs)}
-                className="mt-1 shrink-0 self-start rounded text-meta text-muted-foreground tabular-nums hover:text-foreground"
+                // Padding offset by negative margins: the text stays put, the target grows past 24 px.
+                className="-mx-1 -mb-1 shrink-0 self-start rounded px-1 py-1 text-meta text-muted-foreground tabular-nums hover:text-foreground"
                 aria-label={`Play from ${formatClock(seg.startMs)}`}
               >
                 {formatClock(seg.startMs)}

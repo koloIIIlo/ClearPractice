@@ -77,7 +77,7 @@ export function CoachingSpike() {
         <p className="text-meta">Estimated upper reservation: {money(preview.estimatedMaximumCostMicroUsd)} within the shared monthly limit. Price checked {preview.priceDate}: ${preview.inputUsdPerMillionTokens}/million input tokens, ${preview.outputUsdPerMillionTokens}/million output tokens.</p>
         <p className="text-meta text-muted-foreground">{preview.costExplanation}</p>
         <p className="text-meta">Focus: {preview.focus} · Prompt: {preview.prompt}</p>
-        <blockquote className="whitespace-pre-wrap rounded border p-3 text-sm">{preview.selectedText}</blockquote>
+        <blockquote className="whitespace-pre-wrap rounded border p-3 text-body">{preview.selectedText}</blockquote>
         <details className="text-meta"><summary>Coaching instructions and request details</summary><p className="mt-2">{preview.instructions}</p><p className="mt-2">Output cap: {preview.maximumOutputTokens} tokens. Schema: FeedbackResult v1. Comparison context: none. Provider storage option: off. Preview expires in five minutes.</p><p className="mt-2">{preview.priceSource}</p></details>
         <p className="text-meta">OpenAI's data-retention terms apply. <a className="underline" href="https://developers.openai.com/api/docs/guides/your-data" target="_blank" rel="noreferrer">Provider privacy details</a></p>
         <div className="flex flex-wrap gap-2"><Button disabled={busy || !key.data?.present} onClick={() => void send()}>Send sample text · may be billed</Button><Button variant="outline" disabled={busy} onClick={discard}>Cancel preview</Button></div>
@@ -87,7 +87,7 @@ export function CoachingSpike() {
       {feedback && <div className="space-y-2 rounded-lg border p-3">
         <p className="font-medium">AI suggestion · {feedback.model}</p><p>{feedback.feedback.summary}</p>
         <p><strong>One improvement:</strong> {feedback.feedback.oneImprovement}</p><p><strong>Next attempt:</strong> {feedback.feedback.nextAttempt}</p>
-        {feedback.feedback.corrections.map((c, i) => <p key={i} className="text-sm"><strong>{c.kind === "style" ? "Optional style" : "Clear error"}:</strong> “{c.quote}” → “{c.suggestion}”. {c.reason}</p>)}
+        {feedback.feedback.corrections.map((c, i) => <p key={i} className="text-body"><strong>{c.kind === "style" ? "Optional style" : "Clear error"}:</strong> “{c.quote}” → “{c.suggestion}”. {c.reason}</p>)}
         <p className="text-meta">Estimated cost: {feedback.estimatedCostMicroUsd === null ? feedback.costUnavailableReason : money(feedback.estimatedCostMicroUsd)}. Input tokens: {feedback.inputTokens ?? "unavailable"}; output tokens: {feedback.outputTokens ?? "unavailable"}.</p>
       </div>}
     </div>

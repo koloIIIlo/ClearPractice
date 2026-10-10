@@ -47,13 +47,14 @@ function Breadcrumbs() {
   );
 }
 
-export function TopBar({ onOpenSearch }: { onOpenSearch: () => void }) {
+export function TopBar({ onOpenSearch, showNavToggle = true }: { onOpenSearch: () => void; showNavToggle?: boolean }) {
   return (
     <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <SidebarTrigger className="-ml-1" aria-label="Toggle navigation" />
-      <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
+      {showNavToggle && <SidebarTrigger className="-ml-1" aria-label="Toggle navigation" />}
+      {/* Breadcrumb renders its own labelled nav landmark. */}
+      <div className="min-w-0 flex-1">
         <Breadcrumbs />
-      </nav>
+      </div>
       <Button
         variant="outline"
         size="sm"
@@ -63,7 +64,7 @@ export function TopBar({ onOpenSearch }: { onOpenSearch: () => void }) {
       >
         <Search aria-hidden />
         <span className="hidden sm:inline">Search</span>
-        <kbd className="hidden rounded border bg-muted px-1.5 font-sans text-[11px] sm:inline">Ctrl K</kbd>
+        <kbd className="hidden rounded border bg-muted px-1.5 font-sans text-meta sm:inline">Ctrl K</kbd>
       </Button>
     </header>
   );
