@@ -18,29 +18,30 @@ function wrap(client: IpcClient, ui: React.ReactNode) {
   );
 }
 
-it("asks for one focus after the first take, stores it, and says when three takes are enough (4.6)", async () => {
+it("keeps one focus in view in the recorder, stores it once a take exists, and says when three takes are enough (4.6)", async () => {
   const user = userEvent.setup();
   const client = { ...createMockClient(), setSessionFocus: vi.fn(async () => {}) };
   const view = wrap(client, <RepeatFocus sessionId="s-1" takeCount={0} locked={false} native />);
-  expect(view.container).toBeEmptyDOMElement();
-  view.rerender(
+  expect(screen.getByText("Choose one thing to change")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Next focus" }));
+  expect(screen.getByText("State the main point in the first sentence")).toBeInTheDocument();
+  expect(client.setSessionFocus).not.toHaveBeenCalled(); // no session before the first take
+  const at = (takeCount: number) => view.rerender(
     <MemoryRouter><QueryClientProvider client={new QueryClient()}><IpcContext.Provider value={client}>
-      <RepeatFocus sessionId="s-1" takeCount={1} locked={false} native />
+      <RepeatFocus sessionId="s-1" takeCount={takeCount} locked={false} native />
     </IpcContext.Provider></QueryClientProvider></MemoryRouter>,
   );
-  expect(screen.getByRole("heading", { name: "Before take 2: choose one thing to improve" })).toBeInTheDocument();
-  await user.click(screen.getByRole("radio", { name: "Give one concrete example" }));
-  expect(client.setSessionFocus).toHaveBeenCalledWith("s-1", "Give one concrete example");
-  expect(await screen.findByText("Focus for the next take: Give one concrete example.")).toBeInTheDocument();
+  at(1);
+  await waitFor(() => expect(client.setSessionFocus).toHaveBeenCalledWith("s-1", "State the main point in the first sentence"));
+  expect(screen.getByText("For take 2: listen back, then change just this one thing.")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Previous focus" }));
+  await waitFor(() => expect(client.setSessionFocus).toHaveBeenLastCalledWith("s-1", "Slow down a little"));
+  await user.click(screen.getByRole("button", { name: "Write your own focus" }));
   await user.type(screen.getByLabelText("Your own focus"), "Name the trade-off");
-  await user.click(screen.getByRole("button", { name: "Use this focus" }));
-  expect(client.setSessionFocus).toHaveBeenLastCalledWith("s-1", "Name the trade-off");
-  view.rerender(
-    <MemoryRouter><QueryClientProvider client={new QueryClient()}><IpcContext.Provider value={client}>
-      <RepeatFocus sessionId="s-1" takeCount={3} locked={false} native />
-    </IpcContext.Provider></QueryClientProvider></MemoryRouter>,
-  );
-  expect(screen.getByRole("heading", { name: "Three takes is usually enough" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Use" }));
+  await waitFor(() => expect(client.setSessionFocus).toHaveBeenLastCalledWith("s-1", "Name the trade-off"));
+  at(3);
+  expect(screen.getByText(/Three takes is usually enough/)).toBeInTheDocument();
 });
 
 it("uses a saved expression in three sentences and saves them to the session notes after a take (4.9)", async () => {
@@ -90,17 +91,17 @@ it("lets the user choose one feature to imitate and stores it after the first ta
   await waitFor(() => expect(client.setSessionFocus).toHaveBeenCalledWith("s-2", "Phrase rhythm"));
 });
 
-it("preselects today's focus for the next take and says where it came from (§7 smart defaults)", async () => {
+it("picks today's focus by itself and says so (§7 smart defaults)", async () => {
   const client = { ...createMockClient(), setSessionFocus: vi.fn(async () => {}) };
   const qc = new QueryClient();
   qc.setQueryData(["today", "standard"], { focus: "Give one concrete example." });
-  render(
+  const ui = (takeCount: number) => (
     <MemoryRouter><QueryClientProvider client={qc}><IpcContext.Provider value={client}>
-      <RepeatFocus sessionId="s-3" takeCount={1} locked={false} native />
-    </IpcContext.Provider></QueryClientProvider></MemoryRouter>,
+      <RepeatFocus sessionId="s-3" takeCount={takeCount} locked={false} native />
+    </IpcContext.Provider></QueryClientProvider></MemoryRouter>
   );
+  const view = render(ui(0));
+  expect(screen.getByRole("group", { name: "Today's focus" })).toHaveTextContent("Give one concrete example");
+  view.rerender(ui(1));
   await waitFor(() => expect(client.setSessionFocus).toHaveBeenCalledWith("s-3", "Give one concrete example"));
-  expect(await screen.findByRole("radio", { name: /Give one concrete example/ })).toBeChecked();
-  expect(screen.getByText("· Today's focus")).toBeInTheDocument();
-  expect(screen.getByText(/Suggested from today's focus/)).toBeInTheDocument();
 });

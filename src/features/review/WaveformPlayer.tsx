@@ -5,6 +5,7 @@ import { Pause, Play, Repeat, RotateCcw, RotateCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import { formatClock } from "@/lib/format";
 import type { WaveformPeaks } from "@/lib/ipc/schemas";
 import type { PlayerLink } from "./player-link";
@@ -224,16 +225,14 @@ export function WaveformPlayer({ url, peaks, label, link }: { url: string; peaks
       </div>
 
       <div ref={containerRef} className="cursor-pointer" aria-hidden />
-      <input
-        type="range"
+      <Slider
         min={0}
-        max={durationMs}
+        max={Math.max(1, durationMs)}
         step={100}
-        value={Math.min(positionMs, durationMs)}
-        onChange={(e) => seek(Number(e.target.value))}
+        value={[Math.min(positionMs, durationMs)]}
+        onValueChange={([ms]) => seek(ms)}
         aria-label={`Playback position, ${label}`}
         aria-valuetext={`${formatClock(positionMs)} of ${formatClock(durationMs)}`}
-        className="w-full accent-primary"
       />
 
       <form

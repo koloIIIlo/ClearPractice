@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
+import { ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { Panel } from "@/components/page";
 import { Button } from "@/components/ui/button";
@@ -33,72 +34,85 @@ function todaysRepeatFocus(qc: QueryClient): string | null {
 }
 
 /**
- * Between takes of a repeated answer: choose one thing to improve. The choice is
- * stored on the session (Your note), so review shows what each retake tried.
- * Today's focus is preselected and says so; any other option replaces it.
- * Two or three takes are enough; after the third the panel says so.
+ * The one thing to change between takes of a repeated answer, as a single line
+ * inside the recorder so it stays in view while speaking. Today's focus is
+ * picked automatically and says so; the arrows switch to another, the pencil
+ * takes your own words. Once a take exists, the choice is stored on the session
+ * (Your note), so review shows what each retake tried. After three takes the
+ * line says that is usually enough.
  */
 export function RepeatFocus({ sessionId, takeCount, locked, native }: { sessionId: string; takeCount: number; locked: boolean; native: boolean }) {
   const ipc = useIpc();
   const qc = useQueryClient();
-  const [focus, setFocus] = useState<string | null>(null);
-  const [custom, setCustom] = useState("");
   const [suggested] = useState(() => todaysRepeatFocus(qc));
+  const [focus, setFocus] = useState<string | null>(suggested);
+  const [stored, setStored] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [custom, setCustom] = useState("");
   const save = useMutation({
-    mutationFn: (value: string | null) => (native ? ipc.setSessionFocus(sessionId, value) : Promise.resolve()),
+    mutationFn: (value: string) => (native ? ipc.setSessionFocus(sessionId, value) : Promise.resolve()),
     onSuccess: (_, value) => {
-      setFocus(value);
+      setStored(value);
       void qc.invalidateQueries({ queryKey: ["session", sessionId] });
     },
   });
-  const applied = useRef(false);
+  // The session exists once the first take is saved; from then on the focus shown is the one stored.
   useEffect(() => {
-    if (takeCount === 0 || takeCount >= 3 || !suggested || focus !== null || applied.current) return;
-    applied.current = true;
-    save.mutate(suggested);
-  }, [takeCount]);
-  if (takeCount === 0) return null;
+    if (takeCount > 0 && focus !== null && focus !== stored && !save.isPending) save.mutate(focus);
+  }, [takeCount, focus]);
+
+  const index = focus === null ? -1 : (REPEAT_FOCUSES as readonly string[]).indexOf(focus);
+  const step = (delta: 1 | -1) => {
+    const from = index < 0 ? (delta === 1 ? -1 : 0) : index;
+    setFocus(REPEAT_FOCUSES[(from + delta + REPEAT_FOCUSES.length) % REPEAT_FOCUSES.length]);
+  };
+  const label = focus !== null && focus === suggested ? "Today's focus" : "Focus";
+
   return (
-    <Panel className="space-y-3" aria-labelledby="repeat-focus-heading">
-      <h2 id="repeat-focus-heading" className="font-semibold">
-        {takeCount >= 3 ? "Three takes is usually enough" : `Before take ${takeCount + 1}: choose one thing to improve`}
-      </h2>
-      {takeCount >= 3 ? (
-        <p className="text-meta text-muted-foreground">
-          Compare the takes by listening, then keep the one you prefer.{" "}
-          {native && <Link className="underline" to={`/sessions/${sessionId}`}>Open this session</Link>}
-        </p>
-      ) : (
-        <p className="text-meta text-muted-foreground">Listen back first. Change one thing only, so you can hear what made the difference. The wording doesn't need to match.</p>
-      )}
-      <fieldset disabled={locked || save.isPending} className="space-y-2">
-        <legend className="sr-only">Focus for the next take</legend>
-        <RadioGroup value={REPEAT_FOCUSES.includes(focus as never) ? focus! : ""} onValueChange={(f) => save.mutate(f)} className="gap-1">
-          {REPEAT_FOCUSES.map((f, i) => (
-            <Label key={f} htmlFor={`repeat-focus-${i}`} className="flex min-h-9 items-center gap-2 font-normal">
-              <RadioGroupItem id={`repeat-focus-${i}`} value={f} /> {f}
-              {f === suggested && <span className="text-meta text-muted-foreground">· Today's focus</span>}
-            </Label>
-          ))}
-        </RadioGroup>
+    <div className="flex w-full flex-col items-center gap-1.5">
+      {editing ? (
         <form
-          className="flex flex-wrap items-center gap-2"
+          className="flex w-full max-w-md items-center gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            if (custom.trim()) save.mutate(custom.trim());
+            if (!custom.trim()) return;
+            setFocus(custom.trim());
+            setEditing(false);
           }}
         >
           <Label htmlFor="repeat-focus-custom" className="sr-only">Your own focus</Label>
-          <Input id="repeat-focus-custom" className="h-9 max-w-sm" maxLength={160} placeholder="Or write your own" value={custom} onChange={(e) => setCustom(e.target.value)} />
-          <Button type="submit" variant="outline" size="sm" disabled={!custom.trim()}>Use this focus</Button>
+          <Input id="repeat-focus-custom" autoFocus className="h-9" maxLength={160} placeholder="One thing to change" value={custom} onChange={(e) => setCustom(e.target.value)} />
+          <Button type="submit" variant="outline" size="sm" disabled={!custom.trim()}>Use</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>Cancel</Button>
         </form>
-      </fieldset>
-      <p className="text-meta" aria-live="polite">
-        {focus ? `Focus for the next take: ${focus}.` : "No focus chosen yet."}
-        {focus !== null && focus === suggested && " Suggested from today's focus; pick another if something else matters more."}
-      </p>
+      ) : (
+        <div role="group" aria-label={label} className="flex max-w-full items-center gap-0.5 rounded-full border bg-secondary/40 py-0.5 pr-1 pl-3 text-meta">
+          <span className="shrink-0 text-muted-foreground">{label}:</span>
+          <Button variant="ghost" size="icon-xs" className="size-7 rounded-full" aria-label="Previous focus" disabled={locked} onClick={() => step(-1)}>
+            <ChevronLeft aria-hidden />
+          </Button>
+          <span aria-live="polite" className="min-w-0 truncate font-medium">{focus ?? "Choose one thing to change"}</span>
+          <Button variant="ghost" size="icon-xs" className="size-7 rounded-full" aria-label="Next focus" disabled={locked} onClick={() => step(1)}>
+            <ChevronRight aria-hidden />
+          </Button>
+          <Button variant="ghost" size="icon-xs" className="size-7 rounded-full" aria-label="Write your own focus" disabled={locked} onClick={() => { setCustom(index < 0 && focus ? focus : ""); setEditing(true); }}>
+            <Pencil aria-hidden />
+          </Button>
+        </div>
+      )}
+      {takeCount >= 3 ? (
+        <p className="text-meta text-muted-foreground">
+          Three takes is usually enough. Compare them by listening.{" "}
+          {native && <Link className="underline" to={`/sessions/${sessionId}`}>Open this session</Link>}
+        </p>
+      ) : (
+        // Always one line here, so nothing below moves when the first take is saved.
+        <p className="text-meta text-muted-foreground">
+          {takeCount === 0 ? "Keep this one thing in mind while you speak." : `For take ${takeCount + 1}: listen back, then change just this one thing.`}
+        </p>
+      )}
       {save.error && <p role="alert" className="text-meta text-destructive">{save.error.message}</p>}
-    </Panel>
+    </div>
   );
 }
 

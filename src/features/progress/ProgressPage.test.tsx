@@ -24,7 +24,11 @@ it("saves a real-conversation reflection with the listener's words apart from yo
   expect(await screen.findByText("No reflections yet")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Save reflection" })).toBeDisabled();
   await user.type(screen.getByLabelText("Situation"), "Explained a decision to a colleague");
-  await user.selectOptions(screen.getByLabelText("Day"), "Yesterday");
+  const day = screen.getByRole("combobox", { name: "Day" });
+  expect(day).toHaveTextContent("Today");
+  await user.click(day);
+  await user.click(await screen.findByRole("option", { name: "Yesterday" }));
+  expect(day).toHaveTextContent("Yesterday");
   await user.type(screen.getByLabelText(/their words/), "You want to wait for the tests.");
   await user.type(screen.getByLabelText("Your own reading of how it went"), "The reason came late.");
   await user.click(screen.getByRole("button", { name: "Save reflection" }));

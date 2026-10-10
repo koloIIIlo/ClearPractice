@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
-import { CheckCircle2, Circle, Info, Loader2, Mic, RefreshCw, Square } from "lucide-react";
+import { Check, CheckCircle2, ChevronRight, Info, Loader2, Mic, RefreshCw, Square } from "lucide-react";
 import { toast } from "sonner";
 import { Page, Panel, QueryView } from "@/components/page";
 import {
@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -28,10 +29,11 @@ import { FollowUpPanel } from "./FollowUpPanel";
 import { cn } from "@/lib/utils";
 import { describeDemands } from "@/features/exercises/describe";
 import { useRecorder, type Recorder } from "./recorder";
-import { LiveWaveform } from "@/components/live-waveform";
+import { LiveWaveform, levelToHeight } from "@/components/live-waveform";
 import { RecordingLibrary, SavedAudio } from "./RecordingLibrary";
 import { NativeTake } from "@/features/sessions/NativeSession";
 import { TakeTranscript } from "@/features/review/TakeTranscript";
+import { TakeSummary } from "@/features/review/TakeSummary";
 import { createPlayerLink } from "@/features/review/player-link";
 import { useQuery } from "@tanstack/react-query";
 import type { SavedRecording } from "@/lib/ipc/schemas";
@@ -43,15 +45,51 @@ import { passagePrompt, ThoughtGroupPassage } from "./ThoughtGroupPassage";
 /**
  * A take in the Studio with its transcript underneath (user request
  * 2026-10-09): transcribe without leaving, so the follow-up question and
- * AI requests that need a transcript work in place.
+ * AI requests that need a transcript work in place. The take's summary sits
+ * between the player and the transcript, in the same place for every take.
  */
-function TakeWithTranscript({ attemptId, recording }: { attemptId: string; recording?: SavedRecording }) {
+function TakeWithTranscript({ attemptId, recording, reviewHref }: { attemptId: string; recording?: SavedRecording; reviewHref: string }) {
   const [link] = useState(createPlayerLink);
   return (
     <div className="space-y-3">
       {recording ? <SavedAudio recording={recording} link={link} /> : <NativeTake assetId={attemptId} link={link} />}
+      <TakeSummary attemptId={attemptId} reviewHref={reviewHref} />
       <TakeTranscript attemptId={attemptId} link={link} />
     </div>
+  );
+}
+
+/**
+ * One take in the list. Only the latest is open by default, so the Studio
+ * doesn't grow by a player and a transcript for every take; the rest fold to
+ * one line and open on demand. Everything here sits below the recorder.
+ */
+function TakeRow({ open, onOpenChange, label, meta, status, done, action, children }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  label: React.ReactNode;
+  meta: string;
+  status?: string;
+  done: boolean;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <li className="px-4 py-2">
+      <Collapsible open={open} onOpenChange={onOpenChange}>
+        <div className="flex items-center gap-3">
+          <CollapsibleTrigger className="flex h-10 min-w-0 flex-1 items-center gap-3 rounded-md text-left hover:text-foreground">
+            <ChevronRight aria-hidden className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")} />
+            <CheckCircle2 aria-hidden className={cn("size-4 shrink-0", done ? "text-primary" : "text-muted-foreground")} />
+            <span className="min-w-0 flex-1">{label}</span>
+            <span className="text-meta text-muted-foreground tabular-nums">{meta}</span>
+            {status && <span className="text-meta">{status}</span>}
+          </CollapsibleTrigger>
+          {action}
+        </div>
+        <CollapsibleContent className="mt-2 mb-1 space-y-3">{children}</CollapsibleContent>
+      </Collapsible>
+    </li>
   );
 }
 
@@ -107,6 +145,12 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
   const navigate = useNavigate();
   const [useCountdown, setUseCountdown] = useState(false);
   const [outline, setOutline] = useState({ point: "", reason: "", example: "" });
+  // Open for a fresh prompt; folded when continuing a session. It never folds by
+  // itself after a take: it sits above the recorder, which must not move (§3.2).
+  const [outlineOpen, setOutlineOpen] = useState(!continuing);
+  const outlineWords = [outline.point, outline.reason, outline.example].map((w) => w.trim()).filter(Boolean);
+  // Takes you opened or closed by hand; otherwise only the latest is open.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const rec = useRecorder(prompt.text, { sessionId, exerciseId: exercise.id, exerciseVersion: exercise.version,
     curriculumVersion: CURRICULUM_VERSION, contentId: prompt.id,
     exerciseType: exercise.type, prompt: prompt.text, outline, conditions: prompt.conditions });
@@ -118,6 +162,9 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
   const lastTakeId = rec.takes.at(-1)?.asset.assetId ?? shownEarlier.at(-1)?.id;
   const inSequence = params.get("seq") === "1";
   const studioRef = useRef<HTMLDivElement>(null);
+  const takeOpen = (id: string) => expanded[id] ?? id === lastTakeId;
+  const setTakeOpen = (id: string) => (open: boolean) => setExpanded((e) => ({ ...e, [id]: open }));
+  const reviewHref = (ordinal: number) => `/sessions/${sessionId}/attempt/${ordinal}`;
 
   const takeNumber = rec.takes.length + (rec.phase === "saved" || rec.phase === "interrupted" ? 0 : 1);
   const lastTake = rec.takes[rec.takes.length - 1];
@@ -201,7 +248,7 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
         className="flex items-start gap-2 rounded-lg border border-dashed px-3 py-2 text-meta text-muted-foreground"
       >
         <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
-        {native ? "Recordings stay on this computer. After saving, open the session to transcribe a take, review fillers, pauses and intonation, compare takes, and ask for optional AI feedback." : "Browser preview: recording is simulated. Open the desktop app to capture and save real audio."}
+        {native ? "Recordings stay on this computer. Transcribe a take below it to see what went well and one thing to try; open the session to compare takes or ask for AI feedback." : "Browser preview: recording is simulated. Open the desktop app to capture and save real audio."}
       </div>
 
       {passage && (
@@ -225,23 +272,34 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
       )}
       {exercise.type === "imitate" && <ImitationPanel sessionId={sessionId} hasTake={rec.takes.length > 0} locked={locked} native={native} lastTakeAssetId={rec.takes.at(-1)?.asset.assetId} />}
 
-      {!passage && !phrase && exercise.type !== "imitate" && <fieldset disabled={locked} className="grid gap-3 sm:grid-cols-3">
-        <legend className="mb-2 text-meta font-medium">Outline (optional, up to three keywords)</legend>
-        {(["point", "reason", "example"] as const).map((k) => (
-          <div key={k} className="space-y-1">
-            <Label htmlFor={`outline-${k}`} className="capitalize">
-              {k}
-            </Label>
-            <Input
-              id={`outline-${k}`}
-              className="h-10"
-              value={outline[k]}
-              maxLength={60}
-              onChange={(e) => setOutline((o) => ({ ...o, [k]: e.target.value }))}
-            />
-          </div>
-        ))}
-      </fieldset>}
+      {!passage && !phrase && exercise.type !== "imitate" && (
+        <Collapsible open={outlineOpen} onOpenChange={setOutlineOpen}>
+          <CollapsibleTrigger className="flex min-h-7 max-w-full items-center gap-2 rounded-sm text-left text-meta font-medium hover:text-foreground">
+            <ChevronRight aria-hidden className={cn("size-4 shrink-0 text-muted-foreground transition-transform", outlineOpen && "rotate-90")} />
+            Outline (optional, up to three keywords)
+            {!outlineOpen && outlineWords.length > 0 && <span className="min-w-0 truncate font-normal text-muted-foreground">· {outlineWords.join(" · ")}</span>}
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <fieldset disabled={locked} className="mt-2 grid gap-3 sm:grid-cols-3">
+              <legend className="sr-only">Outline</legend>
+              {(["point", "reason", "example"] as const).map((k) => (
+                <div key={k} className="space-y-1">
+                  <Label htmlFor={`outline-${k}`} className="capitalize">
+                    {k}
+                  </Label>
+                  <Input
+                    id={`outline-${k}`}
+                    className="h-10"
+                    value={outline[k]}
+                    maxLength={60}
+                    onChange={(e) => setOutline((o) => ({ ...o, [k]: e.target.value }))}
+                  />
+                </div>
+              ))}
+            </fieldset>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
 
       <div className="space-y-1">
         <Label htmlFor="studio-microphone">Microphone</Label>
@@ -262,19 +320,24 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
       </div>
       {rec.error && <p role="alert" className="rounded-lg border p-3 text-destructive">{rec.error}</p>}
 
-      <Panel className="flex flex-col items-center gap-5 py-10">
+      <Panel className="flex flex-col items-center gap-4 py-8">
         <RecorderStatus rec={rec} />
-        <div className="text-5xl font-medium tabular-nums" aria-label="Elapsed time">
+        <div className="text-5xl font-semibold tracking-tight tabular-nums" aria-label="Elapsed time">
           {rec.phase === "countdown" ? rec.countdown : formatClock(rec.elapsedMs)}
         </div>
         <LiveWaveform levels={rec.levels} level={rec.level} active={rec.phase === "recording"} clipping={rec.clipping} />
+        {/* The one thing to change sits inside the recorder, in view while speaking. */}
+        {exercise.type === "repeat" && !prompt.conditions.followUp && (
+          <RepeatFocus sessionId={sessionId} takeCount={rec.takes.length} locked={locked} native={native} />
+        )}
         <Button
           size="lg"
           onClick={primary}
           disabled={!canUsePrimary}
           // One solid primary: Stop while recording; in a sequence, Next step takes over once a take exists.
           variant={rec.phase !== "recording" && inSequence && rec.takes.length > 0 ? "outline" : "default"}
-          className="min-w-44"
+          className={cn("min-w-44 rounded-full", rec.phase === "recording" && "level-halo")}
+          style={rec.phase === "recording" ? ({ "--level": levelToHeight(rec.level) } as React.CSSProperties) : undefined}
           aria-keyshortcuts="Control+Enter"
         >
           {rec.phase === "recording" ? (
@@ -308,7 +371,6 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
       {exercise.type === "repeat" && (
         <FollowUpPanel prompt={prompt} sessionId={sessionId} lastTakeId={lastTakeId} takeCount={allTakeCount} native={native} locked={locked} />
       )}
-      {exercise.type === "repeat" && !prompt.conditions.followUp && <RepeatFocus sessionId={sessionId} takeCount={rec.takes.length} locked={locked} native={native} />}
 
       <section aria-labelledby="takes-heading">
         <h2 id="takes-heading" className="mb-3 font-semibold">
@@ -323,14 +385,16 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
         {shownEarlier.length > 0 && (
           <ol className="mb-3 divide-y rounded-panel border bg-card" aria-label="Earlier takes in this session">
             {shownEarlier.map((a) => (
-              <li key={a.id} className="space-y-3 px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 aria-hidden className="size-4 text-muted-foreground" />
-                  <span className="flex-1">Take {a.ordinal} <span className="text-meta text-muted-foreground">· earlier</span></span>
-                  <span className="text-meta text-muted-foreground tabular-nums">{formatClock(a.durationMs)}</span>
-                </div>
-                <TakeWithTranscript attemptId={a.id} />
-              </li>
+              <TakeRow
+                key={a.id}
+                open={takeOpen(a.id)}
+                onOpenChange={setTakeOpen(a.id)}
+                done={false}
+                label={<>Take {a.ordinal} <span className="text-meta text-muted-foreground">· earlier</span></>}
+                meta={formatClock(a.durationMs)}
+              >
+                <TakeWithTranscript attemptId={a.id} reviewHref={reviewHref(a.ordinal)} />
+              </TakeRow>
             ))}
           </ol>
         )}
@@ -340,13 +404,15 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
         ) : (
           <ol className="divide-y rounded-panel border bg-card">
             {rec.takes.map((t) => (
-              <li key={t.ordinal} className="space-y-3 px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 aria-hidden className="size-4 text-primary" />
-                <span className="flex-1">Take {t.ordinal}</span>
-                <span className="text-meta text-muted-foreground tabular-nums">{formatClock(t.durationMs)}</span>
-                <span className="text-meta">{trashed.has(t.asset.assetId) ? "In Trash" : native ? "Saved" : "Simulated"}</span>
-                {native && !trashed.has(t.asset.assetId) && (
+              <TakeRow
+                key={t.ordinal}
+                open={takeOpen(t.asset.assetId)}
+                onOpenChange={setTakeOpen(t.asset.assetId)}
+                done
+                label={`Take ${t.ordinal}`}
+                meta={formatClock(t.durationMs)}
+                status={trashed.has(t.asset.assetId) ? "In Trash" : native ? "Saved" : "Simulated"}
+                action={native && !trashed.has(t.asset.assetId) && (
                   <MoveTakeToTrashButton
                     take={{ id: t.asset.assetId, ordinal: t.ordinal, durationMs: t.durationMs }}
                     sessionTitle={prompt.text}
@@ -354,15 +420,18 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
                     onRestored={() => setTrashed((s) => { const next = new Set(s); next.delete(t.asset.assetId); return next; })}
                   />
                 )}
-                </div>
+              >
                 {trashed.has(t.asset.assetId) ? (
                   <p className="text-meta text-muted-foreground">Moved to Trash. Restore it from the toast or from Sessions → Trash.</p>
                 ) : native ? (
-                  <TakeWithTranscript attemptId={t.asset.assetId} recording={t.asset} />
+                  <TakeWithTranscript attemptId={t.asset.assetId} recording={t.asset} reviewHref={reviewHref(t.ordinal)} />
                 ) : (
-                  <SavedAudio recording={t.asset} />
+                  <>
+                    <SavedAudio recording={t.asset} />
+                    <TakeSummary attemptId={t.asset.assetId} />
+                  </>
                 )}
-              </li>
+              </TakeRow>
             ))}
           </ol>
         )}
@@ -403,20 +472,28 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
   );
 }
 
+/** The recorder's state as a small pill; a live dot pulses while recording (still under reduced motion). */
 function RecorderStatus({ rec }: { rec: Recorder }) {
+  const quiet = "bg-secondary text-muted-foreground";
   const map = {
-    idle: { text: "Ready", tone: "text-muted-foreground" },
-    countdown: { text: "Get ready. Not recording yet", tone: "text-muted-foreground" },
-    preparing: { text: "Opening microphone…", tone: "text-muted-foreground" },
-    recording: { text: "Recording", tone: "text-destructive" },
-    finalizing: { text: "Saving…", tone: "text-muted-foreground" },
-    saved: { text: "Take complete", tone: "text-primary" },
-    interrupted: { text: "Recording interrupted", tone: "text-destructive" },
+    idle: { text: "Ready", tone: quiet },
+    countdown: { text: "Get ready. Not recording yet", tone: quiet },
+    preparing: { text: "Opening microphone…", tone: quiet },
+    recording: { text: "Recording", tone: "bg-destructive/10 text-destructive" },
+    finalizing: { text: "Saving…", tone: quiet },
+    saved: { text: "Take complete", tone: "bg-primary/10 text-primary" },
+    interrupted: { text: "Recording interrupted", tone: "bg-destructive/10 text-destructive" },
   } as const;
   const { text, tone } = map[rec.phase];
   return (
-    <p className={cn("inline-flex items-center gap-2 font-medium", tone)}>
-      {rec.phase === "recording" && <Circle aria-hidden className="size-3 fill-current" />}
+    <p className={cn("inline-flex h-7 items-center gap-2 rounded-full px-3 text-meta font-medium", tone)}>
+      {rec.phase === "recording" && (
+        <span aria-hidden className="relative flex size-2">
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-60" />
+          <span className="relative inline-flex size-2 rounded-full bg-current" />
+        </span>
+      )}
+      {rec.phase === "saved" && <Check aria-hidden className="size-3.5" />}
       {text}
     </p>
   );

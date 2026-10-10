@@ -16,7 +16,7 @@ function transcriptionLabel(t: ServiceStatus["transcription"]) {
 function StateChip({ state }: { state: keyof typeof STATE_TEXT }) {
   if (state === "ready") return null;
   return (
-    <span className="ml-1.5 inline-flex h-5 items-center rounded-md bg-highlight px-1.5 font-medium text-highlight-foreground">
+    <span className="ml-1.5 inline-flex h-5 items-center rounded-md bg-highlight px-1.5 font-medium whitespace-nowrap text-highlight-foreground">
       {STATE_TEXT[state]}
     </span>
   );

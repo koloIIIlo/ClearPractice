@@ -98,6 +98,19 @@ describe("WaveformPlayer", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Enter times as m:ss");
   });
 
+  it("seeks from the keyboard on a labelled position slider that reads out the time", async () => {
+    const user = userEvent.setup();
+    render(<WaveformPlayer url="asset://take" peaks={peaks} label="Take 1" />);
+    const slider = screen.getByRole("slider", { name: "Playback position, Take 1" });
+    expect(slider).toHaveAttribute("aria-valuetext", "0:00 of 0:20");
+    act(() => fake.ws.emit("timeupdate", 4.2));
+    expect(slider).toHaveAttribute("aria-valuetext", "0:04 of 0:20");
+    fake.ws.setTime.mockClear();
+    slider.focus();
+    await user.keyboard("{End}");
+    expect(fake.ws.setTime).toHaveBeenCalledWith(20);
+  });
+
   it("shares its position with a linked view and accepts seeks from it", () => {
     const link = createPlayerLink();
     const { unmount } = render(<WaveformPlayer url="asset://take" peaks={peaks} label="Take 1" link={link} />);

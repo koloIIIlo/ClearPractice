@@ -9,11 +9,12 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { formatLongDay, formatRelativeDay } from "@/lib/format";
-import { useTodayPlan } from "@/lib/ipc/queries";
+import { useSessions, useTodayPlan } from "@/lib/ipc/queries";
 import type { SessionLength, TodayPlan } from "@/lib/ipc/schemas";
 import { RecordingLibrary } from "@/features/practice/RecordingLibrary";
 import { loadSequence, startSequence, stepUrl } from "@/features/practice/sequence";
 import { StagePanel } from "./StagePanel";
+import { WeekRow } from "./WeekRow";
 
 const LENGTHS: { value: SessionLength; label: string; hint: string }[] = [
   { value: "standard", label: "About 13 minutes", hint: "Four short exercises" },
@@ -26,6 +27,8 @@ export function TodayPage() {
   // The default length comes from Settings → Practice until you pick one here.
   const length = chosen ?? preferences.sessionLength;
   const plan = useTodayPlan(length);
+  // Load the week row's sessions alongside the plan rather than after it.
+  useSessions({});
 
   return (
     <Page>
@@ -63,9 +66,14 @@ function TodayContent({
 
   return (
     <>
-      <header className="mb-8 space-y-2">
-        <h1 className="text-title font-semibold tracking-tight">{formatLongDay(plan.localDate)}</h1>
-        <ServiceStatusLine />
+      {/* Wide: the week sits beside the title, and the title column takes the width left over
+          (basis 0) so status chips that load later wrap inside it. Narrower: one line below. */}
+      <header className="mb-8 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+        <div className="min-w-0 space-y-2 lg:flex-1">
+          <h1 className="text-title font-semibold tracking-tight">{formatLongDay(plan.localDate)}</h1>
+          <ServiceStatusLine />
+        </div>
+        <WeekRow today={plan.localDate} />
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">

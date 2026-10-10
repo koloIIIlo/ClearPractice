@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDay, formatRelativeDay } from "@/lib/format";
-import { NativeSelect } from "@/components/ui/native-select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useProgress } from "@/lib/ipc/queries";
 import { useIpc } from "@/lib/ipc";
 import { ProgressView, type ProgressSummary, type TransferReview } from "@/lib/ipc/schemas";
@@ -217,7 +217,8 @@ function RealConversations() {
   const qc = useQueryClient();
   const reviews = useQuery({ queryKey: ["transfer-reviews"], queryFn: () => ipc.listTransferReviews() });
   const [form, setForm] = useState(EMPTY_REFLECTION);
-  const [date, setDate] = useState(() => toLocalDate(new Date()));
+  const [days] = useState(RECENT_DAYS);
+  const [date, setDate] = useState(days[0]);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
   const save = useMutation({
@@ -252,9 +253,14 @@ function RealConversations() {
               </div>
               <div className="space-y-1">
                 <Label htmlFor="rc-date">Day</Label>
-                <NativeSelect id="rc-date" className="w-full" value={date} onChange={(e) => setDate(e.target.value)}>
-                  {RECENT_DAYS().map((d) => <option key={d} value={d}>{formatRelativeDay(d, RECENT_DAYS()[0])}</option>)}
-                </NativeSelect>
+                <Select value={date} onValueChange={setDate}>
+                  <SelectTrigger id="rc-date" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {days.map((d) => <SelectItem key={d} value={d}>{formatRelativeDay(d, days[0])}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="space-y-1">

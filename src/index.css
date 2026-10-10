@@ -63,22 +63,23 @@
   --sidebar-ring: var(--cp-accent);
 }
 
+/* Dark: neutral graphite surfaces (no green tint); green is kept for the brand accent only. */
 .dark {
-  --cp-app-bg: #111816;
-  --cp-surface: #19221f;
-  --cp-surface-2: #222e28;
-  --cp-text: #edf4ef;
-  --cp-text-2: #afbeb5;
-  --cp-accent: #8ed8b5;
-  --cp-on-accent: #102219;
-  --cp-border: #3a4a40;
-  --cp-highlight: #43391c;
-  --cp-error: #ffb4b9;
+  --cp-app-bg: #121214;
+  --cp-surface: #1b1b1f;
+  --cp-surface-2: #26262b;
+  --cp-text: #ececee;
+  --cp-text-2: #a3a3ab;
+  --cp-accent: #5fd0a2;
+  --cp-on-accent: #0a1f16;
+  --cp-border: #34343b;
+  --cp-highlight: #4a3c14;
+  --cp-error: #ff9aa2;
 
-  --chart-2: #9fbcad;
+  --chart-2: #8fb8a6;
   --chart-3: #e0c070;
-  --chart-4: #afbeb5;
-  --chart-5: #ffb4b9;
+  --chart-4: #a3a3ab;
+  --chart-5: #ff9aa2;
 }
 
 @theme inline {
@@ -195,6 +196,23 @@
   }
   details[open] > summary:not(.list-none)::before {
     transform: translateY(-2px) rotate(45deg);
+  }
+}
+
+@layer components {
+  /* While recording, a soft ring around Stop follows the input level (--level 0–1).
+     Reduced motion removes it; the waveform and timer still show that audio is coming in. */
+  .level-halo {
+    box-shadow: 0 0 0 calc(3px + var(--level, 0) * 14px) color-mix(in oklab, var(--primary) 20%, transparent);
+    transition: box-shadow 120ms var(--ease-standard);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .level-halo {
+      box-shadow: none;
+    }
+  }
+  html[data-reduced-motion="true"] .level-halo {
+    box-shadow: none;
   }
 }
 
