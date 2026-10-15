@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { BookOpenText, Pencil, Plus, Trash2 } from "lucide-react";
+import { BookOpenText, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
+import { PhraseSuggestions } from "./PhraseSuggestions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,6 +21,7 @@ export function PhrasesPage() {
   const [params] = useSearchParams();
   const [practising, setPractising] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
   const focus = params.get("focus");
   const localToday = toLocalDate(new Date());
 
@@ -35,7 +37,10 @@ export function PhrasesPage() {
                 description="Expressions you've chosen to keep. Recall each one before you see it again."
                 actions={
                   !practising ? (
-                    <div className="flex flex-wrap gap-2">
+                    <div data-tour="phrases-actions" className="flex flex-wrap gap-2">
+                      <Button variant="outline" onClick={() => setSuggesting(true)} disabled={suggesting}>
+                        <Sparkles aria-hidden /> Suggest with AI
+                      </Button>
                       <Button variant="outline" onClick={() => setAdding(true)} disabled={adding}>
                         <Plus aria-hidden /> Add a phrase
                       </Button>
@@ -52,6 +57,7 @@ export function PhrasesPage() {
                 <PhraseReview due={due} onDone={() => setPractising(false)} />
               ) : (
                 <>
+                  {suggesting && <PhraseSuggestions onDone={() => setSuggesting(false)} />}
                   {adding && <PhraseForm onDone={() => setAdding(false)} />}
                   <PhraseList list={list} focus={focus} today={localToday} />
                 </>

@@ -6,6 +6,7 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { toast } from "sonner";
 import { EmptyState, LoadingBlock, Page, PageHeader, Panel, QueryView, SectionTitle } from "@/components/page";
 import { EvidenceLabel } from "@/components/evidence";
+import { ActivityCalendar } from "./ActivityCalendar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,6 +49,9 @@ export function ProgressPage() {
         title="Progress"
         description="Evidence from your own recordings. Rehearsed answers, unfamiliar tasks, and real conversations are kept apart, and nothing is combined into a single score."
       />
+      <div className="mb-8">
+        <ActivityCalendar />
+      </div>
       <Tabs value={view} onValueChange={(v) => setParams({ view: v }, { replace: true })}>
         <TabsList className="mb-6">
           {ProgressView.options.map((v) => (

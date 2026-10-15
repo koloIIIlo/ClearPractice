@@ -11,6 +11,11 @@ const KEY: &str = "ui_preferences";
 pub struct Preferences {
     pub recording_sounds: bool,
     pub recording_shortcuts: bool,
+    /// The Studio's Ready state shows the live microphone level (nothing is recorded).
+    pub level_before_recording: bool,
+    /// Each new take is transcribed on this computer as soon as it is saved
+    /// (local mode only; cloud transcription is always one previewed take at a time).
+    pub auto_transcribe: bool,
     /// `None` follows the Windows default microphone.
     pub input_device_id: Option<String>,
     /// "standard" (about 13 minutes) or "short" (about 5 minutes).
@@ -23,6 +28,8 @@ pub struct Preferences {
     pub delivery_impressions: bool,
     /// First-launch setup (4.19) finished or skipped.
     pub onboarded: bool,
+    /// The guided tour was finished or skipped (it can be taken again from Help).
+    pub tour_done: bool,
     /// What you want to improve: clarity, hesitation, phrasing, confidence.
     pub goals: Vec<String>,
     pub goal_note: String,
@@ -42,9 +49,9 @@ pub struct Preferences {
 
 impl Default for Preferences {
     fn default() -> Self {
-        Self { recording_sounds: true, recording_shortcuts: true, input_device_id: None, session_length: "standard".into(),
+        Self { recording_sounds: true, recording_shortcuts: true, level_before_recording: true, auto_transcribe: true, input_device_id: None, session_length: "standard".into(),
             coaching_mode: "api".into(), coaching_model: CoachingModel::default(), delivery_impressions: false,
-            onboarded: false, goals: Vec::new(), goal_note: String::new(), difficulty_language: None,
+            onboarded: false, tour_done: false, goals: Vec::new(), goal_note: String::new(), difficulty_language: None,
             local_endpoint: "http://127.0.0.1:8080".into(), local_model: String::new(), budget_warning_micro_usd: 4_000_000, reminder_time: None,
             coaching_prices: Default::default() }
     }

@@ -5,6 +5,7 @@ import { EvidenceLabel } from "@/components/evidence";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
 import { usePreferences } from "@/lib/ipc/queries";
+import { useTranscriptionQueue } from "@/features/transcription/queue";
 import type { AttemptTranscript, CoachingRun, EvidenceSource } from "@/lib/ipc/schemas";
 
 /** Below this many words the measures say too little to summarise. */
@@ -65,6 +66,7 @@ export function TakeSummary({ attemptId, reviewHref }: { attemptId: string; revi
   const ipc = useIpc();
   const { preferences } = usePreferences();
   const native = ipc.recordingMode === "native";
+  const queue = useTranscriptionQueue();
   const coaching = preferences.coachingMode !== "off";
   const transcript = useQuery({ queryKey: ["attempt-transcript", attemptId], queryFn: () => ipc.getAttemptTranscript(attemptId), enabled: native });
   const runs = useQuery({ queryKey: ["take-coaching", attemptId], queryFn: () => ipc.listTakeCoaching(attemptId), enabled: native && coaching });
@@ -77,12 +79,34 @@ export function TakeSummary({ attemptId, reviewHref }: { attemptId: string; revi
   // Wait for saved AI feedback too, so the summary doesn't switch source once it arrives.
   else if (transcript.data && !(coaching && runs.isPending)) result = summarizeTake(transcript.data, runs.data ?? []);
 
-  if (result?.kind !== "ready")
+  if (result?.kind !== "ready") {
+    // Without a transcript, say plainly what happens next (user request 2026-10-10).
+    const waiting = native && transcript.data && !transcript.data.revision;
+    const queued = queue.current?.attemptId === attemptId ? "now" : queue.waiting.some((i) => i.attemptId === attemptId) ? "queued" : null;
+    const next = !waiting
+      ? null
+      : queued === "now" || transcript.data?.job?.state === "running"
+        ? "Transcribing on this computer now."
+        : queued === "queued"
+          ? "Waiting its turn to be transcribed on this computer."
+          : !queue.available
+            ? queue.unavailableReason
+            : preferences.autoTranscribe
+              ? "New takes are transcribed automatically; this one was recorded earlier, so transcribe it below."
+              : "Transcribe it below, or turn on automatic transcription in Settings → Transcription.";
     return (
       <p role={result ? undefined : "status"} className="rounded-lg border border-dashed px-3 py-2 text-meta text-muted-foreground">
-        {result?.reason ?? "Loading the summary…"}
+        {queued === "now" || transcript.data?.job?.state === "running" ? "The summary appears here when the transcript is ready." : (result?.reason ?? "Loading the summary…")}
+        {next && queued !== "now" && transcript.data?.job?.state !== "running" && (
+          <>
+            {" "}
+            {next}
+            {!queue.available && native && <> <Link className="text-primary hover:underline" to="/settings/transcription">Open Settings</Link></>}
+          </>
+        )}
       </p>
     );
+  }
 
   const { wentWell, tryNext } = result;
   return (

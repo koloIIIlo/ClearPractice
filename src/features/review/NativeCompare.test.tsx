@@ -59,9 +59,9 @@ it("compares the first and last take side by side and saves which felt clearer a
   expect(within(row("Pauses over 0.7 s")).getAllByRole("cell")[0]).toHaveTextContent("1");
   expect(screen.getByRole("button", { name: "Play take 1, then take 3" })).toBeInTheDocument();
   // A take cannot be compared with itself.
-  expect(within(screen.getByLabelText("Second take")).getByRole("option", { name: /Take 1/ })).toBeDisabled();
-
-  await user.selectOptions(screen.getByLabelText("Second take"), "t2");
+  await user.click(screen.getByLabelText("Second take"));
+  expect(await screen.findByRole("option", { name: /Take 1/ })).toHaveAttribute("aria-disabled", "true");
+  await user.click(screen.getByRole("option", { name: /Take 2/ }));
   expect(await screen.findByText(/Not transcribed yet/)).toBeInTheDocument();
   expect(within(row("Words")).getAllByRole("cell")[1]).toHaveTextContent("Not transcribed");
 

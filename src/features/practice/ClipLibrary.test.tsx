@@ -6,6 +6,7 @@ import { IpcContext, type IpcClient } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
 import type { ClipFolder, ReferenceClip } from "@/lib/ipc/schemas";
 import { ClipLibrary, filterClips } from "./ClipLibrary";
+import { choose } from "@/test/select";
 
 const clip = (id: string, over: Partial<ReferenceClip> = {}): ReferenceClip => ({
   id, origin: "user", title: id, source: "", transcript: null, description: null, feature: null, durationMs: 10_000, sha256: "a".repeat(64), createdAtMs: 1, folderId: null, ...over,
@@ -80,7 +81,7 @@ it("organises clips in folders, moves a selection and chooses a clip to practise
   await user.click(within(nav).getByRole("button", { name: /All clips/ }));
   await user.click(screen.getByRole("checkbox", { name: "Select Opening line" }));
   await user.click(screen.getByRole("checkbox", { name: "Select Budget point" }));
-  await user.selectOptions(screen.getByLabelText("Move to"), "Talks");
+  await choose(user, screen.getByLabelText("Move to"), "Talks");
   expect(client.moveClips).toHaveBeenCalledWith(["clip-a", "clip-b"], "folder-1");
   await waitFor(() => expect(within(nav).getByRole("button", { name: /Talks \(2\)/ })).toBeInTheDocument());
 

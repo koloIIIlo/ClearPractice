@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, type NavigateFunction } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { RotateCcw, Trash2 } from "lucide-react";
@@ -49,7 +49,7 @@ function useTrash() {
   return useQuery({ queryKey: trashKey, queryFn: () => ipc.listTrash() });
 }
 
-function useInvalidateHistory() {
+export function useInvalidateHistory() {
   const qc = useQueryClient();
   return async () => {
     await Promise.all([
@@ -60,6 +60,26 @@ function useInvalidateHistory() {
       qc.invalidateQueries({ queryKey: ["recording-recovery"] }),
     ]);
   };
+}
+
+/** "Moved … to Trash" with Undo, where "Trash" opens the Trash page (user request 2026-10-10). */
+export function movedToTrash(what: string, navigate: NavigateFunction, restore: () => Promise<void> | void) {
+  const id = toast(
+    <span>
+      Moved {what} to{" "}
+      <button
+        type="button"
+        className="rounded-sm font-medium text-primary underline underline-offset-2 hover:no-underline"
+        onClick={() => {
+          toast.dismiss(id);
+          navigate("/sessions/trash");
+        }}
+      >
+        Trash
+      </button>
+    </span>,
+    { duration: 10_000, action: { label: "Undo", onClick: () => void restore() } },
+  );
 }
 
 /**
@@ -88,7 +108,7 @@ export function MoveToTrashButton({ session }: { session: Pick<SessionSummary, "
       setOpen(false);
       navigate("/sessions");
       await refresh();
-      toast(`Moved “${session.title}” to Trash`, { duration: 10_000, action: { label: "Undo", onClick: () => void restore() } });
+      movedToTrash(`“${session.title}”`, navigate, restore);
     },
   });
   return (
@@ -137,6 +157,7 @@ export function MoveTakeToTrashButton({ take, sessionTitle, onMoved, onRestored 
   onRestored?: () => void;
 }) {
   const ipc = useIpc();
+  const navigate = useNavigate();
   const refresh = useInvalidateHistory();
   const retention = useTrash().data?.retentionDays ?? 30;
   const [open, setOpen] = useState(false);
@@ -157,7 +178,7 @@ export function MoveTakeToTrashButton({ take, sessionTitle, onMoved, onRestored 
       setOpen(false);
       onMoved?.();
       await refresh();
-      toast(`Moved ${label} to Trash`, { duration: 10_000, action: { label: "Undo", onClick: () => void restore() } });
+      movedToTrash(label, navigate, restore);
     },
   });
   return (

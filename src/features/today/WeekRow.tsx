@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import { useSessions } from "@/lib/ipc/queries";
 import type { SessionSummary } from "@/lib/ipc/schemas";
 import { formatDuration, parseLocalDate, UI_LOCALE } from "@/lib/format";
@@ -67,7 +68,7 @@ export function WeekRow({ today }: { today: string }) {
   const recap = weekRecap(sessions.data, today);
   if (!recap.anyHistory) return null;
   return (
-    <section aria-label="Your week" className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 lg:flex-col lg:items-end lg:pt-1">
+    <section data-tour="week" aria-label="Your week" className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 lg:flex-col lg:items-end lg:pt-1">
       <ol className="flex gap-1.5">
         {recap.days.map((d) => (
           <li key={d.date} className="flex w-5 flex-col items-center gap-1">
@@ -89,7 +90,10 @@ export function WeekRow({ today }: { today: string }) {
           </li>
         ))}
       </ol>
-      <p className="text-meta text-muted-foreground tabular-nums">{recapLine(recap)}</p>
+      <p className="text-meta text-muted-foreground tabular-nums">
+        {recapLine(recap)} ·{" "}
+        <Link to="/progress" className="text-primary hover:underline">Your year</Link>
+      </p>
     </section>
   );
 }

@@ -15,7 +15,9 @@ import { formatClock } from "@/lib/format";
 import { useInputDevices, usePreferences } from "@/lib/ipc/queries";
 import type { CoachingModel, Preferences } from "@/lib/ipc/schemas";
 import { Button } from "@/components/ui/button";
-import { RefreshCw } from "lucide-react";
+import { Compass, Minus, Plus, RefreshCw } from "lucide-react";
+import { useTour } from "@/features/tour/tour";
+import { setZoomLevel, stepZoom, useZoomLevel, ZOOM_STEPS } from "@/app/zoom";
 import { cn } from "@/lib/utils";
 import { BackupSettings } from "./BackupSettings";
 import { DataFolder } from "./DataFolder";
@@ -141,6 +143,13 @@ export function AudioSettings() {
       </div>
       <MicrophoneTest deviceId={selected || null} />
       <SwitchRow id="rec-sounds" label="Recording sounds" hint="A short tone when recording starts and stops." checked={preferences.recordingSounds} onCheckedChange={(on) => update({ recordingSounds: on })} />
+      <SwitchRow
+        id="live-level"
+        label="Show the microphone level before recording"
+        hint="In the studio, the waveform reacts to your voice before you press Record. The microphone is only measured: nothing is recorded or kept, and Windows shows it as in use while the studio is open."
+        checked={preferences.levelBeforeRecording}
+        onCheckedChange={(on) => update({ levelBeforeRecording: on })}
+      />
     </Section>
   );
 }
@@ -185,6 +194,27 @@ function PracticeSettings() {
   );
 }
 
+/** Page zoom in steps from 80 % to 200 %, the same as Ctrl + / Ctrl − (remembered on this computer). */
+function ZoomRow() {
+  const zoom = useZoomLevel();
+  const native = useIpc().recordingMode === "native";
+  if (!native) return <p className="text-meta text-muted-foreground">Zoom (Ctrl + and Ctrl −) is set in the desktop app; here the browser's own zoom applies.</p>;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <p className="font-medium" id="zoom-label">Zoom</p>
+        <p className="text-meta text-muted-foreground">Makes text and controls larger or smaller. Ctrl + and Ctrl − do the same; Ctrl 0 resets.</p>
+      </div>
+      <div role="group" aria-labelledby="zoom-label" className="flex items-center gap-1">
+        <Button variant="outline" size="icon" aria-label="Zoom out" disabled={zoom <= ZOOM_STEPS[0]} onClick={() => setZoomLevel(stepZoom(zoom, -1))}><Minus aria-hidden /></Button>
+        <output aria-live="polite" className="w-16 text-center tabular-nums">{Math.round(zoom * 100)} %</output>
+        <Button variant="outline" size="icon" aria-label="Zoom in" disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} onClick={() => setZoomLevel(stepZoom(zoom, 1))}><Plus aria-hidden /></Button>
+        <Button variant="ghost" disabled={zoom === 1} onClick={() => setZoomLevel(1)}>Reset</Button>
+      </div>
+    </div>
+  );
+}
+
 function AppearanceSettings() {
   const theme = useTheme();
   return (
@@ -212,16 +242,24 @@ function AppearanceSettings() {
         checked={theme.reducedMotion}
         onCheckedChange={theme.setReducedMotion}
       />
-      <p className="text-meta text-muted-foreground">Text size follows the app zoom (Ctrl + and Ctrl −), up to 200%.</p>
+      <ZoomRow />
     </Section>
   );
 }
 
 function TranscriptionSettings() {
+  const { preferences, update } = usePreferences();
   return (
     <>
       <Section title="Default transcription" description="How new takes are transcribed. You can switch on any take.">
         <TranscriptionMode />
+        <SwitchRow
+          id="auto-transcribe"
+          label="Transcribe each new take automatically"
+          hint="Each new take is transcribed with local Whisper as soon as you stop, so its summary appears under it. This works whenever local Whisper is set up, also when Cloud is your default for transcribing by hand. Recording always comes first, and nothing is ever sent to a cloud provider automatically."
+          checked={preferences.autoTranscribe}
+          onCheckedChange={(on) => update({ autoTranscribe: on })}
+        />
       </Section>
       <Section title="Local Whisper" description="Speech is transcribed on this computer. Audio is never uploaded. The setup file decides the model and whether the NVIDIA GPU or the CPU is used; there is no automatic fallback. Choose another setup file to switch.">
         <TranscriptionSetup />
@@ -363,6 +401,15 @@ function DataSettings() {
   );
 }
 
+function TakeTourButton() {
+  const tour = useTour();
+  return (
+    <Button variant="outline" className="w-fit" onClick={tour.start}>
+      <Compass aria-hidden /> Take the guided tour
+    </Button>
+  );
+}
+
 function AboutSettings() {
   return (
     <>
@@ -375,7 +422,10 @@ function AboutSettings() {
       <p className="text-meta text-muted-foreground">
         No analytics, no account, and no network use except what you explicitly ask for.
       </p>
-      <Button variant="outline" className="w-fit" asChild><NavLink to="/welcome">Run the first-launch setup again</NavLink></Button>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" className="w-fit" asChild><NavLink to="/welcome">Run the first-launch setup again</NavLink></Button>
+        <TakeTourButton />
+      </div>
     </Section>
     <Section title="Performance" description="Measured on this computer during this run. A development build is slower than the installed app.">
       <Performance />

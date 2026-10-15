@@ -132,6 +132,8 @@ export const SessionSummary = z.object({
   exerciseType: ExerciseType.nullable(),
   durationMs: z.number().int().nonnegative(),
   attemptCount: z.number().int().nonnegative(),
+  /** Takes with at least one transcript (local, cloud or your correction); absent where not computed. */
+  transcribedTakes: z.number().int().nonnegative().optional(),
   favorite: z.boolean(),
   hasNote: z.boolean(),
   tags: z.array(z.string()),
@@ -197,6 +199,15 @@ export type ClipCandidate = z.infer<typeof ClipCandidate>;
 /** AI suggestion for one proposed clip (4.4c), labelled as such and editable. */
 export const ClipName = z.object({ index: z.number().int().positive(), title: z.string(), description: z.string(), feature: z.enum(["emphasis", "rhythm", "endings"]) });
 export type ClipName = z.infer<typeof ClipName>;
+/** An AI suggestion from your own words (AI suggestion provenance): the request numbers sessions from 1. */
+export const PhraseSuggestion = z.object({
+  session: z.number().int().positive(),
+  original: z.string().min(1),
+  expression: z.string().min(1),
+  explanation: z.string(),
+  example: z.string(),
+});
+export type PhraseSuggestion = z.infer<typeof PhraseSuggestion>;
 /** A passage the AI chose (4.4e), already validated into whole sentences of 5–30 s. */
 export const PickedClip = z.object({
   startMs: z.number().int().nonnegative(), endMs: z.number().int().positive(), text: z.string(), title: z.string(),
@@ -301,6 +312,23 @@ export const TranscriptionSetup = z.object({
   unavailableReason: z.string().nullable(),
 });
 export type TranscriptionSetup = z.infer<typeof TranscriptionSetup>;
+
+/** One-click local Whisper (pinned whisper.cpp 1.9.1 and model, verified before install). */
+export const WhisperBackend = z.enum(["cpu", "cuda"]);
+export const WhisperModelChoice = z.enum(["large-v3-turbo-q5_0", "base"]);
+export const WhisperChoice = z.object({ backend: WhisperBackend, model: WhisperModelChoice });
+export type WhisperChoice = z.infer<typeof WhisperChoice>;
+export const WhisperDownloadOptions = z.object({
+  nvidiaGpu: z.boolean(),
+  sizes: z.array(WhisperChoice.extend({ downloadBytes: z.number().int().nonnegative() })),
+});
+export type WhisperDownloadOptions = z.infer<typeof WhisperDownloadOptions>;
+export const WhisperDownloadProgress = z.object({
+  stage: z.enum(["runtime", "gpu-libraries", "model", "installing"]),
+  received: z.number().nonnegative(),
+  total: z.number().nonnegative(),
+});
+export type WhisperDownloadProgress = z.infer<typeof WhisperDownloadProgress>;
 
 /** Pitch and loudness contour (milestone P); None values are gaps, never zero. */
 export const IntonationContour = z.object({
@@ -659,6 +687,10 @@ export const RecordingStatus = z.object({
 });
 export type RecordingStatus = z.infer<typeof RecordingStatus>;
 
+/** Live microphone level before recording (Studio Ready state); nothing is recorded. */
+export const InputLevel = z.object({ level: z.number().min(0).max(1), clipping: z.boolean() });
+export type InputLevel = z.infer<typeof InputLevel>;
+
 /** End of a five-second microphone test (plan 2.12); exactly one of durationMs/error is set. */
 export const MicTestFinished = z.object({
   attemptId: Id,
@@ -686,12 +718,18 @@ export const Preferences = z
   .object({
     recordingSounds: z.boolean(),
     recordingShortcuts: z.boolean(),
+    /** The Studio's Ready state shows the live microphone level; nothing is recorded. */
+    levelBeforeRecording: z.boolean(),
+    /** New takes are transcribed on this computer as soon as they are saved (local mode only). */
+    autoTranscribe: z.boolean(),
     inputDeviceId: z.string().min(1).max(512).nullable(),
     sessionLength: SessionLength,
     coachingMode: z.enum(["api", "local", "off"]),
     coachingModel: CoachingModel,
     deliveryImpressions: z.boolean(),
     onboarded: z.boolean(),
+    /** The guided tour was finished or skipped; Help → Guided tour starts it again. */
+    tourDone: z.boolean(),
     goals: z.array(z.enum(["clarity", "hesitation", "phrasing", "confidence"])).max(4),
     goalNote: z.string().max(300),
     difficultyLanguage: z.enum(["english", "both"]).nullable(),
@@ -706,9 +744,9 @@ export const Preferences = z
   .strict();
 export type Preferences = z.infer<typeof Preferences>;
 export const DEFAULT_PREFERENCES: Preferences = {
-  recordingSounds: true, recordingShortcuts: true, inputDeviceId: null, sessionLength: "standard",
+  recordingSounds: true, recordingShortcuts: true, levelBeforeRecording: true, autoTranscribe: true, inputDeviceId: null, sessionLength: "standard",
   coachingMode: "api", coachingModel: "gpt-6-luna", deliveryImpressions: false,
-  onboarded: false, goals: [], goalNote: "", difficultyLanguage: null,
+  onboarded: false, tourDone: false, goals: [], goalNote: "", difficultyLanguage: null,
   localEndpoint: "http://127.0.0.1:8080", localModel: "", budgetWarningMicroUsd: 4_000_000, reminderTime: null, coachingPrices: {},
 };
 

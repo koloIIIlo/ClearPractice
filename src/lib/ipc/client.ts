@@ -8,6 +8,11 @@ import type {
   ExerciseDefinition,
   Guide,
   InputDevice,
+  InputLevel,
+  PhraseSuggestion,
+  WhisperChoice,
+  WhisperDownloadOptions,
+  WhisperDownloadProgress,
   PhraseCard,
   PhraseRating,
   PhraseInput,
@@ -207,6 +212,12 @@ export interface IpcClient {
   importModelPack(): Promise<ModelPack[]>;
   /** Opens the native file picker and verifies the Whisper runtime and model before storing the setup. */
   chooseTranscriptionSetup(): Promise<TranscriptionSetup>;
+  /** What a one-click Whisper setup would download (already installed parts are skipped). */
+  getWhisperDownloadOptions(): Promise<WhisperDownloadOptions>;
+  /** Downloads, verifies and installs local Whisper after an explicit click, then stores the setup. */
+  downloadWhisper(choice: WhisperChoice): Promise<TranscriptionSetup>;
+  cancelWhisperDownload(): Promise<void>;
+  onWhisperDownloadProgress(listener: (progress: WhisperDownloadProgress) => void): Promise<() => void>;
   getAttemptTranscript(attemptId: string): Promise<AttemptTranscript>;
   /** Saves corrected wording as a new revision; resolves with its ID. */
   saveTranscriptCorrection(attemptId: string, parentRevisionId: string, text: string): Promise<string>;
@@ -219,6 +230,19 @@ export interface IpcClient {
   onTranscriptionEvent(listener: (event: TranscriptionEvent) => void): Promise<() => void>;
   /** Records five seconds for playback; nothing is added to session history. */
   startMicTest(deviceId: string | null): Promise<RecordingStatus>;
+  /** Opens the microphone only to measure its level (Studio Ready state); nothing is recorded. */
+  startLevelMonitor(deviceId: string | null): Promise<void>;
+  stopLevelMonitor(): Promise<void>;
+  onInputLevel(listener: (level: InputLevel) => void): Promise<() => void>;
+  /** The custom title bar's window controls (the window has no system frame). No-ops outside the desktop app. */
+  minimizeWindow(): Promise<void>;
+  toggleMaximizeWindow(): Promise<void>;
+  /** Asks to close; a running take still triggers the "A take is still recording" guard. */
+  closeWindow(): Promise<void>;
+  isWindowMaximized(): Promise<boolean>;
+  onWindowResized(listener: () => void): Promise<() => void>;
+  /** Page zoom (Ctrl + / − / 0, Settings → Appearance). The browser preview leaves zoom to the browser. */
+  setZoom(scale: number): Promise<void>;
   getTranscriptionApiKeys(): Promise<ProviderKeyStatus[]>;
   storeTranscriptionApiKey(provider: AudioProvider, key: string): Promise<ProviderKeyStatus>;
   removeTranscriptionApiKey(provider: AudioProvider): Promise<ProviderKeyStatus>;
@@ -290,6 +314,10 @@ export interface IpcClient {
   clearCache(): Promise<number>;
   /** An AI follow-up question after a take (5.11): a separate request, a simulation. */
   previewFollowUp(attemptId: string, model: CoachingModel): Promise<CoachingPreview>;
+  /** AI phrase suggestions from chosen sessions: previews the text-only request (titles and transcripts). */
+  previewPhraseSuggestions(sessionIds: string[], model?: CoachingModel): Promise<CoachingPreview>;
+  /** Sends an approved preview; only suggestions that quote your own words come back. */
+  requestPhraseSuggestions(requestId: string, payloadSha256: string): Promise<PhraseSuggestion[]>;
   requestFollowUp(attemptId: string, requestId: string, payloadSha256: string): Promise<FollowUpQuestion>;
 }
 

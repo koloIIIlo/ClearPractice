@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileCheck2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useIpc } from "@/lib/ipc";
+import { WhisperDownload } from "./WhisperDownload";
 
 /** Settings → Transcription → Local Whisper (plan 3.3, 3.12): the verified worker setup. */
 export function TranscriptionSetup() {
@@ -37,7 +38,10 @@ export function TranscriptionSetup() {
           </>
         )}
       </div>
-      <div className="flex flex-wrap gap-2">
+      <WhisperDownload configured={!!data?.configured} />
+      <details className="space-y-3">
+        <summary className="text-meta font-medium">Advanced: use your own Whisper setup file or model file</summary>
+      <div className="mt-3 flex flex-wrap gap-2">
         <Button variant="outline" disabled={!native || choose.isPending} onClick={() => choose.mutate()}>
           <FileCheck2 aria-hidden /> {choose.isPending ? "Verifying runtime and model…" : data?.configured ? "Change setup file…" : "Choose setup file…"}
         </Button>
@@ -72,6 +76,7 @@ export function TranscriptionSetup() {
           {importPack.error && <p role="alert" className="text-meta text-destructive">{importPack.error.message}</p>}
         </div>
       )}
+      </details>
     </div>
   );
 }

@@ -21,6 +21,7 @@ pub mod diagnostics;
 pub mod timings;
 mod redaction_audit;
 pub mod transcribe;
+pub mod whisper_setup;
 
 use audio::capture::{CaptureService, RecordingStatus, StartRequest};
 use std::sync::Arc;
@@ -330,6 +331,7 @@ async fn start_recording(
     storage: State<'_, Arc<SessionStorage>>,
     transcription: State<'_, Arc<Transcription>>,
     mic: State<'_, Arc<mic_test::MicTest>>,
+    monitor: State<'_, Arc<audio::monitor::LevelMonitor>>,
     context: Option<storage::database::PracticeContext>,
     request: StartRequest,
 ) -> Result<RecordingStatus, String> {
@@ -340,7 +342,10 @@ async fn start_recording(
     transcription.active.cancel();
     let service = service.inner().clone();
     let storage = storage.inner().clone();
+    let monitor = monitor.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        // The Ready-state level meter lets go of the microphone before the take opens it.
+        monitor.stop();
         storage.with(|owner| {
             owner.reserve(
                 &request.attempt_id,
@@ -791,6 +796,64 @@ fn cancel_clip_work(work: State<'_, Arc<ClipWork>>) {
             flag.store(true, std::sync::atomic::Ordering::Relaxed);
         }
     }
+}
+
+/// AI phrase suggestions from chosen sessions (user request 2026-10-10): previews
+/// a text-only request with each session's title and its takes' newest transcripts
+/// (your corrections where you made them). Nothing is sent here.
+#[tauri::command]
+async fn preview_phrase_suggestions(
+    storage: State<'_, Arc<SessionStorage>>,
+    owner: State<'_, Arc<api::coaching::PreviewOwner>>,
+    session_ids: Vec<String>,
+    model: Option<api::coaching::CoachingModel>,
+) -> Result<api::coaching::Preview, String> {
+    let owner = owner.inner().clone();
+    with_storage(&storage, move |db| {
+        // Never a silent switch of provider (shared rule 1): these go to your OpenAI account only.
+        match preferences::load(db)?.coaching_mode.as_str() {
+            "api" => {}
+            "off" => return Err("AI suggestions are turned off in Settings → Coaching.".into()),
+            _ => return Err("Phrase suggestions use your OpenAI account, and Coaching is set to your local model, so nothing was sent. Choose in Settings → Coaching.".into()),
+        }
+        if session_ids.is_empty() || session_ids.len() > 12 {
+            return Err("Choose between 1 and 12 transcribed sessions.".into());
+        }
+        let mut sessions = Vec::new();
+        for id in &session_ids {
+            let detail = db.get_session(id)?;
+            let texts: Vec<String> = detail["attempts"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|a| a["id"].as_str())
+                .filter_map(|attempt| db.take_coaching_input(attempt).ok().map(|input| input.text))
+                .collect();
+            if !texts.is_empty() {
+                sessions.push((detail["title"].as_str().unwrap_or("Session").to_string(), texts.join("\n")));
+            }
+        }
+        if sessions.is_empty() {
+            return Err("None of these sessions has a transcript yet. Transcribe them first.".into());
+        }
+        owner.preview_phrase_suggestions(&sessions, model.unwrap_or_default())
+    })
+    .await
+    .map_err(|_| "Preparing the request failed.".to_string())?
+}
+
+/// Sends an approved phrase-suggestion preview under the shared budget.
+#[tauri::command]
+async fn request_phrase_suggestions(
+    owner: State<'_, Arc<api::coaching::PreviewOwner>>,
+    accounting: State<'_, Arc<ApiAccounting>>,
+    request_id: String,
+    payload_sha256: String,
+) -> Result<Vec<api::coaching::PhraseSuggestion>, String> {
+    let owner = owner.inner().clone();
+    let accounting = accounting.inner().clone();
+    let budget = accounting.0.as_ref().map_err(Clone::clone)?;
+    owner.send_phrase_suggestions(budget, &accounting.1, &request_id, &payload_sha256).await
 }
 
 /// Optional AI titles and descriptions for proposed clips (4.4c): previews a
@@ -1989,6 +2052,96 @@ struct MicTestFinished {
     error: Option<String>,
 }
 
+/// The running one-click Whisper download, so it can be stopped.
+#[derive(Default)]
+struct WhisperDownload(std::sync::Mutex<Option<Arc<std::sync::atomic::AtomicBool>>>);
+
+/// What a one-click Whisper setup would download (already installed parts are skipped).
+#[tauri::command]
+async fn whisper_download_options(storage: State<'_, Arc<SessionStorage>>) -> Result<whisper_setup::Options, String> {
+    with_storage(&storage, |owner| Ok(whisper_setup::options(owner.root())))
+        .await
+        .map_err(|_| "Session storage failed.".to_string())?
+}
+
+/// Downloads, verifies and installs local Whisper after an explicit click, with
+/// progress as `whisper_download_progress`, then stores the worker setup.
+#[tauri::command]
+async fn download_whisper(
+    app: tauri::AppHandle,
+    storage: State<'_, Arc<SessionStorage>>,
+    download: State<'_, Arc<WhisperDownload>>,
+    choice: whisper_setup::Choice,
+) -> Result<transcribe::SetupStatus, String> {
+    let root = {
+        let storage = storage.inner().clone();
+        storage.with(|owner| Ok(owner.root().to_path_buf()))?
+    };
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let mut slot = download.0.lock().map_err(|_| "The download state is unavailable.")?;
+        if slot.is_some() {
+            return Err("Whisper is already downloading.".into());
+        }
+        *slot = Some(cancel.clone());
+    }
+    let events = app.clone();
+    let result = whisper_setup::install(&root, choice, &cancel, move |progress| {
+        let _ = events.emit("whisper_download_progress", progress);
+    })
+    .await;
+    if let Ok(mut slot) = download.0.lock() {
+        *slot = None;
+    }
+    let config = result?;
+    with_storage(&storage, move |owner| {
+        let json = serde_json::to_string(&config).map_err(|e| e.to_string())?;
+        owner.set_setting(transcribe::CONFIG_KEY, &json)?;
+        transcribe::status(owner)
+    })
+    .await
+    .map_err(|_| "Session storage failed.".to_string())?
+}
+
+#[tauri::command]
+fn cancel_whisper_download(download: State<'_, Arc<WhisperDownload>>) {
+    if let Some(cancel) = download.0.lock().ok().and_then(|slot| slot.clone()) {
+        cancel.store(true, std::sync::atomic::Ordering::Release);
+    }
+}
+
+/// Live input level for the Studio's Ready state (nothing is recorded or kept).
+/// Levels arrive as `input_level` about ten times a second until `stop_level_monitor`.
+/// While a take or microphone test runs, their own levels are shown instead.
+#[tauri::command]
+async fn start_level_monitor(
+    app: tauri::AppHandle,
+    monitor: State<'_, Arc<audio::monitor::LevelMonitor>>,
+    service: State<'_, Arc<CaptureService>>,
+    mic: State<'_, Arc<mic_test::MicTest>>,
+    device_id: Option<String>,
+) -> Result<(), String> {
+    if service.is_active() || mic.capture.is_active() {
+        return Ok(());
+    }
+    let monitor = monitor.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        monitor.start(device_id, Arc::new(move |level| {
+            let _ = app.emit("input_level", level);
+        }))
+    })
+    .await
+    .map_err(|_| "Level monitor failed.".to_string())?
+}
+
+#[tauri::command]
+async fn stop_level_monitor(monitor: State<'_, Arc<audio::monitor::LevelMonitor>>) -> Result<(), String> {
+    let monitor = monitor.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || monitor.stop())
+        .await
+        .map_err(|_| "Level monitor failed.".to_string())
+}
+
 /// Records five seconds from the chosen microphone for playback (plan 2.12).
 /// Levels arrive as `mic_test_level`; `mic_test_finished` follows the stop.
 #[tauri::command]
@@ -1996,13 +2149,16 @@ async fn start_mic_test(
     app: tauri::AppHandle,
     service: State<'_, Arc<CaptureService>>,
     mic: State<'_, Arc<mic_test::MicTest>>,
+    monitor: State<'_, Arc<audio::monitor::LevelMonitor>>,
     device_id: Option<String>,
 ) -> Result<RecordingStatus, String> {
     if service.is_active() {
         return Err("Stop the current recording before testing the microphone.".into());
     }
     let mic = mic.inner().clone();
+    let monitor = monitor.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        monitor.stop();
         mic.clear()?;
         let id = format!("mic-test-{}", storage::recording::now_ms());
         let status = mic.capture.start(StartRequest {
@@ -2291,6 +2447,8 @@ pub fn run() {
     timings::mark_process_start();
     tauri::Builder::default()
         .manage(Arc::new(timings::Timings::default()))
+        .manage(Arc::new(audio::monitor::LevelMonitor::default()))
+        .manage(Arc::new(WhisperDownload::default()))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -2398,6 +2556,13 @@ pub fn run() {
             store_api_key,
             remove_api_key,
             start_recording,
+            start_level_monitor,
+            stop_level_monitor,
+            preview_phrase_suggestions,
+            request_phrase_suggestions,
+            whisper_download_options,
+            download_whisper,
+            cancel_whisper_download,
             stop_recording,
             get_recording_status,
             list_recordings,

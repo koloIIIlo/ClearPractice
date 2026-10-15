@@ -23,5 +23,5 @@ it("counts both purposes and keeps uncertain charges visible within one stop lim
   expect(screen.getByText("Billed, from reported usage").nextSibling).toHaveTextContent("$3.25");
   expect(screen.getByText("Still open (being prepared or sent)").nextSibling).toHaveTextContent("$0.25");
   expect(screen.getByText(/^Uncertain/).nextSibling).toHaveTextContent("$1.00");
-  expect(screen.getByLabelText("Warn me at")).toHaveValue("4000000");
+  expect(screen.getByLabelText("Warn me at")).toHaveTextContent("$4.00");
 });

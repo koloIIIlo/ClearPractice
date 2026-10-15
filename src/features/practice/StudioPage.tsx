@@ -30,6 +30,8 @@ import { cn } from "@/lib/utils";
 import { describeDemands } from "@/features/exercises/describe";
 import { useRecorder, type Recorder } from "./recorder";
 import { LiveWaveform, levelToHeight } from "@/components/live-waveform";
+import { useLevelMonitor } from "./level-monitor";
+import { useAutoTranscribe } from "./auto-transcribe";
 import { RecordingLibrary, SavedAudio } from "./RecordingLibrary";
 import { NativeTake } from "@/features/sessions/NativeSession";
 import { TakeTranscript } from "@/features/review/TakeTranscript";
@@ -145,9 +147,10 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
   const navigate = useNavigate();
   const [useCountdown, setUseCountdown] = useState(false);
   const [outline, setOutline] = useState({ point: "", reason: "", example: "" });
-  // Open for a fresh prompt; folded when continuing a session. It never folds by
-  // itself after a take: it sits above the recorder, which must not move (§3.2).
-  const [outlineOpen, setOutlineOpen] = useState(!continuing);
+  // Folded by default so the recorder fits on one screen (user request 2026-10-10);
+  // the typed keywords show on the folded line. It never folds or opens by itself:
+  // it sits above the recorder, which must not move (§3.2).
+  const [outlineOpen, setOutlineOpen] = useState(false);
   const outlineWords = [outline.point, outline.reason, outline.example].map((w) => w.trim()).filter(Boolean);
   // Takes you opened or closed by hand; otherwise only the latest is open.
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -226,6 +229,10 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
   }, [canUsePrimary, shortcuts]);
 
   const locked = rec.isCapturing || rec.phase === "countdown";
+  // Live level before a take (nothing is recorded); released as soon as a take starts.
+  const monitoring = preferences.levelBeforeRecording && rec.ready && !rec.isCapturing && !!selectedDevice;
+  const monitor = useLevelMonitor(selectedDevice || null, monitoring);
+  useAutoTranscribe(rec.takes.map((t) => t.asset.assetId), sessionId, { enabled: preferences.autoTranscribe });
 
   return (
     <div ref={studioRef} className="space-y-6">
@@ -243,13 +250,12 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
         <p className="text-meta text-muted-foreground">{describeDemands(prompt.conditions).join(" · ")}</p>
       </header>
 
-      <div
-        role="note"
-        className="flex items-start gap-2 rounded-lg border border-dashed px-3 py-2 text-meta text-muted-foreground"
-      >
-        <Info aria-hidden className="mt-0.5 size-4 shrink-0" />
-        {native ? "Recordings stay on this computer. Transcribe a take below it to see what went well and one thing to try; open the session to compare takes or ask for AI feedback." : "Browser preview: recording is simulated. Open the desktop app to capture and save real audio."}
-      </div>
+      {/* The desktop app needs no notice here (user request 2026-10-10); only the preview says it is simulated. */}
+      {!native && (
+        <p role="note" className="flex items-center gap-2 text-meta text-muted-foreground">
+          <Info aria-hidden className="size-4 shrink-0" /> Browser preview: recording is simulated.
+        </p>
+      )}
 
       {passage && (
         <ThoughtGroupPassage
@@ -301,23 +307,6 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
         </Collapsible>
       )}
 
-      <div className="space-y-1">
-        <Label htmlFor="studio-microphone">Microphone</Label>
-        <div className="flex items-center gap-2">
-          <Select value={selectedDevice} onValueChange={setDeviceId} disabled={locked || devices.isPending}>
-            <SelectTrigger id="studio-microphone" className="min-w-0 flex-1">
-              <SelectValue placeholder={devices.isPending ? "Looking for microphones…" : "No microphone found"} />
-            </SelectTrigger>
-            <SelectContent>
-              {devices.data?.map((device) => <SelectItem key={device.id} value={device.id} disabled={!device.available}>{device.name}{device.isDefault ? " (system default)" : ""}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="icon" title="Refresh microphones" aria-label={devices.isFetching ? "Looking for microphones…" : "Refresh microphones"} disabled={locked || devices.isFetching} onClick={() => void devices.refetch()}>
-            <RefreshCw aria-hidden className={devices.isFetching ? "animate-spin" : undefined} />
-          </Button>
-        </div>
-        {devices.error && <p role="alert" className="text-meta text-destructive">{devices.error.message}</p>}
-      </div>
       {rec.error && <p role="alert" className="rounded-lg border p-3 text-destructive">{rec.error}</p>}
 
       <Panel className="flex flex-col items-center gap-4 py-8">
@@ -325,12 +314,18 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
         <div className="text-5xl font-semibold tracking-tight tabular-nums" aria-label="Elapsed time">
           {rec.phase === "countdown" ? rec.countdown : formatClock(rec.elapsedMs)}
         </div>
-        <LiveWaveform levels={rec.levels} level={rec.level} active={rec.phase === "recording"} clipping={rec.clipping} />
+        {/* Before a take the meter shows the live microphone level, dimmed; recording brightens it. */}
+        {rec.phase !== "recording" && monitoring && monitor.levels.length > 0 ? (
+          <LiveWaveform levels={monitor.levels} level={monitor.level} active={false} clipping={false} />
+        ) : (
+          <LiveWaveform levels={rec.levels} level={rec.level} active={rec.phase === "recording"} clipping={rec.clipping} />
+        )}
         {/* The one thing to change sits inside the recorder, in view while speaking. */}
         {exercise.type === "repeat" && !prompt.conditions.followUp && (
           <RepeatFocus sessionId={sessionId} takeCount={rec.takes.length} locked={locked} native={native} />
         )}
         <Button
+          data-tour="record"
           size="lg"
           onClick={primary}
           disabled={!canUsePrimary}
@@ -356,12 +351,32 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
             </>
           )}
         </Button>
-        <div className="flex items-center gap-2 text-meta text-muted-foreground">
-          <Switch id="countdown" checked={useCountdown} onCheckedChange={setUseCountdown} disabled={locked} />
-          <Label htmlFor="countdown" className="font-normal">
-            3-second countdown before recording
-          </Label>
+        <div className="flex max-w-full flex-wrap items-center justify-center gap-x-4 gap-y-2 text-meta text-muted-foreground">
+          {/* The microphone lives in the recorder, so the Studio fits on one screen. */}
+          <div className="flex min-w-0 items-center gap-1">
+            <Label htmlFor="studio-microphone" className="sr-only">Microphone</Label>
+            <Select value={selectedDevice} onValueChange={setDeviceId} disabled={locked || devices.isPending}>
+              <SelectTrigger id="studio-microphone" size="sm" className="max-w-72 min-w-0 rounded-full">
+                <Mic aria-hidden className="text-muted-foreground" />
+                <SelectValue placeholder={devices.isPending ? "Looking for microphones…" : "No microphone found"} />
+              </SelectTrigger>
+              <SelectContent>
+                {devices.data?.map((device) => <SelectItem key={device.id} value={device.id} disabled={!device.available}>{device.name}{device.isDefault ? " (system default)" : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button variant="ghost" size="icon-sm" className="rounded-full" title="Refresh microphones" aria-label={devices.isFetching ? "Looking for microphones…" : "Refresh microphones"} disabled={locked || devices.isFetching} onClick={() => void devices.refetch()}>
+              <RefreshCw aria-hidden className={devices.isFetching ? "animate-spin" : undefined} />
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch id="countdown" checked={useCountdown} onCheckedChange={setUseCountdown} disabled={locked} />
+            <Label htmlFor="countdown" className="font-normal">
+              3-second countdown
+            </Label>
+          </div>
         </div>
+        {devices.error && <p role="alert" className="text-meta text-destructive">{devices.error.message}</p>}
+        {monitor.error && monitoring && <p className="text-meta text-muted-foreground">Live level unavailable: {monitor.error}</p>}
         <p className="text-meta text-muted-foreground">
           {shortcuts ? "Ctrl+Enter to record or stop. " : ""}The timer is for information only, so there's no need to rush.
         </p>
@@ -372,7 +387,7 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
         <FollowUpPanel prompt={prompt} sessionId={sessionId} lastTakeId={lastTakeId} takeCount={allTakeCount} native={native} locked={locked} />
       )}
 
-      <section aria-labelledby="takes-heading">
+      <section data-tour="takes" aria-labelledby="takes-heading">
         <h2 id="takes-heading" className="mb-3 font-semibold">
           Takes
         </h2>

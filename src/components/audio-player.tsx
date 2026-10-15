@@ -2,6 +2,7 @@ import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "reac
 import { Pause, Play, RotateCcw, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import { formatClock } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -80,7 +81,6 @@ export function AudioPlayer({ src, label, speeds, className, ref }: {
     positionMs: () => (audio.current?.currentTime ?? 0) * 1000,
   }));
 
-  const percent = duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
   return (
     <div className={cn("space-y-1", className)}>
       <div className="flex flex-wrap items-center gap-2 rounded-panel border bg-card p-2">
@@ -107,26 +107,22 @@ export function AudioPlayer({ src, label, speeds, className, ref }: {
         <Button size="icon" onClick={toggle} aria-label={playing ? `Pause ${label}` : `Play ${label}`}>
           {playing ? <Pause aria-hidden /> : <Play aria-hidden />}
         </Button>
-        <Button variant="ghost" size="icon" aria-label="Back 5 seconds" onClick={() => seek(position - 5000)}>
-          <RotateCcw aria-hidden />
+        <Button variant="ghost" className="px-3" aria-label="Back 5 seconds" onClick={() => seek(position - 5000)}>
+          <RotateCcw aria-hidden /> <span className="tabular-nums">5 s</span>
         </Button>
-        <Button variant="ghost" size="icon" aria-label="Forward 5 seconds" onClick={() => seek(position + 5000)}>
-          <RotateCw aria-hidden />
+        <Button variant="ghost" className="px-3" aria-label="Forward 5 seconds" onClick={() => seek(position + 5000)}>
+          <RotateCw aria-hidden /> <span className="tabular-nums">5 s</span>
         </Button>
-        <div className="relative h-2 min-w-32 flex-1 rounded-full bg-secondary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
-          <div className="pointer-events-none absolute inset-y-0 left-0 rounded-full bg-primary" style={{ width: `${percent}%` }} />
-          <input
-            type="range"
-            min={0}
-            max={Math.max(1, Math.round(duration))}
-            step={100}
-            value={Math.round(position)}
-            onChange={(e) => seek(Number(e.target.value))}
-            aria-label={`Position in ${label}`}
-            aria-valuetext={`${formatClock(position)} of ${formatClock(duration)}`}
-            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-          />
-        </div>
+        <Slider
+          className="min-w-32 flex-1"
+          min={0}
+          max={Math.max(1, Math.round(duration))}
+          step={100}
+          value={[Math.min(Math.round(position), Math.max(1, Math.round(duration)))]}
+          onValueChange={([ms]) => seek(ms)}
+          aria-label={`Position in ${label}`}
+          aria-valuetext={`${formatClock(position)} of ${formatClock(duration)}`}
+        />
         <span className="text-meta tabular-nums">
           {formatClock(position)} <span className="text-muted-foreground">/ {formatClock(duration)}</span>
         </span>

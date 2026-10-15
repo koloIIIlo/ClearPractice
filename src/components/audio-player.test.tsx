@@ -19,7 +19,9 @@ it("plays, pauses, seeks, skips, changes speed and stops at the end of a range",
   expect(play).toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "Pause clip: Opening" })).toBeInTheDocument();
 
-  fireEvent.change(screen.getByRole("slider", { name: "Position in clip: Opening" }), { target: { value: "8000" } });
+  // The position slider is keyboard-operable: Page Up moves 1 s (ten 100 ms steps).
+  const position = screen.getByRole("slider", { name: "Position in clip: Opening" });
+  for (let i = 0; i < 8; i++) fireEvent.keyDown(position, { key: "PageUp" });
   expect(audio.currentTime).toBe(8);
   await user.click(screen.getByRole("button", { name: "Forward 5 seconds" }));
   expect(audio.currentTime).toBe(13);

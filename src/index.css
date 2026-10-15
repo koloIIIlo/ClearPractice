@@ -22,6 +22,11 @@
   --cp-border: #d6ded7;
   --cp-highlight: #fff0c2;
   --cp-error: #a32d35;
+  /* The title bar's close button on hover, as in Windows (same in both themes). */
+  --cp-window-close: #c42b1c;
+  --cp-on-window-close: #ffffff;
+  /* Dims the page around the guided tour's spotlight (same in both themes). */
+  --cp-scrim: rgb(0 0 0 / 0.5);
 
   --background: var(--cp-app-bg);
   --foreground: var(--cp-text);
@@ -104,6 +109,8 @@
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-highlight: var(--highlight);
+  --color-window-close: var(--cp-window-close);
+  --color-on-window-close: var(--cp-on-window-close);
   --color-highlight-foreground: var(--highlight-foreground);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
@@ -158,6 +165,16 @@
   html {
     @apply font-sans;
     font-feature-settings: "cv11";
+    /* Space for the scrollbar is always kept, so pages don't shift sideways when one
+       becomes scrollable (user request 2026-10-10); the bar itself is slim and themed. */
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 45%, transparent) transparent;
+  }
+  /* Dialogs lock scrolling without adding the scrollbar's width back as a margin:
+     the gutter above already keeps that space. */
+  html body[data-scroll-locked] {
+    margin-right: 0 !important;
   }
   body {
     @apply bg-background text-foreground text-body antialiased;

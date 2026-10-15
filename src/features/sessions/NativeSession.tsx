@@ -13,6 +13,7 @@ import { formatClock, formatLongDay } from "@/lib/format";
 import { SavedAudio } from "@/features/practice/RecordingLibrary";
 import { MoveTakeToTrashButton, MoveToTrashButton } from "./TrashPage";
 import { TakeTranscript } from "@/features/review/TakeTranscript";
+import { TakeSummary } from "@/features/review/TakeSummary";
 import { IntonationTrack } from "@/features/review/IntonationTrack";
 import { BookmarkPlus, Columns2, Download, Mic } from "lucide-react";
 import { PhraseForm } from "@/features/phrases/PhrasesPage";
@@ -116,7 +117,8 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
 /** Player and intonation share one position, so the pitch view follows playback (P.4). */
 function LinkedTake({ attemptId, sessionId }: { attemptId: string; sessionId: string }) {
   const [link] = useState(createPlayerLink);
-  return <><NativeTake assetId={attemptId} link={link} /><IntonationTrack attemptId={attemptId} link={link} /><TakeTranscript attemptId={attemptId} link={link} /><SavePhrase sessionId={sessionId} /><TakeCoaching attemptId={attemptId} sessionId={sessionId} /></>;
+  // The take summary sits right under the player, as in the Studio; AI feedback is further down this page.
+  return <><NativeTake assetId={attemptId} link={link} /><TakeSummary attemptId={attemptId} /><IntonationTrack attemptId={attemptId} link={link} /><TakeTranscript attemptId={attemptId} link={link} /><SavePhrase sessionId={sessionId} /><TakeCoaching attemptId={attemptId} sessionId={sessionId} /></>;
 }
 
 /**

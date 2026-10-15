@@ -48,7 +48,8 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       {/* The shadcn sidebar is a div; this nav makes it a labelled landmark so nothing sits outside one. */}
       <nav aria-label="Main navigation" className="flex h-full w-full flex-col">
-        <SidebarHeader className="h-14 justify-center border-b">
+        {/* Part of the title bar in the desktop app: its empty space drags the window. */}
+        <SidebarHeader data-tauri-drag-region className="h-14 justify-center border-b">
           <Link to="/" className="flex items-center gap-2 px-2 font-semibold tracking-tight">
             <Logo className="size-6" />
             <span className="truncate group-data-[collapsible=icon]:hidden">ClearPractice</span>

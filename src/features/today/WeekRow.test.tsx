@@ -1,5 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { IpcContext, type IpcClient } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
@@ -36,11 +37,13 @@ describe("weekRecap", () => {
 function setup(sessions: SessionSummary[]) {
   const client: IpcClient = { ...createMockClient(), listSessions: async () => sessions };
   return render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <IpcContext.Provider value={client}>
-        <WeekRow today={TODAY} />
-      </IpcContext.Provider>
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <IpcContext.Provider value={client}>
+          <WeekRow today={TODAY} />
+        </IpcContext.Provider>
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 

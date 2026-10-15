@@ -6,6 +6,7 @@ import { IpcContext, type IpcClient } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
 import type { ReferenceClip } from "@/lib/ipc/schemas";
 import { ClipImport } from "./ClipImport";
+import { choose } from "@/test/select";
 
 const saved = (title: string): ReferenceClip => ({ id: `clip-${title}`, origin: "user", title, source: "s", transcript: null, durationMs: 12_000, sha256: "a".repeat(64), createdAtMs: 1 });
 
@@ -174,14 +175,14 @@ it("lets AI choose the best parts from the annotated transcript, with the tone h
   expect(progress).toHaveTextContent("Measured 40 sentences.");
   // Settings survive switching the option off and on; nothing is measured twice.
   await user.click(screen.getByRole("checkbox", { name: /Experimental: let AI guess the speaker's tone/ }));
-  await user.selectOptions(screen.getByRole("combobox", { name: "AI model" }), "gpt-6.1-sol");
+  await choose(user, screen.getByRole("combobox", { name: "AI model" }), /GPT-6\.1 Sol/);
   await user.click(screen.getByRole("checkbox", { name: /Let AI choose the best parts/ }));
   expect(screen.getByRole("button", { name: "Suggest titles with AI…" })).toBeInTheDocument();
   await user.click(screen.getByRole("checkbox", { name: /Let AI choose the best parts/ }));
   expect(screen.getByRole("checkbox", { name: /Experimental: let AI guess the speaker's tone/ })).toBeChecked();
-  expect(screen.getByRole("combobox", { name: "AI model" })).toHaveValue("gpt-6.1-sol");
+  expect(screen.getByRole("combobox", { name: "AI model" })).toHaveTextContent(/GPT-6\.1 Sol/);
   expect(client.measureClipSource).toHaveBeenCalledOnce();
-  await user.selectOptions(screen.getByRole("combobox", { name: "AI model" }), "gpt-6-luna");
+  await choose(user, screen.getByRole("combobox", { name: "AI model" }), /GPT-6 Luna/);
   await user.click(screen.getByRole("button", { name: "Ask AI to choose…" }));
   expect(client.previewClipPicks).toHaveBeenCalledWith("stage-5", { model: "gpt-6-luna", toneHint: true, wanted: 8 });
   expect(await screen.findByRole("group", { name: "AI clip choice request preview" })).toHaveTextContent("never audio");
@@ -261,7 +262,7 @@ it("reopens a recording from the import history without transcribing, marks part
   expect(screen.getByLabelText("Title of clip 1")).toHaveValue("Fresh part");
   await user.click(screen.getByRole("button", { name: "Show the automatic proposals again" }));
   // The recording's folder already exists, so it is used rather than created again.
-  expect(screen.getByLabelText("Save to folder")).toHaveValue("folder-k");
+  expect(screen.getByLabelText("Save to folder")).toHaveTextContent("Keynote");
   await user.click(screen.getByRole("button", { name: "Save 1 clip" }));
   expect(client.saveClipSections).toHaveBeenCalledWith("stage-9", [expect.objectContaining({ title: "Not yet kept." })], "folder-k");
   expect(client.createClipFolder).not.toHaveBeenCalled();

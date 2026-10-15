@@ -1,24 +1,72 @@
 import * as React from "react"
-import { ChevronDown } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 
+/** Radix reserves "" for "no value", so an empty option maps to this internally. */
+const EMPTY = "__cp-empty__"
+
+type OptionProps = { value?: string | number; disabled?: boolean; children?: React.ReactNode }
+
 /**
- * A plain <select> styled like the Select trigger, for compact forms where a
- * native list is simpler (and keyboard/screen-reader friendly by default).
- * `compact` matches small buttons (36 px); the default matches buttons (40 px).
+ * A drop-in for a plain <select>: it takes <option> children, `value` and an
+ * `onChange(event)` like the native element, but renders the styled Select, so
+ * no browser-default list appears anywhere (user preference). `compact`
+ * matches small buttons (36 px); the default matches buttons (40 px).
  */
-function NativeSelect({ className, compact, ...props }: React.ComponentProps<"select"> & { compact?: boolean }) {
+function NativeSelect({
+  className,
+  compact,
+  value,
+  defaultValue,
+  onChange,
+  disabled,
+  children,
+  id,
+  name,
+  required,
+  "aria-label": ariaLabel,
+  "aria-labelledby": ariaLabelledBy,
+}: Omit<React.ComponentProps<"select">, "onChange"> & {
+  compact?: boolean
+  onChange?: (event: { target: { value: string }; currentTarget: { value: string } }) => void
+}) {
+  const options = React.Children.toArray(children).flatMap((child) =>
+    React.isValidElement<OptionProps>(child) && child.type === "option"
+      ? [{ value: String(child.props.value ?? ""), label: child.props.children, disabled: !!child.props.disabled }]
+      : [],
+  )
+  const toItem = (v: string) => (v === "" ? EMPTY : v)
+  const fromItem = (v: string) => (v === EMPTY ? "" : v)
   return (
-    <div data-slot="native-select" className={cn("relative inline-flex w-fit", className)}>
-      <select
-        className={cn(
-          "w-full appearance-none rounded-lg border border-input bg-transparent pr-8 pl-2.5 text-body transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 [&>option]:bg-popover [&>option]:text-popover-foreground",
-          compact ? "h-9" : "h-10",
-        )}
-        {...props}
-      />
-      <ChevronDown aria-hidden className="pointer-events-none absolute top-1/2 right-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-    </div>
+    <Select
+      value={value === undefined ? undefined : toItem(String(value))}
+      defaultValue={defaultValue === undefined ? undefined : toItem(String(defaultValue))}
+      onValueChange={(v) => {
+        const picked = fromItem(v)
+        onChange?.({ target: { value: picked }, currentTarget: { value: picked } })
+      }}
+      disabled={disabled}
+      name={name}
+      required={required}
+    >
+      <SelectTrigger
+        id={id}
+        data-slot="native-select"
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
+        size={compact ? "sm" : "default"}
+        className={cn("min-w-0", className)}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={toItem(o.value)} disabled={o.disabled}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 

@@ -1,5 +1,7 @@
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { z } from "zod";
 import { IpcError, type IpcClient } from "./client";
 import { createMockClient } from "./mock-client";
@@ -57,6 +59,8 @@ export function createNativeClient(): IpcClient {
     saveClipSections: (stagingId, sections, folderId) => command("save_clip_sections", S.ReferenceClip.array(), { stagingId, sections, folderId: folderId ?? null }),
     previewClipNames: (texts, model) => command("preview_clip_names", S.CoachingPreview, { texts, model: model ?? null }),
     requestClipNames: (requestId, payloadSha256) => command("request_clip_names", S.ClipName.array(), { requestId, payloadSha256 }),
+    previewPhraseSuggestions: (sessionIds, model) => command("preview_phrase_suggestions", S.CoachingPreview, { sessionIds, model: model ?? null }),
+    requestPhraseSuggestions: (requestId, payloadSha256) => command("request_phrase_suggestions", S.PhraseSuggestion.array(), { requestId, payloadSha256 }),
     measureClipSource: (stagingId) => command("measure_clip_source", z.number().int().nonnegative(), { stagingId }),
     onClipMeasureProgress: (listener) =>
       listen("clip_measure_progress", (e) => listener(z.object({ stage: z.enum(["preparing", "measuring"]), percent: z.number().int().min(0).max(100).nullable() }).parse(e.payload))),
@@ -200,6 +204,25 @@ export function createNativeClient(): IpcClient {
     getApiPreviewAudioUrl: async (requestId) => convertFileSrc(await command("get_api_preview_audio_path", z.string(), { requestId })),
     requestApiTranscription: (requestId, payloadSha256) => command("request_api_transcription", S.AudioResult, { requestId, payloadSha256 }),
     startMicTest: (deviceId) => command("start_mic_test", S.RecordingStatus, { deviceId }),
+    getWhisperDownloadOptions: () => command("whisper_download_options", S.WhisperDownloadOptions),
+    downloadWhisper: (choice) => command("download_whisper", S.TranscriptionSetup, { choice }),
+    cancelWhisperDownload: async () => { await command("cancel_whisper_download", z.null()); },
+    onWhisperDownloadProgress: (listener) => listen("whisper_download_progress", ({ payload }) => {
+      const parsed = S.WhisperDownloadProgress.safeParse(payload);
+      if (parsed.success) listener(parsed.data);
+    }),
+    startLevelMonitor: async (deviceId) => { await command("start_level_monitor", z.null(), { deviceId }); },
+    stopLevelMonitor: async () => { await command("stop_level_monitor", z.null()); },
+    minimizeWindow: () => getCurrentWindow().minimize(),
+    toggleMaximizeWindow: () => getCurrentWindow().toggleMaximize(),
+    closeWindow: () => getCurrentWindow().close(),
+    isWindowMaximized: () => getCurrentWindow().isMaximized(),
+    onWindowResized: (listener) => getCurrentWindow().onResized(() => listener()),
+    setZoom: (scale) => getCurrentWebview().setZoom(scale),
+    onInputLevel: (listener) => listen("input_level", ({ payload }) => {
+      const parsed = S.InputLevel.safeParse(payload);
+      if (parsed.success) listener(parsed.data);
+    }),
     getMicTestPlaybackUrl: async (attemptId) => convertFileSrc(await command("get_mic_test_playback_path", S.Id, { attemptId })),
     onMicTestEvent: async (onLevel, onFinished) => {
       const removers: (() => void)[] = [];

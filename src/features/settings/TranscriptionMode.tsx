@@ -44,7 +44,7 @@ export function TranscriptionMode() {
           <span>
             <span className="block font-medium">Cloud API</span>
             <span className="block text-meta text-muted-foreground">
-              Each take is previewed (audio, recipient, price) and sent only when you press Send. Counts against the monthly limit.
+              For transcribing a take by hand: each take is previewed (audio, recipient, price) and sent only when you press Send. Counts against the monthly limit. New takes can still be transcribed automatically on this computer (below).
             </span>
           </span>
         </Label>

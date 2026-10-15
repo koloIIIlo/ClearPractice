@@ -93,7 +93,7 @@ function TodayContent({
               icon={Mic}
               title="Your first session starts here"
               action={
-                <Button size="lg" onClick={start}>
+                <Button data-tour="start" size="lg" onClick={start}>
                   Start practice
                 </Button>
               }
@@ -102,7 +102,7 @@ function TodayContent({
               transcript.
             </EmptyState>
           ) : (
-            <Panel aria-labelledby="focus-heading" className="p-6 sm:p-8">
+            <Panel data-tour="focus" aria-labelledby="focus-heading" className="p-6 sm:p-8">
               <p className="text-meta font-medium text-muted-foreground">Today's focus</p>
               <h2 id="focus-heading" className="mt-1 text-2xl font-semibold tracking-tight">
                 {plan.focus}
@@ -137,7 +137,7 @@ function TodayContent({
                 </RadioGroup>
               </fieldset>
 
-              <div className="mt-6 flex flex-wrap items-center gap-3">
+              <div data-tour="start" className="mt-6 flex flex-wrap items-center gap-3">
                 {active ? (
                   <>
                     <Button size="lg" onClick={resume}>

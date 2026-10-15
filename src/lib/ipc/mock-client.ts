@@ -40,6 +40,8 @@ export function createMockClient(): IpcClient {
   let started = 0;
   let timer: ReturnType<typeof setInterval> | undefined;
   let recordingFor: { title: string; context?: PracticeContext } | null = null;
+  const levelListeners = new Set<(level: S.InputLevel) => void>();
+  let monitorTimer: ReturnType<typeof setInterval> | undefined;
   const notify = () => { if (recording) recordingListeners.forEach((listener) => listener(structuredClone(recording!))); };
 
   /**
@@ -173,7 +175,12 @@ export function createMockClient(): IpcClient {
           .filter((s) => !filter.exerciseType || s.exerciseType === filter.exerciseType)
           .filter((s) => !filter.favoritesOnly || s.favorite)
           .filter((s) => !filter.query || includes(s.title, filter.query) || includes(s.notes, filter.query))
-          .map(({ prompt: _p, outline: _o, focus: _f, notes: _n, conditions: _c, attempts: _a, ...summary }) => summary),
+          .map(({ prompt: _p, outline: _o, focus: _f, notes: _n, conditions: _c, attempts: _a, ...summary }) => ({
+            ...summary,
+            // Sample data shows every transcript state: all, some and none (simulated takes have none).
+            transcribedTakes: summary.title === "Simulated take" || !data.sessions.some((d) => d.id === summary.id) ? 0
+              : summary.id === "s-03" ? 0 : summary.id === "s-02" ? Math.max(0, summary.attemptCount - 1) : summary.attemptCount,
+          })),
       ),
 
     getSession: (sessionId) => {
@@ -234,6 +241,23 @@ export function createMockClient(): IpcClient {
     cancelClipWork: async () => {},
     saveClipSections: async () => { throw new IpcError("desktop_required", "Clips can be saved in the desktop app."); },
     previewClipNames: async () => { throw new IpcError("desktop_required", "AI suggestions run in the desktop app."); },
+    // Sample data so the preview can show the whole flow; nothing is sent anywhere.
+    previewPhraseSuggestions: async (sessionIds, model = "gpt-6-luna") => {
+      const chosen = sessions.filter((s) => sessionIds.includes(s.id));
+      if (!chosen.length) throw new IpcError("invalid", "Choose between 1 and 12 transcribed sessions.");
+      return S.CoachingPreview.parse({
+        version: 1, requestId: `phrases-${Date.now()}`, payloadSha256: "0".repeat(64), recipient: "https://api.openai.com/v1/responses", model,
+        selectedText: chosen.map((s, i) => `Session ${i + 1}: ${s.title}\n${s.notes || s.prompt}`).join("\n\n"),
+        prompt: "Suggest more natural phrasing from your sessions", focus: "Your words, a more natural expression, why, an example",
+        instructions: "Sample instructions (browser preview).", maximumOutputTokens: 3072, estimatedMaximumCostMicroUsd: 2400,
+        priceDate: "2026-10-08", priceSource: "sample", inputUsdPerMillionTokens: "0.10", outputUsdPerMillionTokens: "0.50",
+        costExplanation: "Browser preview: nothing is sent. Only the session titles and transcripts are shown here, never audio.", expiresAtMs: Date.now() + 300_000,
+      });
+    },
+    requestPhraseSuggestions: async () => S.PhraseSuggestion.array().parse([
+      { session: 1, original: "I was reading for maybe forty minutes", expression: "I lost track of time", explanation: "A natural way to say time passed without you noticing.", example: "I lost track of time while cooking." },
+      { session: 1, original: "first thing in the morning", expression: "the moment I wake up", explanation: "Sounds more personal and vivid in spoken English.", example: "I check the weather the moment I wake up." },
+    ]),
     requestClipNames: async () => { throw new IpcError("desktop_required", "AI suggestions run in the desktop app."); },
     measureClipSource: async () => { throw new IpcError("desktop_required", "Measuring runs in the desktop app."); },
     onClipMeasureProgress: async () => () => {},
@@ -295,6 +319,45 @@ export function createMockClient(): IpcClient {
     startMicTest: async () => { throw new IpcError("desktop_required", "The microphone test runs in the desktop app."); },
     getMicTestPlaybackUrl: async () => { throw new IpcError("desktop_required", "The microphone test runs in the desktop app."); },
     onMicTestEvent: async () => () => {},
+    // A speech-like level, so the preview's Ready state shows a live meter too.
+    startLevelMonitor: async () => {
+      if (monitorTimer) return;
+      const began = performance.now();
+      monitorTimer = setInterval(() => {
+        const t = (performance.now() - began) / 1000;
+        const voiced = Math.sin(t * 1.3) > 0.1;
+        const level = voiced ? 0.05 + 0.12 * Math.abs(Math.sin(t * 7)) * (0.6 + 0.4 * Math.sin(t * 2.3)) : 0.004;
+        levelListeners.forEach((listener) => listener({ level, clipping: false }));
+      }, 100);
+    },
+    getWhisperDownloadOptions: async () => S.WhisperDownloadOptions.parse({
+      nvidiaGpu: true,
+      sizes: [
+        { backend: "cpu", model: "large-v3-turbo-q5_0", downloadBytes: 582_023_296 },
+        { backend: "cpu", model: "base", downloadBytes: 155_933_566 },
+        { backend: "cuda", model: "large-v3-turbo-q5_0", downloadBytes: 1_273_448_874 },
+        { backend: "cuda", model: "base", downloadBytes: 847_359_144 },
+      ],
+    }),
+    downloadWhisper: async () => { throw new IpcError("desktop_required", "Whisper is downloaded and set up in the desktop app."); },
+    cancelWhisperDownload: async () => {},
+    onWhisperDownloadProgress: async () => () => {},
+    // The browser preview keeps the browser's own frame: no window controls.
+    minimizeWindow: async () => {},
+    toggleMaximizeWindow: async () => {},
+    closeWindow: async () => {},
+    isWindowMaximized: async () => false,
+    onWindowResized: async () => () => {},
+    setZoom: async () => {},
+    stopLevelMonitor: async () => {
+      clearInterval(monitorTimer);
+      monitorTimer = undefined;
+    },
+    onInputLevel: async (listener) => {
+      const registration = (level: S.InputLevel) => listener(level);
+      levelListeners.add(registration);
+      return () => { levelListeners.delete(registration); };
+    },
     getAttemptReview: (attemptId) => respond(S.AttemptReview, data.reviewForAttempt(attemptId)),
     setSessionReflection: async (id, ease, takeaway) => {
       const session = sessions.find((s) => s.id === id);

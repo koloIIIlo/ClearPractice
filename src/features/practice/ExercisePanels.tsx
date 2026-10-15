@@ -86,7 +86,7 @@ export function RepeatFocus({ sessionId, takeCount, locked, native }: { sessionI
           <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>Cancel</Button>
         </form>
       ) : (
-        <div role="group" aria-label={label} className="flex max-w-full items-center gap-0.5 rounded-full border bg-secondary/40 py-0.5 pr-1 pl-3 text-meta">
+        <div data-tour="focus-switcher" role="group" aria-label={label} className="flex max-w-full items-center gap-0.5 rounded-full border bg-secondary/40 py-0.5 pr-1 pl-3 text-meta">
           <span className="shrink-0 text-muted-foreground">{label}:</span>
           <Button variant="ghost" size="icon-xs" className="size-7 rounded-full" aria-label="Previous focus" disabled={locked} onClick={() => step(-1)}>
             <ChevronLeft aria-hidden />
