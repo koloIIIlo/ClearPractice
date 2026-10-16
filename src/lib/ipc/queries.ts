@@ -20,6 +20,9 @@ export const keys = {
   search: (q: string) => ["search", q] as const,
   devices: ["devices"] as const,
   preferences: ["preferences"] as const,
+  /** Everything under "engagement" is refreshed together after practice (roadmap 9.4). */
+  engagementEvents: ["engagement", "events"] as const,
+  facts: ["engagement", "facts"] as const,
 };
 
 /** Saved preferences; until they load, the defaults apply. */
@@ -131,4 +134,16 @@ export function useSearch(query: string) {
 export function useInputDevices() {
   const ipc = useIpc();
   return useQuery({ queryKey: keys.devices, queryFn: () => ipc.listInputDevices() });
+}
+
+/** Effort points from practice events (7.4). */
+export function usePracticeEvents(from?: string) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: [...keys.engagementEvents, from ?? "all"], queryFn: () => ipc.listPracticeEvents(from) });
+}
+
+/** The facts snapshot for the rule engines (7.6). */
+export function usePracticeFacts() {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.facts, queryFn: () => ipc.getPracticeFacts() });
 }

@@ -32,6 +32,7 @@ import { ApiCredentialSettings } from "./ApiCredentialSettings";
 import { ApiBudgetStatus } from "./ApiBudgetStatus";
 import { CoachingPrices } from "./CoachingPrices";
 import { COACHING_MODELS, CoachingSpike } from "./CoachingSpike";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 
 const SECTIONS = [
   { id: "audio", label: "Audio" },
@@ -183,6 +184,7 @@ function PracticeSettings() {
         )}
         <SwitchRow id="rec-shortcuts" label="Recording keyboard shortcuts" hint="Ctrl+Enter starts or stops a take in the studio." checked={preferences.recordingShortcuts} onCheckedChange={(on) => update({ recordingShortcuts: on })} />
       </Section>
+      <PracticeStyleSettings />
       <Section title="Languages">
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1">
           <dt className="text-muted-foreground">Interface</dt><dd>English (dates in British format)</dd>
@@ -191,6 +193,72 @@ function PracticeSettings() {
         <p className="text-meta text-muted-foreground">This version is for practising English. German practice may follow later.</p>
       </Section>
     </>
+  );
+}
+
+const STYLES: { value: Preferences["practiceStyle"]; label: string; hint: string }[] = [
+  { value: "playful", label: "Playful", hint: "Levels, effort points, achievements and short celebrations. Nothing is ever scored." },
+  { value: "calm", label: "Calm", hint: "Just practice and evidence. Your progress is still kept, so you can switch back any time." },
+];
+
+/** Practice style (roadmap 7.5, D-32): whether the game layer shows, and how celebrations look. */
+export function PracticeStyleSettings() {
+  const { preferences, update } = usePreferences();
+  const reducedMotion = useReducedMotion();
+  const calm = preferences.practiceStyle === "calm";
+  return (
+    <Section title="Practice style" description="How practice feels. Your recordings and progress are the same in both styles.">
+      <fieldset>
+        <legend className="sr-only">Practice style</legend>
+        <RadioGroup
+          value={preferences.practiceStyle}
+          onValueChange={(v) => update({ practiceStyle: v as Preferences["practiceStyle"], styleChosen: true })}
+          className="grid gap-3 sm:grid-cols-2"
+        >
+          {STYLES.map((s) => (
+            <Label
+              key={s.value}
+              htmlFor={`style-${s.value}`}
+              className="flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 font-normal has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-secondary"
+            >
+              <RadioGroupItem id={`style-${s.value}`} value={s.value} className="mt-0.5" />
+              <span>
+                <span className="block font-medium">{s.label}</span>
+                <span className="block text-meta text-muted-foreground">{s.hint}</span>
+              </span>
+            </Label>
+          ))}
+        </RadioGroup>
+      </fieldset>
+      <div className="space-y-1">
+        <Label htmlFor="celebrations">Celebrations</Label>
+        <Select value={preferences.celebrations} onValueChange={(v) => update({ celebrations: v as Preferences["celebrations"] })} disabled={calm}>
+          <SelectTrigger id="celebrations" className="h-10 w-64">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="full">Full: a short animated card</SelectItem>
+            <SelectItem value="subtle">Subtle: a quiet message</SelectItem>
+            <SelectItem value="off">Off: just list them in Journey</SelectItem>
+          </SelectContent>
+        </Select>
+        {calm ? (
+          <p className="text-meta text-muted-foreground">Calm style shows no celebrations.</p>
+        ) : (
+          reducedMotion && preferences.celebrations === "full" && (
+            <p className="text-meta text-muted-foreground">Windows asks for reduced motion, so celebrations stay still.</p>
+          )
+        )}
+      </div>
+      <SwitchRow
+        id="celebration-sounds"
+        label="Celebration sound"
+        hint="A soft chime with each celebration."
+        checked={preferences.celebrationSounds}
+        disabled={calm || preferences.celebrations === "off"}
+        onCheckedChange={(on) => update({ celebrationSounds: on })}
+      />
+    </Section>
   );
 }
 

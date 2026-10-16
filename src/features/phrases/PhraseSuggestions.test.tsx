@@ -1,10 +1,9 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router";
 import { expect, it, vi } from "vitest";
-import { IpcContext, type IpcClient } from "@/lib/ipc";
+import type { IpcClient } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
+import { renderWithApp } from "@/test/render";
 import { PhraseSuggestions } from "./PhraseSuggestions";
 
 it("previews exactly what would be sent, sends only on Send, and keeps the suggestions you tick", async () => {
@@ -17,15 +16,7 @@ it("previews exactly what would be sent, sends only on Send, and keeps the sugge
     addPhrase: vi.fn(base.addPhrase),
   };
   const onDone = vi.fn();
-  render(
-    <MemoryRouter>
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <IpcContext.Provider value={client}>
-          <PhraseSuggestions onDone={onDone} />
-        </IpcContext.Provider>
-      </QueryClientProvider>
-    </MemoryRouter>,
-  );
+  renderWithApp(<PhraseSuggestions onDone={onDone} />, { client });
   // The latest day's transcribed sessions are ticked to start with.
   expect(await screen.findByRole("checkbox", { name: /A habit I want to change/ })).toBeChecked();
   await user.click(screen.getByRole("button", { name: /Preview the request/ }));

@@ -17,21 +17,8 @@ import { IntonationTrack } from "@/features/review/IntonationTrack";
 import { summarizeTake, TakeSummary } from "@/features/review/TakeSummary";
 import { describeEnding, ImitationOverlay } from "@/features/practice/ImitationOverlay";
 import { ProgressPage } from "@/features/progress/ProgressPage";
+import { offending } from "@/test/no-scores";
 
-/** Scores and grades, and words that label a mood or feeling. */
-const GRADE = /\b(scores?|scored|scoring|grades?|graded|out of (10|100))\b|\b\d+\s?\/\s?(10|100)\b/i;
-/** A percentage shown next to a measure (source code also has CSS percentages, so rendered text only). */
-const PERCENT = /\b\d{1,3}\s?%/;
-const MOOD = /\b(moods?|emotions?|emotional|happy|sad|angry|anxious|nervous|stressed|frustrated|confident|insecure|excited|bored)\b/i;
-const NEGATION = /\b(no|not|never|nothing|without|nor|isn't|aren't)\b/i;
-
-/** Sentences that label a value as a score, grade or mood (not those that say there is none). */
-function offending(text: string, rendered = true): string[] {
-  return text
-    .replace(/\s+/g, " ")
-    .split(/(?<=[.!?:])\s+|\n/)
-    .filter((sentence) => (GRADE.test(sentence) || MOOD.test(sentence) || (rendered && PERCENT.test(sentence))) && !NEGATION.test(sentence));
-}
 
 const contour = (f0: (number | null)[], median: number | null): IntonationContour => ({
   algorithm: "yin-v1", source: "Estimated", hopMs: 10, sampleRate: 16_000, f0Hz: f0, rmsDb: f0.map((v) => (v ? -20 : null)),

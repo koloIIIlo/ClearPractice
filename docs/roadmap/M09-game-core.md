@@ -185,7 +185,7 @@ The full definitions are in [appendix A](appendix-a-skill-levels.md).
 - `src/lib/engagement/criteria.ts` holds the criteria DSL:
   ```ts
   export type TakeFilter = {
-    exercise?: ExerciseType[]; activity?: ActivityKind[]; stepKey?: string[];
+    exercise?: ExerciseType[]; stepKey?: string[];   // drills and other activities are exercise types (D-30)
     familiarity?: Familiarity; maxPrepSeconds?: number; minSpeechMs?: number; audience?: boolean; followUp?: boolean;
     tags?: string[]; promptTags?: PromptTag[]; noOutline?: boolean; transcribed?: boolean; fillersReviewed?: boolean; prosodyViewed?: boolean;
     check?: { id: SelfCheckId; value: boolean };
@@ -199,7 +199,7 @@ The full definitions are in [appendix A](appendix-a-skill-levels.md).
     | { kind: "transfers"; label: string; listenerWords?: boolean; noClarification?: boolean; flow?: "smooth"[]; tags?: string[]; mission?: boolean; atLeast: number; distinctWeeks?: number }
     | { kind: "phrases"; label: string; saved?: number; reviews?: number; reviewDays?: number }
     | { kind: "phraseUses"; label: string; takes?: number; distinctPhrases?: number; unfamiliarOnly?: boolean }
-    | { kind: "activity"; label: string; activity: ActivityKind; atLeast: number; distinctDays?: number; result?: { key: string; op: ">=" | "<="; value: number } }
+    | { kind: "activity"; label: string; type: ExerciseType; atLeast: number; distinctDays?: number; result?: { key: string; op: ">=" | "<="; value: number } }
     | { kind: "exposure"; label: string; steps: number; minBefore?: number }                 // facts from M12
     | { kind: "conversation"; label: string; minTurns: number; atLeast: number; minPressure?: 0 | 1 | 2 | 3 }   // facts from M13
     | { kind: "listenerAnswers"; label: string; atLeast: number; mainPointAnswered?: boolean } // facts from M14
@@ -235,7 +235,7 @@ The full definitions are in [appendix A](appendix-a-skill-levels.md).
   export const AREAS: readonly AreaDef[];                       // appendix A, table "Areas"
   export type LevelDef = { level: 1|2|3|4|5; name: string; description: string; criteria: Criterion[]; practise: PractiseLink[] };
   export const LEVELS: Readonly<Record<AreaId, readonly LevelDef[]>>;   // appendix A, 40 entries
-  export type PractiseLink = { label: string; to: string; activity?: ActivityKind };
+  export type PractiseLink = { label: string; to: string; exerciseType?: ExerciseType };
   ```
 - `src/lib/engagement/evaluate.ts`:
   ```ts

@@ -47,6 +47,10 @@ export function useRecorder(title: string, context?: PracticeContext): Recorder 
   const starting = useRef<Promise<void> | null>(null);
   const stopping = useRef<Promise<boolean> | null>(null);
   const lastLevelAt = useRef(-1);
+  // The latest context, read when the take really starts (after any countdown), so an
+  // activity's step set just before Record is never stale (roadmap 7.3).
+  const contextRef = useRef(context);
+  contextRef.current = context;
 
   const apply = useCallback((status: RecordingStatus) => {
     if (!alive.current || (attemptId.current && status.attemptId !== attemptId.current)) return;
@@ -97,7 +101,7 @@ export function useRecorder(title: string, context?: PracticeContext): Recorder 
     lastLevelAt.current = -1;
     setState((s) => ({ ...s, phase: "preparing", elapsedMs: 0, level: 0, clipping: false, levels: [], error: null }));
     const pressed = performance.now();
-    starting.current = ipc.startRecording({ attemptId: id, idempotencyKey: crypto.randomUUID(), deviceId, title, context })
+    starting.current = ipc.startRecording({ attemptId: id, idempotencyKey: crypto.randomUUID(), deviceId, title, context: contextRef.current })
       .then((status) => {
         // 6.5: Record pressed → microphone running.
         if (status.phase === "recording" && ipc.recordingMode === "native") void ipc.recordTiming("recordResponse", performance.now() - pressed).catch(() => {});
@@ -107,7 +111,7 @@ export function useRecorder(title: string, context?: PracticeContext): Recorder 
         busy.current = false;
         if (alive.current) setState((s) => ({ ...s, phase: "interrupted", level: 0, error: error instanceof Error ? error.message : "The microphone could not be opened." }));
       });
-  }, [ipc, title, context, apply]);
+  }, [ipc, title, apply]);
 
   const start = useCallback((opts: { countdownSeconds?: number; deviceId: string | null }) => {
     if (busy.current || !ready) return;

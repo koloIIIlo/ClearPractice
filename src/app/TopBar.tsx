@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from "react";
-import { Link, useLocation, useMatches, useNavigate, type Params } from "react-router";
+import { Link, useLocation, useMatches, useNavigate, useNavigation, type Params } from "react-router";
 import { ArrowLeft, CircleHelp, Compass, Keyboard, Search } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useTour } from "@/features/tour/tour";
@@ -120,6 +120,22 @@ export function TopBar({ onOpenSearch, onOpenShortcuts, showNavToggle = true }: 
         <kbd className="hidden rounded border bg-muted px-1.5 font-sans text-meta sm:inline">Ctrl K</kbd>
       </Button>
       <WindowControls />
+      <RouteProgress />
     </header>
+  );
+}
+
+/**
+ * While a page's code loads on its first visit (roadmap 7.1), a thin bar along
+ * the bottom edge; still under reduced motion. The page change itself is
+ * announced as before, so the bar is hidden from assistive technology.
+ */
+function RouteProgress() {
+  const loading = useNavigation().state === "loading";
+  if (!loading) return null;
+  return (
+    <div aria-hidden data-testid="route-progress" className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 overflow-hidden">
+      <div className="h-full w-1/3 animate-route-progress bg-primary motion-reduce:w-full motion-reduce:animate-none" />
+    </div>
   );
 }

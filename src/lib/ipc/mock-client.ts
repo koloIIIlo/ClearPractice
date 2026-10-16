@@ -17,6 +17,25 @@ function respond<T>(schema: { parse: (v: unknown) => T }, value: unknown): Promi
 
 const includes = (hay: string, needle: string) => hay.toLowerCase().includes(needle.toLowerCase());
 
+/**
+ * Effort points for the preview, mirroring `engagement::EventKind::xp` and its
+ * daily caps in the native core (roadmap 7.4, appendix B). Keep them in step.
+ */
+export const MOCK_XP: Record<string, { xp: number; dailyCap?: number }> = {
+  take_saved: { xp: 10 },
+  retake: { xp: 5 },
+  sequence_completed: { xp: 20 },
+  reflection_saved: { xp: 10 },
+  transcript_reviewed: { xp: 10 },
+  phrase_saved: { xp: 5, dailyCap: 5 },
+  phrase_reviewed: { xp: 2, dailyCap: 10 },
+  transfer_review: { xp: 30 },
+  baseline_saved: { xp: 20 },
+};
+/** Takes shorter than this earn nothing; only the first six takes of a session count. */
+const MIN_TAKE_MS = 10_000;
+const MAX_COUNTED_ORDINAL = 6;
+
 function cleanPhrase(input: S.PhraseInput) {
   return {
     original: input.original.trim(),
@@ -31,6 +50,25 @@ export function createMockClient(): IpcClient {
   const prompts = structuredClone(data.prompts);
   const sessions = structuredClone(data.sessions);
   const transferReviews: S.TransferReview[] = [];
+  const events: S.PracticeEvent[] = [];
+  /** Records an event once per kind and reference; above a daily cap it is kept with 0 XP. */
+  const award = (kind: string, refId: string, localDate: string, ids: { sessionId?: string; attemptId?: string } = {}, backfilled = false) => {
+    if (events.some((e) => e.kind === kind && e.refId === refId)) return;
+    const rule = MOCK_XP[kind];
+    const earnedToday = events.filter((e) => e.kind === kind && e.localDate === localDate && e.xp > 0).length;
+    const xp = rule.dailyCap !== undefined && earnedToday >= rule.dailyCap ? 0 : rule.xp;
+    events.push({ id: events.length + 1, kind, refId, localDate, sessionId: ids.sessionId ?? null, attemptId: ids.attemptId ?? null, xp, backfilled, createdAt: new Date().toISOString() });
+  };
+  const awardTake = (session: S.SessionDetail, attempt: S.Attempt, backfilled = false) => {
+    if (attempt.durationMs < MIN_TAKE_MS || attempt.ordinal > MAX_COUNTED_ORDINAL) return;
+    award("take_saved", attempt.id, session.localDate, { sessionId: session.id, attemptId: attempt.id }, backfilled);
+    if (attempt.ordinal >= 2) award("retake", attempt.id, session.localDate, { sessionId: session.id, attemptId: attempt.id }, backfilled);
+  };
+  // The sample history already counts, as the native backfill does after the upgrade.
+  for (const session of sessions) {
+    for (const attempt of session.attempts) awardTake(session, attempt, true);
+    if (session.ease != null || session.takeaway) award("reflection_saved", session.id, session.localDate, { sessionId: session.id }, true);
+  }
   const trash = new Map<string, { session: (typeof sessions)[number]; deletedAtMs: number }>();
   let retentionDays: S.TrashRetentionDays = 30;
   let preferences: S.Preferences = { ...S.DEFAULT_PREFERENCES };
@@ -59,13 +97,50 @@ export function createMockClient(): IpcClient {
         id: ctx.sessionId, title: recordingFor!.title, localDate: toLocalDate(now), startedAt: now.toISOString(),
         exerciseType: ctx.exerciseType, durationMs: 0, attemptCount: 0, favorite: false, hasNote: false, tags: [],
         status: "completed", prompt: ctx.prompt, outline: ctx.outline, focus: null, notes: "", conditions: ctx.conditions,
-        attempts: [], curriculumVersion: ctx.curriculumVersion ?? null, contentId: ctx.contentId ?? null,
+        attempts: [], curriculumVersion: ctx.curriculumVersion ?? null, contentId: ctx.contentId ?? null, activitySnapshot: ctx.activity ?? null,
       });
       sessions.unshift(session);
+    } else if (ctx.activity && session.activitySnapshot && JSON.stringify(session.activitySnapshot) !== JSON.stringify(ctx.activity)) {
+      return;
     }
-    session.attempts.push({ id: attemptId, ordinal: session.attempts.length + 1, captureState: "saved", analysisState: null, durationMs, createdAt: new Date().toISOString(), firstTake: session.attempts.length === 0 });
+    const attempt: S.Attempt = { id: attemptId, ordinal: session.attempts.length + 1, captureState: "saved", analysisState: null, durationMs, createdAt: new Date().toISOString(), firstTake: session.attempts.length === 0, step: ctx.step ?? null };
+    session.attempts.push(attempt);
     session.attemptCount = session.attempts.length;
     session.durationMs += durationMs;
+    awardTake(session, attempt);
+  };
+
+  /** Facts from the sample history (7.6): takes count as transcribed in the order the sample says. */
+  const buildFacts = (): S.PracticeFacts => {
+    const shown = sessions.filter((s) => !trash.has(s.id) && (s.attemptCount > 0 || s.status === "completed"));
+    const filled = (text: string | undefined | null) => !!text && text.trim().length > 0;
+    return S.PracticeFacts.parse({
+      factsVersion: 1,
+      generatedAt: new Date().toISOString(),
+      today: data.today(),
+      transcriptionAvailable: false,
+      sessions: shown.map((s) => ({
+        id: s.id, localDate: s.localDate, startedAt: s.startedAt, exerciseType: s.exerciseType, contentId: s.contentId ?? null, tags: s.tags,
+        familiarity: s.conditions?.familiarity ?? null, preparationSeconds: s.conditions?.preparationSeconds ?? null, targetSeconds: s.conditions?.targetSeconds ?? null,
+        audience: filled(s.conditions?.audience), followUp: s.conditions?.followUp ?? false,
+        outline: [filled(s.outline.point), filled(s.outline.reason), filled(s.outline.example)],
+        ease: s.ease ?? null, focus: s.focus, takeaway: filled(s.takeaway), status: s.status, takeCount: s.attemptCount, durationMs: s.durationMs, preferredTake: s.preferredTake ?? null,
+      })),
+      takes: shown.flatMap((s) => s.attempts.map((a, i) => {
+        const transcribed = i < (s.transcribedTakes ?? 0);
+        return {
+          id: a.id, sessionId: s.id, ordinal: a.ordinal, localDate: s.localDate, createdAt: a.createdAt, durationMs: a.durationMs, stepKey: a.step?.key ?? null,
+          transcribed, revisionId: transcribed ? `${a.id}--1` : null,
+          words: transcribed ? 128 : null, paceWpm: transcribed ? 126 : null, speechSpanMs: transcribed ? Math.max(0, a.durationMs - 2000) : null,
+          fillerCandidates: transcribed ? 3 : null, fillersConfirmed: transcribed ? 0 : null, fillersReviewed: false, pausesOverThreshold: transcribed ? 2 : null,
+          prosodyViewed: false, hasAiFeedback: false,
+        };
+      })),
+      transferReviews: transferReviews.map((r) => ({ id: r.id, localDate: r.localDate, hasListenerWords: filled(r.listenerText), neededClarification: filled(r.clarification), hasSuccess: filled(r.success), hasNextFocus: filled(r.nextFocus) })),
+      phrases: phrases.map((p) => ({ id: p.id, createdAt: new Date().toISOString(), starter: false, deleted: false })),
+      phraseReviews: [],
+      progression: [],
+    });
   };
 
   return {
@@ -91,6 +166,16 @@ export function createMockClient(): IpcClient {
     clearCache: async () => { throw new IpcError("desktop_required", "Available in the desktop app."); },
     previewFollowUp: async () => { throw new IpcError("desktop_required", "AI follow-up questions are available in the desktop app."); },
     requestFollowUp: async () => { throw new IpcError("desktop_required", "AI follow-up questions are available in the desktop app."); },
+    listPracticeEvents: async (from) =>
+      S.PracticeEvent.array().parse(structuredClone(events.filter((e) => !from || e.localDate >= from).sort((a, b) => a.localDate.localeCompare(b.localDate) || a.id - b.id))),
+    recordSequenceCompleted: async (sessionIds, localDate) => {
+      if (sessionIds.length === 0 || sessionIds.length > 10) throw new IpcError("invalid", "A sequence has between 1 and 10 sessions.");
+      if (!sessionIds.some((id) => sessions.find((s) => s.id === id)?.attemptCount)) return null;
+      const refId = `${localDate}:${sessionIds[0]}`;
+      award("sequence_completed", refId, localDate, { sessionId: sessionIds[0] });
+      return S.PracticeEvent.parse(structuredClone(events.find((e) => e.kind === "sequence_completed" && e.refId === refId)));
+    },
+    getPracticeFacts: async () => buildFacts(),
     getServiceStatus: () =>
       respond(S.ServiceStatus, {
         transcription: { mode: "local", model: "large-v3-turbo-q5_0", state: "needs_setup" },
@@ -144,6 +229,7 @@ export function createMockClient(): IpcClient {
       const trimmed = Object.fromEntries(Object.entries(input).map(([k, v]) => [k, v.trim()])) as S.TransferInput;
       const review: S.TransferReview = { ...trimmed, id: `transfer-${Date.now()}-${transferReviews.length}`, createdAt: new Date().toISOString() };
       transferReviews.push(review);
+      award("transfer_review", review.id, review.localDate);
       return review;
     },
     deleteTransferReview: async (reviewId) => {
@@ -363,6 +449,7 @@ export function createMockClient(): IpcClient {
       const session = sessions.find((s) => s.id === id);
       if (!session) throw new IpcError("not_found", "This session is unavailable.");
       Object.assign(session, ease === null ? {} : { ease }, takeaway === null ? {} : { takeaway });
+      if (ease !== null || takeaway?.trim()) award("reflection_saved", id, data.today(), { sessionId: id });
     },
     setPreferredTake: async (id, preferred) => {
       const session = sessions.find((s) => s.id === id);
@@ -378,6 +465,7 @@ export function createMockClient(): IpcClient {
       const session = sessions.find((s) => s.id === id);
       if (!session) throw new IpcError("not_found", "This session is unavailable.");
       Object.assign(session, details, { hasNote: details.notes.length > 0 });
+      if (details.tags.includes("baseline")) award("baseline_saved", id, session.localDate, { sessionId: id });
     },
     getSavedRecording: async () => { throw new IpcError("desktop_required", "Saved audio is available in the desktop app."); },
 
@@ -387,12 +475,14 @@ export function createMockClient(): IpcClient {
       if (!p) return Promise.reject(new IpcError("not_found", "Phrase not found"));
       p.intervalDays = nextIntervalDays(p.intervalDays, rating);
       p.dueDate = addLocalDays(data.today(), p.intervalDays);
+      award("phrase_reviewed", `review-${phraseId}-${Date.now()}-${events.length}`, data.today());
       return respond(S.PhraseCard, p);
     },
 
     addPhrase: (input, sourceSessionId) => {
       const card: S.PhraseCard = { id: `ph-${Date.now()}`, ...cleanPhrase(input), dueDate: data.today(), intervalDays: 0, sourceSessionId: sourceSessionId ?? null };
       phrases.push(card);
+      award("phrase_saved", card.id, data.today());
       return respond(S.PhraseCard, card);
     },
     updatePhrase: (phraseId, input) => {

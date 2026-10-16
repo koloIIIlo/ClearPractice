@@ -86,14 +86,19 @@ PRAGMA user_version=19;
 `src/content/drills.ts`:
 ```ts
 export type DrillDef = {
-  id: string; kind: ActivityKind; version: number; title: string; tagline: string; rules: string[];
-  minutes: number; areas: AreaId[]; exerciseId: string;            // base exercise (EXERCISE_IDS.repeat, .thoughtGroups)
+  id: string; type: ExerciseType; version: number; title: string; tagline: string; rules: string[];
+  minutes: number; areas: AreaId[]; exerciseId: string;            // the drill's own exercise definition, e.g. "ex-jam" (D-30)
   icon: LucideIcon; needsTranscript: boolean;                       // the full result needs local Whisper
   defaults: Record<string, number | string | boolean>;
 };
 export const DRILLS: readonly DrillDef[];                         // appendix C, table "Drills"
-export const ACTIVITY_LABELS: Record<ActivityKind, string>;        // also used by Sessions (7.3)
 ```
+
+**Exercise types (D-30).** Each drill is an exercise type of its own. For each drill:
+- add the type to `exercise_types::KNOWN` (Rust), `ExerciseType` (zod) and `EXERCISE_TYPE_INFO` (label and icon);
+- add its exercise definition (for example `ex-jam`, version 1) to `src/content/exercises.ts` as part of `DRILL_EXERCISES`.
+
+The Exercises tab keeps listing the four core exercises; drills are listed on the Drills tab. No database change is needed: v16 removed the type check (7.3).
 
 **Module contract**
 
@@ -105,7 +110,7 @@ export type DrillPlan = { drill: DrillDef; seed: string; params: Record<string, 
   sessionPrompt: string; rounds: DrillRound[] };
 export type DrillTake = { round: DrillRound; attemptId: string; durationMs: number };
 export interface DrillModule {
-  kind: ActivityKind;
+  type: ExerciseType;
   plan(seed: string, params: Record<string, unknown>, ctx: { prompts: PracticePrompt[]; today: string }): DrillPlan;   // pure, deterministic
   Setup?: FC<{ plan: DrillPlan; onReady: (plan: DrillPlan) => void }>;     // roll, spin, pick a side…
   Live?: FC<{ round: DrillRound; elapsedMs: number; mark: (e: TakeMark) => void }>;  // inside the recorder while speaking
@@ -185,7 +190,7 @@ export function CountdownRing({ totalMs, remainingMs, lights }: { totalMs: numbe
 - `storage/drills.rs`:
   - `activity_result(&self, attempt_id) -> Result<ActivityResult>` gathers the inputs, computes, and caches into `activity_results`.
   - A cached row whose `revision_id` differs from the current revision is recomputed.
-- **XP:** `commit_recording` awards `drill_round` (15 XP, ref = session ID) on the first saved take of a session with an `activity_snapshot` of a drill kind (7.4 table, appendix B).
+- **XP:** `commit_recording` awards `drill_round` (15 XP, ref = session ID) on the first saved take of a session whose exercise type is a drill type (7.4 table, appendix B).
 - **Commands** (`commands/drills.rs`): `add_take_events`, `list_take_events`, `get_activity_result`.
 - **Facts** (factsVersion 3): `FactTake.result: Record<string, number> | null` comes from cached results with a matching revision; `FactSession.activity` already exists.
 - The **transcription queue's `onDone`** calls `getActivityResult` for activity takes, so results (and therefore records) are cached without opening the result screen.
@@ -373,7 +378,7 @@ export function CountdownRing({ totalMs, remainingMs, lights }: { totalMs: numbe
 **Plan**
 - 7 rounds. Each uses a sentence from `EMPHASIS_SENTENCES` (20 sentences of 6–9 words, appendix C) and a seeded target word.
 - Each round is a short take (open-ended, typically 3 s).
-- The base exercise is `thought_groups` (reading aloud).
+- Its exercise type is `emphasis`, a read-aloud drill.
 - The card shows the sentence with the target word underlined and in bold: "Stress **say**".
 
 **Analysis** (`prosody.rs`, new, Estimated)

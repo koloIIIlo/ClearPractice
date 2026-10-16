@@ -114,3 +114,29 @@ describe("recording lifecycle", () => {
     expect(remove).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("take context (roadmap 7.3)", () => {
+  it("starts with the context of the latest render, even after a countdown", async () => {
+    const client = createMockClient();
+    const start = vi.spyOn(client, "startRecording");
+    const wrapper = ({ children }: { children: React.ReactNode }) => <IpcContext.Provider value={client}>{children}</IpcContext.Provider>;
+    const context = (key: string) => ({
+      sessionId: "run", exerciseId: "ex-repeat", exerciseVersion: 1, exerciseType: "repeat" as const, prompt: "Explain",
+      outline: { point: "", reason: "", example: "" }, conditions: { familiarity: "familiar" as const, preparationSeconds: 0, targetSeconds: 60, audience: null, followUp: false },
+      step: { index: 1, key },
+    });
+    const { result, rerender } = renderHook(({ step }) => useRecorder("Pace ladder", context(step)), { wrapper, initialProps: { step: "slow" } });
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    // Only the countdown's interval is faked, after the hook is ready (waitFor polls with real timers).
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      act(() => result.current.start({ deviceId: null, countdownSeconds: 1 }));
+      rerender({ step: "fast" });
+      act(() => { vi.advanceTimersByTime(1000); });
+    } finally {
+      vi.useRealTimers();
+    }
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+    expect(start.mock.calls[0][0].context?.step?.key).toBe("fast");
+  });
+});

@@ -527,10 +527,10 @@ fn sha256_bytes(bytes: &[u8]) -> String {
 
 // ── A-9 Upgrading a populated older schema ──────────────────────────────────
 
-/// Turns a current (v15) profile back into a populated v14 one.
+/// Turns a current (v16) profile back into a populated v14 one.
 fn downgrade_to_v14(root: &Path) {
     let conn = Connection::open(root.join("database/app.sqlite")).unwrap();
-    conn.execute_batch("DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; PRAGMA user_version=14;").unwrap();
+    conn.execute_batch("DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DELETE FROM app_settings WHERE key='engagement_backfill_v1'; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; PRAGMA user_version=14;").unwrap();
 }
 
 /// A-9 (besides populated_v1_database_upgrades_to_v2_with_a_snapshot and
@@ -579,7 +579,7 @@ fn a09_a_populated_older_profile_upgrades_and_a_failed_upgrade_recovers() {
         assert_eq!(db.attempt_transcript("old-take").unwrap()["correction"]["text"], "Indexes help.");
         assert!(db.list_coaching_runs("old-take").unwrap().is_empty(), "new tables exist and start empty");
         assert_eq!(kept(&read_only(&root.0)), before, "no row lost or changed by the upgrade");
-        let snapshots: Vec<PathBuf> = files(&root.0.join("database/snapshots")).into_iter().filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("before-v15-")).collect();
+        let snapshots: Vec<PathBuf> = files(&root.0.join("database/snapshots")).into_iter().filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("before-v16-")).collect();
         assert_eq!(snapshots.len(), if fail_first { 2 } else { 1 }, "a snapshot before every upgrade attempt");
         for snapshot in snapshots {
             let copy = Connection::open_with_flags(&snapshot, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
@@ -604,7 +604,8 @@ fn a11_every_http_client_is_counted_and_local_modules_name_no_network_code() {
     let local = ["audio/capture.rs", "audio/monitor.rs", "audio/peaks.rs", "audio/prepare.rs", "audio/transcription.rs", "audio/whisper.rs",
         "storage/recording.rs", "storage/database.rs", "storage/coaching_runs.rs", "storage/library.rs", "storage/phrases.rs", "storage/prompts.rs",
         "storage/transfer.rs", "storage/progression.rs", "storage/counts.rs", "transcribe.rs", "prosody.rs", "analysis.rs", "mic_test.rs",
-        "backup/mod.rs", "backup/export.rs", "clips.rs", "models.rs", "storage_usage.rs", "diagnostics.rs", "app_paths.rs", "data_location.rs"];
+        "backup/mod.rs", "backup/export.rs", "clips.rs", "models.rs", "storage_usage.rs", "diagnostics.rs", "app_paths.rs", "data_location.rs",
+        "storage/engagement.rs", "engagement.rs", "activity.rs", "exercise_types.rs", "commands/engagement.rs"];
     let banned = ["reqwest", "Client::", "TcpStream", "UdpSocket", "std::net", "ApiTransport", "local_llm::chat", "send_reserved", "download_tool", "whisper_setup::", "linkaudio::"];
     for file in local {
         let (_, code) = sources.iter().find(|(n, _)| n == file).unwrap_or_else(|| panic!("{file} not found"));

@@ -13,6 +13,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { PRIMARY_NAV, SETTINGS_NAV, activeSection, type NavItem } from "./nav";
+import { prefetchRoute } from "./prefetch";
 
 function NavEntry({ item, active }: { item: NavItem; active: boolean }) {
   const { isMobile, setOpenMobile } = useSidebar();
@@ -30,6 +31,9 @@ function NavEntry({ item, active }: { item: NavItem; active: boolean }) {
           aria-current={active ? "page" : undefined}
           aria-label={item.label}
           onClick={() => isMobile && setOpenMobile(false)}
+          // The page's code starts loading before the click (roadmap 7.1).
+          onPointerEnter={() => prefetchRoute(item.id)}
+          onFocus={() => prefetchRoute(item.id)}
         >
           <item.icon aria-hidden className="size-[18px] shrink-0" />
           {/* Icon-only rail: the label is hidden (the tooltip and aria-label keep the name). */}

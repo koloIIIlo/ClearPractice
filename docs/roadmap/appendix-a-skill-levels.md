@@ -33,6 +33,7 @@ This appendix is the source for `src/lib/engagement/skills.ts` (`AREAS`, `LEVELS
 | `sessions` | `focusIn?: string[]`, `distinct?: "focus" \| "contentId"`, `promptTags?: PromptTag[]`, `minTakes?: number` |
 | `transfers` | `mission?: boolean` |
 | `conversation` | `minPressure?: 0 \| 1 \| 2 \| 3` |
+| `activity` | names an exercise type: `type: ExerciseType` (drills and other activities are exercise types, D-30) |
 | `listenerAnswers` (new kind) | `{ kind: "listenerAnswers"; label; atLeast; mainPointAnswered?: boolean }` (facts from M14) |
 
 `EvalContext.promptTags` maps each prompt ID to its tags, built from `listPrompts()`, so criteria can ask for "storytelling prompts".

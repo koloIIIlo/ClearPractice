@@ -315,7 +315,7 @@ Manual:
 1. **Phrases → a due card → Say it.** An inline compact recorder opens under the card, with the hint "Say a sentence of your own using *I lost track of time*". Takes are 20 s at most.
 2. **The take is saved** in today's **Phrase practice** session:
    - one session per day;
-   - activity `phrase_say_it`, exercise `ex-expression`;
+   - exercise type `phrase_say_it` (exercise `ex-phrase-say-it`; add the type to `KNOWN`, `ExerciseType` and `EXERCISE_TYPE_INFO` in this WP);
    - found again through facts, or created on the first take.
 3. **The take is transcribed automatically** (local). The card then shows "Phrase spotted in your sentence (Estimated)", or "Not found; you can still rate it", with **Listen**.
 4. **Rate as usual:** Again, Hard or Good. Your rating stays your choice and never comes from the spotting.

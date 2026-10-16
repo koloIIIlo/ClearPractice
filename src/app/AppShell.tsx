@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Outlet, ScrollRestoration, useLocation, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
-import { CommandPalette } from "./CommandPalette";
 import { ShortcutsDialog, typingTarget } from "./ShortcutsDialog";
 import { setZoomLevel, stepZoom, useZoomLevel } from "./zoom";
 import { TranscriptionQueueProvider } from "@/features/transcription/queue";
@@ -13,12 +12,16 @@ import { useIpc } from "@/lib/ipc";
 import { RecoveryNotice } from "./RecoveryNotice";
 import { DailyReminder } from "./DailyReminder";
 
+const CommandPalette = lazy(() => import("./CommandPalette").then((m) => ({ default: m.CommandPalette })));
+
 /** Start-up is measured once per app run: process start → first painted screen (6.5). */
 let startupMeasured = false;
 
 export function AppShell() {
   const ipc = useIpc();
   const [searchOpen, setSearchOpen] = useState(false);
+  // Mounted from the first opening on, so closing keeps its state and animation.
+  const searchUsed = useSearchUsed(searchOpen);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // First-launch setup is one focused task: no app navigation around it (§3.10).
   const setup = useLocation().pathname === "/welcome";
@@ -110,11 +113,25 @@ export function AppShell() {
               <Outlet />
             </main>
           </SidebarInset>
-          <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+          {/* Its code (cmdk) loads on first use (roadmap 7.1). */}
+          {searchUsed && (
+            <Suspense fallback={null}>
+              <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+            </Suspense>
+          )}
           <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
           <ScrollRestoration />
         </SidebarProvider>
       </TourProvider>
     </TranscriptionQueueProvider>
   );
+}
+
+/** True from the first time the palette opens. */
+function useSearchUsed(open: boolean): boolean {
+  const [used, setUsed] = useState(open);
+  useEffect(() => {
+    if (open) setUsed(true);
+  }, [open]);
+  return used || open;
 }

@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Headphones, Heart, MessageSquareQuote, Mic, Pencil, Plus, Repeat2, Search, TextQuote, Trash2, type LucideIcon } from "lucide-react";
+import { BookOpen, Heart, Mic, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { EmptyState, Page, PageHeader, QueryView } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useExercises, useGuides, usePrompts, useSetPromptFavorite } from "@/lib/ipc/queries";
-import { PromptTag, type ExerciseType, type PracticePrompt } from "@/lib/ipc/schemas";
+import { PromptTag, type PracticePrompt } from "@/lib/ipc/schemas";
+import { EXERCISE_IDS, EXERCISE_TYPE_INFO } from "@/content/exercises";
 import { cn } from "@/lib/utils";
 import { useIpc } from "@/lib/ipc";
 import { TAG_LABELS, describeDemands } from "./describe";
@@ -54,14 +55,6 @@ export function ExercisesPage() {
   );
 }
 
-/** One recognisable icon per exercise, so the four cards can be told apart at a glance (§3.5). */
-const EXERCISE_ICONS: Record<ExerciseType, LucideIcon> = {
-  repeat: Repeat2,
-  thought_groups: TextQuote,
-  imitate: Headphones,
-  expression: MessageSquareQuote,
-};
-
 function ExerciseList() {
   const exercises = useExercises();
   return (
@@ -74,7 +67,8 @@ function ExerciseList() {
         ) : (
           <ul className="grid gap-4 md:grid-cols-2">
             {list.map((ex) => {
-              const Icon = EXERCISE_ICONS[ex.type];
+              // One recognisable icon per exercise, so the cards can be told apart at a glance (§3.5).
+              const Icon = EXERCISE_TYPE_INFO[ex.type].icon;
               return (
               <li key={ex.id} className="flex flex-col rounded-panel border bg-card p-5">
                 <div className="flex items-center gap-3">
@@ -314,7 +308,7 @@ function PromptRow({ p, highlight, onFavorite }: { p: PracticePrompt; highlight:
           <Heart aria-hidden className={cn(p.favorite && "fill-primary text-primary")} />
         </Button>
         <Button variant="outline" size="sm" asChild>
-          <Link to={`/practice/ex-repeat?prompt=${p.id}`} state={{ section: "exercises" }}>
+          <Link to={`/practice/${EXERCISE_IDS.repeat}?prompt=${p.id}`} state={{ section: "exercises" }}>
             Practise
           </Link>
         </Button>

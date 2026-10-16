@@ -13,6 +13,7 @@
  * - Three sessions of the same exercise, or the same prompt, suggest variety.
  */
 import type { PracticePrompt, SessionDetail } from "./ipc/schemas";
+import { EXERCISE_TYPE_INFO } from "@/content/exercises";
 
 export type Stage = { stage: number; title: string; demand: string; matches: (p: PracticePrompt) => boolean };
 
@@ -48,6 +49,7 @@ export function currentStage(events: ProgressionEvent[]): Stage {
   return STAGES.find((s) => s.stage === latest?.stageTo) ?? STAGES[0];
 }
 
+/** Names as today's sequence shows them; any other type uses its label from EXERCISE_TYPE_INFO. */
 const EXERCISE_NAMES: Record<string, string> = { repeat: "Record and repeat", thought_groups: "Thought groups", imitate: "Listen and imitate", expression: "Expression practice" };
 
 /**
@@ -98,7 +100,7 @@ export function schedule({ recent, events, prompts }: { recent: SessionDetail[];
 
   const types = recent.slice(0, 3).map((s) => s.exerciseType);
   if (types.length === 3 && types[0] && types.every((t) => t === types[0])) {
-    suggestions.push({ text: "Try a different exercise today.", reason: `Your last three sessions were all ${EXERCISE_NAMES[types[0]] ?? types[0]}. Today's sequence mixes in the others.` });
+    suggestions.push({ text: "Try a different exercise today.", reason: `Your last three sessions were all ${EXERCISE_NAMES[types[0]] ?? EXERCISE_TYPE_INFO[types[0]]?.label ?? types[0]}. Today's sequence mixes in the others.` });
   }
   const contents = recent.slice(0, 3).map((s) => s.contentId ?? null);
   if (contents.length === 3 && contents[0] && contents.every((c) => c === contents[0])) {

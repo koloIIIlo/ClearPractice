@@ -148,6 +148,7 @@ pub fn first_sentence(text: &str) -> Option<String>; pub fn last_sentence(text: 
   The six v1 keys are also stored under the v2 run, with the run ID `{revision}--measures-v2`.
 - The settings JSON adds `"clauseStarters": "v1", "watchWords": "default-v1", "hedges": "v1", "window": 50`.
 - `backfill_measures` already fills missing runs for the current version, so every stored revision gets v2 on the first start after the update.
+- **Keep filler decisions attached.** Your hesitation decisions (`annotations`) are stored with `analysis::DEFINITION_VERSION`. Bumping that number to 2 would leave every earlier decision on version 1, where v2 views and facts don't look. Add `FILLER_DEFINITION_VERSION = 1` for the filler candidate list and use it for annotations, so decisions survive measures v2 as long as the candidate list is unchanged. The facts (7.6) read decisions with the same constant.
 
 **IPC.** `TranscriptMeasures` (zod) gains these optional fields:
 ```ts

@@ -116,7 +116,7 @@ pub fn parse_partner_turn(raw: &str) -> Result<PartnerTurn>        // ≤ MAX_RE
 **Native: `storage/conversations.rs`**
 ```rust
 impl DatabaseOwner {
-  pub fn create_conversation(&self, input: &NewConversation) -> Result<Conversation>;   // creates the session (activity "conversation") and the opening partner turn
+  pub fn create_conversation(&self, input: &NewConversation) -> Result<Conversation>;   // creates the session (exercise type `conversation`) and the opening partner turn
   pub fn conversation(&self, id: &str) -> Result<ConversationView>;                    // turns + each learner take's current transcript text
   pub fn list_conversations(&self) -> Result<Vec<ConversationSummary>>;
   pub fn add_learner_turn(&self, id: &str, attempt_id: Option<&str>, typed_text: Option<&str>) -> Result<Turn>;  // attempt (spoken) or typed
@@ -440,7 +440,7 @@ export function pickPartnerVoice(voices: SpeechSynthesisVoice[], preferredName: 
   - `upgraded` is at most 1.3 × the original word count;
   - there are at most 6 changes.
 - The result is stored in `coaching_runs`, linked to the original take, so it is purged with it.
-- Shadow and retell takes go in a new session: activity `upgrade`, step keys `shadow` and `retell`. **Add `upgrade` to `ActivityKind`.**
+- Shadow and retell takes go in a new session of exercise type `upgrade` (exercise `ex-upgrade`), with step keys `shadow` and `retell`. **Add `conversation` and `upgrade` to the exercise types** (`KNOWN`, `ExerciseType`, `EXERCISE_TYPE_INFO`).
 
 **Front end**
 - `src/lib/diff.ts`: `diffWords(a: string, b: string): { op: "same" | "add" | "del"; text: string }[]`. It runs an LCS over the normalised tokens and keeps the original punctuation for display.

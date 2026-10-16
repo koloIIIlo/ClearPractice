@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePreferences } from "@/lib/ipc/queries";
 import { Link, useNavigate } from "react-router";
 import { ArrowRight, Compass, MessagesSquare, Mic, RotateCcw } from "lucide-react";
@@ -15,6 +15,10 @@ import { RecordingLibrary } from "@/features/practice/RecordingLibrary";
 import { loadSequence, startSequence, stepUrl } from "@/features/practice/sequence";
 import { StagePanel } from "./StagePanel";
 import { WeekRow } from "./WeekRow";
+import { EXERCISE_IDS } from "@/content/exercises";
+import { SHOW_STYLE_CARD } from "@/features/engagement/style";
+import { StyleChoiceCard, shouldOfferStyleChoice } from "@/features/engagement/StyleChoiceCard";
+import { prefetchWhenIdle } from "@/app/prefetch";
 
 const LENGTHS: { value: SessionLength; label: string; hint: string }[] = [
   { value: "standard", label: "About 13 minutes", hint: "Four short exercises" },
@@ -29,6 +33,8 @@ export function TodayPage() {
   const plan = useTodayPlan(length);
   // Load the week row's sessions alongside the plan rather than after it.
   useSessions({});
+  // The Studio and the likely next pages load in the background once Today is idle (7.1).
+  useEffect(() => prefetchWhenIdle(["studio", "done", "sessions", "progress"]), []);
 
   return (
     <Page>
@@ -88,6 +94,7 @@ function TodayContent({
               <Button variant="ghost" onClick={() => update({ onboarded: true })}>Not now</Button>
             </Panel>
           )}
+          {shouldOfferStyleChoice(preferences, !!plan.lastCompleted, SHOW_STYLE_CARD) && <StyleChoiceCard />}
           {firstRun ? (
             <EmptyState
               icon={Mic}
@@ -207,7 +214,7 @@ function TodayContent({
                 </div>
                 <Button variant="outline" size="sm" asChild>
                   <Link
-                    to={`/practice/ex-repeat?prompt=${plan.weekly.newSituation.promptId}`}
+                    to={`/practice/${EXERCISE_IDS.repeat}?prompt=${plan.weekly.newSituation.promptId}`}
                     state={{ section: "today" }}
                   >
                     Try it <ArrowRight aria-hidden />

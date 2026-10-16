@@ -150,6 +150,9 @@ export function createNativeClient(): IpcClient {
       return S.ProgressSummary.parse(buildProgress(view, kept, paces));
     },
     // Today's plan from your own sessions and phrases plus the curriculum rotation (4.12).
+    listPracticeEvents: (from) => command("list_practice_events", S.PracticeEvent.array(), { from: from ?? null }),
+    recordSequenceCompleted: (sessionIds, localDate) => command("record_sequence_completed", S.PracticeEvent.nullable(), { sessionIds, localDate }),
+    getPracticeFacts: () => command("get_practice_facts", S.PracticeFacts),
     getTodayPlan: async (length) => {
       const [sessions, phrases, reviews, events, prompts, preferences] = await Promise.all([
         command("list_sessions", S.SessionSummary.array(), { filter: null }),

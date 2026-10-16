@@ -108,12 +108,17 @@ impl DatabaseOwner {
         let next = next_interval(current.interval_days, rating)?;
         let due = (today + Duration::days(i64::from(next))).format("%Y-%m-%d").to_string();
         let tx = conn.transaction().map_err(db_error)?;
+        let now = recording::now_ms() as i64;
         tx.execute(
             "INSERT INTO phrase_reviews(card_id,rating,interval_before,interval_after,due_date,reviewed_at_ms) VALUES (?1,?2,?3,?4,?5,?6)",
-            params![id, rating, current.interval_days, next, due, recording::now_ms() as i64],
+            params![id, rating, current.interval_days, next, due, now],
         )
         .map_err(db_error)?;
         tx.execute("UPDATE phrase_cards SET interval_days=?1, due_date=?2 WHERE id=?3", params![next, due, id]).map_err(db_error)?;
+        // Effort points (roadmap 7.4), capped per day.
+        let review = format!("review-{}", tx.last_insert_rowid());
+        let date = today.format("%Y-%m-%d").to_string();
+        super::engagement::award(&tx, &crate::engagement::NewEvent { kind: crate::engagement::EventKind::PhraseReviewed, ref_id: &review, local_date: &date, session_id: None, attempt_id: None, created_at_ms: now, backfilled: false })?;
         tx.commit().map_err(db_error)?;
         Ok(PhraseCard { interval_days: next, due_date: due, ..current })
     }
@@ -125,7 +130,7 @@ impl DatabaseOwner {
             recording::validate_id(session)?;
         }
         let now = recording::now_ms();
-        let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+        let mut conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
         let mut n = 0u32;
         let id = loop {
             let candidate = if n == 0 { format!("phrase-{now}") } else { format!("phrase-{now}-{n}") };
@@ -135,11 +140,16 @@ impl DatabaseOwner {
             }
             n += 1;
         };
-        conn.execute(
+        let date = today.format("%Y-%m-%d").to_string();
+        let tx = conn.transaction().map_err(db_error)?;
+        tx.execute(
             "INSERT INTO phrase_cards(id,original,expression,explanation,examples,source_session_id,due_date,interval_days,created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,0,?8)",
-            params![id, text.original.trim(), text.expression.trim(), text.explanation.trim(), examples, source_session_id, today.format("%Y-%m-%d").to_string(), now as i64],
+            params![id, text.original.trim(), text.expression.trim(), text.explanation.trim(), examples, source_session_id, date, now as i64],
         )
         .map_err(db_error)?;
+        // Effort points (roadmap 7.4), capped per day.
+        super::engagement::award(&tx, &crate::engagement::NewEvent { kind: crate::engagement::EventKind::PhraseSaved, ref_id: &id, local_date: &date, session_id: None, attempt_id: None, created_at_ms: now as i64, backfilled: false })?;
+        tx.commit().map_err(db_error)?;
         self.phrase(&conn, &id)
     }
 

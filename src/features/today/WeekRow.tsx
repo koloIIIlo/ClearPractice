@@ -92,7 +92,8 @@ export function WeekRow({ today }: { today: string }) {
       </ol>
       <p className="text-meta text-muted-foreground tabular-nums">
         {recapLine(recap)} ·{" "}
-        <Link to="/progress" className="text-primary hover:underline">Your year</Link>
+        {/* Underlined: inside a line of text, colour alone is too close to the grey around it in dark mode (axe link-in-text-block). */}
+        <Link to="/progress" className="text-primary underline underline-offset-2 hover:no-underline">Your year</Link>
       </p>
     </section>
   );

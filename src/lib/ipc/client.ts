@@ -4,7 +4,11 @@
  * never resolves file paths itself.
  */
 import type {
+  ActivityContext,
+  ActivityStep,
   AttemptReview,
+  PracticeEvent,
+  PracticeFacts,
   ExerciseDefinition,
   Guide,
   InputDevice,
@@ -93,6 +97,10 @@ export interface PracticeContext {
   /** Bundled curriculum version and the prompt, passage or phrase used (4.5). */
   curriculumVersion?: number;
   contentId?: string;
+  /** A run's settings (7.3), fixed by the session's first take. */
+  activity?: ActivityContext;
+  /** This take's step within the run (7.3). */
+  step?: ActivityStep;
 }
 
 export interface IpcClient {
@@ -319,6 +327,12 @@ export interface IpcClient {
   /** Sends an approved preview; only suggestions that quote your own words come back. */
   requestPhraseSuggestions(requestId: string, payloadSha256: string): Promise<PhraseSuggestion[]>;
   requestFollowUp(attemptId: string, requestId: string, payloadSha256: string): Promise<FollowUpQuestion>;
+  /** Effort (roadmap 7.4): practice events from a local date on, oldest first. */
+  listPracticeEvents(from?: string): Promise<PracticeEvent[]>;
+  /** Practice complete: one event per finished sequence that has a take; null otherwise. */
+  recordSequenceCompleted(sessionIds: string[], localDate: string): Promise<PracticeEvent | null>;
+  /** One snapshot of your practice for the rule engines (7.6). */
+  getPracticeFacts(): Promise<PracticeFacts>;
 }
 
 /** A command failed in a way the UI should explain in context (§14). */

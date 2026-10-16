@@ -241,14 +241,15 @@ src/lib/ipc (IpcClient + zod) ── invoke ──►  Rust commands (src-tauri/
 | `src/features/partner/` | `PartnerHub.tsx`, `ConversationPage.tsx`, `TurnBubble.tsx`, `TurnSendBar.tsx`, `PressureDial.tsx`, `QaPanel.tsx`, `UpgradeLoop.tsx`, `voices.ts` | 13.x |
 | `src/features/events/` | `EventsPage.tsx`, `EventPage.tsx`, `EventForm.tsx`, `TalkBuilder.tsx`, `CueCards.tsx`, `RehearsalReport.tsx`, `ListenerPackDialog.tsx`, `MissionCard.tsx`, `TimeCapsule.tsx` | 14.x |
 | `src/content/` | new `exercises.ts`, `drills.ts`, `jam-topics.ts`, `roulette-topics.ts`, `word-bomb-words.ts`, `story.ts`, `emphasis-sentences.ts`, `daily-prompts.ts`, `bosses.ts`, `star-questions.ts`, `scenarios.ts`, `missions.ts`, `routine.ts`, `programmes.ts`, `exposure-templates.ts`, `monthly-themes.ts`, `talk-templates.ts`, `first-language-tips.ts`, `whats-new.ts` | 7.2, 10.x… |
-| `src/lib/` (pure helpers) | `activity.ts` (7.3), `insights/` (`words.ts`, `trends.ts`, `profile.ts`), `learning/` (`reanswer.ts`, `feedback.ts`, `programmes.ts`, `catch-it.ts`, `sprint.ts`), `events/plan.ts`, `social/codes.ts`, `diff.ts` (13.10) | 8.x–15.x |
+| `src/lib/` (pure helpers) | `insights/` (`words.ts`, `trends.ts`, `profile.ts`), `learning/` (`reanswer.ts`, `feedback.ts`, `programmes.ts`, `catch-it.ts`, `sprint.ts`), `events/plan.ts`, `social/codes.ts`, `diff.ts` (13.10) | 8.x–15.x |
 
 ### 6.3 New Rust modules
 
 | File | Holds | First WP |
 | --- | --- | --- |
 | `src-tauri/src/commands/mod.rs` + `commands/<area>.rs` | New `#[tauri::command]` functions, grouped by area, registered in `lib.rs` `generate_handler!` as `commands::engagement::get_practice_facts` and so on. Existing commands stay in `lib.rs`; `with_storage` and `SessionStorage` become `pub(crate)` | 7.8 |
-| `src-tauri/src/activity.rs` | `ActivityKind`, `TakeEventKind` (parse, `as_str`) | 7.3, 10.1 |
+| `src-tauri/src/exercise_types.rs` | `KNOWN` exercise types and `is_known` (validated in Rust; no SQL `CHECK` since v16, D-30) | 7.3 |
+| `src-tauri/src/activity.rs` | `ActivityContext`, `ActivityStep` (7.3); `TakeEventKind` (10.1) | 7.3, 10.1 |
 | `src-tauri/src/engagement.rs` | `RULES_VERSION`, `EventKind` (parse, `as_str`, `xp`), `NewEvent`, daily caps | 7.4 |
 | `src-tauri/src/storage/engagement.rs` | `award()`, `list_practice_events`, `practice_facts`, backfill; later levels, achievements, records, quests | 7.4, 7.6, 9.x |
 | `src-tauri/src/storage/insights.rs` | `phrase_uses`, `self_checks`, `audio_measures`, `comparisons` | 8.x |
@@ -330,7 +331,7 @@ Each field needs:
 
 | Version | WP | Adds |
 | --- | --- | --- |
-| v16 | 7.3, 7.4 | `sessions.activity_snapshot TEXT`; `practice_events` |
+| v16 | 7.3, 7.4 | `exercise_definitions` rebuilt without its type `CHECK` (D-30); `sessions.activity_snapshot TEXT`; `practice_events` |
 | v17 | 8.x | `phrase_uses`, `self_checks`, `audio_measures`, `comparisons` |
 | v18 | 9.x | `skill_levels`, `achievements`, `personal_records`, `weekly_quests`; `transfer_reviews.flow`, `transfer_reviews.tags` |
 | v19 | 10.1 | `take_events`, `activity_results` |
@@ -345,7 +346,7 @@ If milestones merge in a different order, the version numbers follow the merge o
 
 ### 7.2 Rules for new tables
 1. **Every table is `STRICT`**, with `TEXT` IDs from `crypto.randomUUID()` / `uuid` and `*_at_ms INTEGER` times. Local dates use the existing `GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'` check.
-2. **No `CHECK(kind IN (…))` on lists that will grow** (event kinds, achievement IDs, drill kinds). Rust validates them with an enum instead. Lesson learned: `exercise_definitions.type` has a v1 `CHECK` that would need a table rebuild under foreign keys (see D-30).
+2. **No `CHECK(kind IN (…))` on lists that will grow** (event kinds, achievement IDs, drill kinds). Rust validates them with an enum instead. v16 removes the one such `CHECK` inherited from v1, on `exercise_definitions.type`, with a one-time table rebuild (D-30, 7.3).
 3. **Engagement tables store IDs and numbers only:** never transcript text, never audio, never file paths (A-30). `evidence` and `data` JSON columns hold IDs, counts and units.
 4. **Every table tied to a take** (`attempt_id`) is deleted in `purge_take_rows` (`database.rs`), and every table tied to a session is deleted in `delete_permanently`. This is tested by extending `delete_permanently_removes_every_derived_row`, or adding it if missing.
 5. **Ledgers are kept:** `practice_events`, `skill_levels`, `achievements`, `personal_records` and `weekly_quests` keep their rows when the session or take they mention is purged. Their IDs simply stop resolving, and the UI shows "from a deleted session" (A-28).
@@ -356,7 +357,7 @@ If milestones merge in a different order, the version numbers follow the merge o
 
 ### 7.3 Migration recipe (each version)
 1. Add `src-tauri/src/storage/schema-vNN.sql`, ending in `PRAGMA user_version=NN;`. It is commented like the existing files: why each table exists and which WP it belongs to.
-2. In `database.rs`:
+2. In `database.rs` (a script that rebuilds a table, like v16, runs through `migrate_rebuild`: foreign keys off, `foreign_key_check` before commit; 7.3):
    - set `const VERSION: i64 = NN`;
    - turn the last unconditional `migrate(..v(NN-1)..)` into `if version < NN-1 { … }`;
    - add `migrate(&mut connection, include_str!("schema-vNN.sql"))?;`.
@@ -476,9 +477,9 @@ If milestones merge in a different order, the version numbers follow the merge o
 | # | Decision | Recommendation | Blocks |
 | --- | --- | --- | --- |
 | D-29 | **Game layer within the blueprint.** Levels in 8 areas, XP for effort, achievements and records, all from practice evidence and your notes. No proficiency scores, no CEFR, AI can't award levels. Calm mode turns it off. | Yes. This keeps §1 "avoid a single numerical fluency score" and §7 "observable training criteria" intact. | M9, M10 |
-| D-30 | **Drills and other activities are variants of the four exercise types.** An activity's kind and parameters live in `sessions.activity_snapshot` (JSON), and per-take steps live in the unused `task_conditions.challenge` column. No new `exercise_definitions.type` values, whose v1 `CHECK` would need a table rebuild. | Yes | 7.3, M10 |
-| D-31 | **Evaluation in TypeScript over a Rust facts snapshot.** XP is awarded in Rust transactions; unlocks are recorded natively and never removed by Trash. | Yes | 7.4, 7.6, M9 |
-| D-32 | **Default style** | Playful for everyone, with a one-time choice card ("Playful or Calm?") on the first Today visit after the update. Celebrations are full unless reduced motion is on. | 7.5 |
+| D-30 | **New exercise types for new formats.** Drills, Say it, conversation, upgrade, rehearsal and capsule each get an exercise type of their own, added when their feature lands. v16 rebuilds `exercise_definitions` once without its v1 type `CHECK` (foreign keys off, checked before commit); types are validated in Rust and zod from then on. A run's settings live in `sessions.activity_snapshot`, per-take steps in `task_conditions.challenge`. | **Chosen 16 Oct** (you chose new types over variants of the four) | 7.3, M10–M14 |
+| D-31 | **Evaluation in TypeScript over a Rust facts snapshot.** XP is awarded in Rust transactions; unlocks are recorded natively and never removed by Trash. | **Chosen 16 Oct** | 7.4, 7.6, M9 |
+| D-32 | **Default style** | Playful for everyone, with a one-time choice card ("Playful or Calm?") on the first Today visit after the update. Celebrations are full unless reduced motion is on. **Chosen 16 Oct** | 7.5 |
 | D-33 | **Conversation partner approvals.** Each cloud turn keeps its own Send (single-use approval, rule 2). Local-model turns may be sent automatically during one conversation when you opt in, because nothing leaves the computer. Each conversation also has a cost cap. | Yes. The alternative, one approval for a whole conversation, would change data rule 2. | M13 |
 | D-34 | **Live pace and syllable rate from syllable nuclei** (after de Jong and Wempe 2009, pure Rust, Estimated), opt-in, used for range drills, never a target speed (§7 "Do not demand faster speech"). | Yes | 8.8, 10.7 |
 | D-35 | **The listener pack is a file exchange.** No hosted links, no accounts. | Yes | 14.4 |
@@ -486,7 +487,7 @@ If milestones merge in a different order, the version numbers follow the merge o
 | D-37 | **Surprise prompts and system notifications** | In-app only by default; Windows notifications via `tauri-plugin-notification` (pinned) only as an explicit opt-in. | 16.2 |
 | D-38 | **Updates and signing** | Code-sign the installer when you have a certificate. An update check (contacts GitHub) is opt-in, with "Check now" in Settings → About, and never automatic downloads (rule 1). | 16.8 |
 
-When to decide: D-30, D-31 and D-32 before M7 work packages 7.3–7.5; D-29 before M9; D-33 before M13; D-34 to D-38 with their work packages. Add each to the decision log in `DEVELOPMENT_PLAN.md` once you confirm it.
+D-30, D-31 and D-32 were decided on 16 Oct and are in the decision log. Still to decide: D-29 before M9; D-33 before M13; D-34 to D-38 with their work packages. Add each to the decision log in `DEVELOPMENT_PLAN.md` once you confirm it.
 
 ---
 

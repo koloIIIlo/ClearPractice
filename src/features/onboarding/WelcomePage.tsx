@@ -12,6 +12,7 @@ import type { Preferences } from "@/lib/ipc/schemas";
 import { cn } from "@/lib/utils";
 import { AudioSettings } from "@/features/settings/SettingsPage";
 import { TranscriptionMode } from "@/features/settings/TranscriptionMode";
+import { EXERCISE_IDS } from "@/content/exercises";
 
 const STEPS = ["Your goal", "Microphone", "Services", "Baseline (optional)"] as const;
 
@@ -138,7 +139,7 @@ export function WelcomePage() {
             It is saved with a baseline tag so you can listen back later. Later comparisons also use unfamiliar prompts, so improvement is not judged only from rehearsed answers.
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => finish("/practice/ex-repeat?prompt=baseline")}>Record the baseline</Button>
+            <Button onClick={() => finish(`/practice/${EXERCISE_IDS.repeat}?prompt=baseline`)}>Record the baseline</Button>
             <Button variant="outline" onClick={() => finish("/")}>Skip and go to Today</Button>
             <Button variant="ghost" onClick={() => setStep(2)}>Back</Button>
           </div>

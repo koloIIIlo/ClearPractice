@@ -1,6 +1,7 @@
 import { PASSAGES } from "@/content/passages";
 import { PROMPTS } from "@/content/prompts";
 import type { SessionLength, TodayPlan } from "@/lib/ipc/schemas";
+import { EXERCISE_IDS } from "@/content/exercises";
 
 type PlanStep = TodayPlan["steps"][number];
 
@@ -51,13 +52,13 @@ function pick<T>(items: T[], localDate: string, salt: number): T {
 export function stepUrl(step: PlanStep, localDate: string, firstPromptId?: string): string {
   switch (step.exerciseType) {
     case "repeat":
-      return `/practice/ex-repeat?prompt=${firstPromptId ?? pick(PROMPTS, localDate, 0).id}&seq=1`;
+      return `/practice/${EXERCISE_IDS.repeat}?prompt=${firstPromptId ?? pick(PROMPTS, localDate, 0).id}&seq=1`;
     case "thought_groups":
-      return `/practice/ex-thought-groups?passage=${pick(PASSAGES, localDate, 3).id}&seq=1`;
+      return `/practice/${EXERCISE_IDS.thoughtGroups}?passage=${pick(PASSAGES, localDate, 3).id}&seq=1`;
     case "imitate":
-      return "/practice/ex-imitate?seq=1";
+      return `/practice/${EXERCISE_IDS.imitate}?seq=1`;
     case "expression":
-      return "/practice/ex-expression?seq=1";
+      return `/practice/${EXERCISE_IDS.expression}?seq=1`;
   }
 }
 

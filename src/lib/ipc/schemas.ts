@@ -46,6 +46,22 @@ export const ExerciseDefinition = z.object({
 });
 export type ExerciseDefinition = z.infer<typeof ExerciseDefinition>;
 
+/** A run's settings (roadmap 7.3): seed, parameters and group, kept with its session. */
+export const ActivityContext = z
+  .object({
+    version: z.number().int().min(1).max(1000),
+    seed: z.string().regex(/^[A-Za-z0-9-]{1,64}$/),
+    groupId: z.string().regex(/^[A-Za-z0-9_-]{1,96}$/).nullable().optional(),
+    params: z.record(z.string().min(1).max(40), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])).default({}),
+  })
+  .strict();
+export type ActivityContext = z.infer<typeof ActivityContext>;
+/** Which step of a run a take answered (7.3); the take's own prompt when a run asks several. */
+export const ActivityStep = z
+  .object({ index: z.number().int().min(0).max(50), key: z.string().regex(/^[a-z0-9_-]{1,40}$/), promptId: z.string().nullable().optional() })
+  .strict();
+export type ActivityStep = z.infer<typeof ActivityStep>;
+
 export const Familiarity = z.enum(["familiar", "unfamiliar"]);
 export type Familiarity = z.infer<typeof Familiarity>;
 
@@ -458,6 +474,8 @@ export const Attempt = z.object({
   createdAt: z.string(),
   firstTake: z.boolean(),
   audioUnavailableReason: z.string().nullable().optional(),
+  /** The take's step within a run (7.3); null for ordinary practice. */
+  step: ActivityStep.nullable().optional(),
 });
 export type Attempt = z.infer<typeof Attempt>;
 
@@ -536,6 +554,8 @@ export const SessionDetail = SessionSummary.extend({
   takeaway: z.string().nullable().optional(),
   /** Attempt comparison (4.14): the take that felt clearer to you, or "same". Your own judgement. */
   preferredTake: z.string().nullable().optional(),
+  /** A run's settings (7.3); null for ordinary practice. */
+  activitySnapshot: ActivityContext.nullable().optional(),
 });
 export type SessionDetail = z.infer<typeof SessionDetail>;
 
@@ -740,6 +760,13 @@ export const Preferences = z
     reminderTime: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
     /** Coaching prices you entered (5.9), USD per million tokens; other models use the built-in prices. */
     coachingPrices: z.record(z.string(), z.object({ input: z.string(), output: z.string(), checkedOn: z.string() }).strict()),
+    /** Playful shows levels, effort points and celebrations; Calm hides them. Progress is kept either way (7.5, D-32). */
+    practiceStyle: z.enum(["playful", "calm"]),
+    /** The one-time Playful-or-Calm choice was made. */
+    styleChosen: z.boolean(),
+    /** Reduced motion turns "full" into "subtle". */
+    celebrations: z.enum(["full", "subtle", "off"]),
+    celebrationSounds: z.boolean(),
   })
   .strict();
 export type Preferences = z.infer<typeof Preferences>;
@@ -748,6 +775,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   coachingMode: "api", coachingModel: "gpt-6-luna", deliveryImpressions: false,
   onboarded: false, tourDone: false, goals: [], goalNote: "", difficultyLanguage: null,
   localEndpoint: "http://127.0.0.1:8080", localModel: "", budgetWarningMicroUsd: 4_000_000, reminderTime: null, coachingPrices: {},
+  practiceStyle: "playful", styleChosen: false, celebrations: "full", celebrationSounds: false,
 };
 
 export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api", "off"]), provider: AudioProvider }).strict();
@@ -909,3 +937,97 @@ export const TranscriptionResult = z.object({
   }
 });
 export type TranscriptionResult = z.infer<typeof TranscriptionResult>;
+
+// ── Engagement (roadmap 7.4, 7.6) ────────────────────────────────────────────
+/** Something you did that earned effort points; never removed (D-31). */
+export const PracticeEvent = z
+  .object({
+    id: z.number().int(),
+    kind: z.string().min(1),
+    refId: z.string().min(1),
+    localDate: z.string(),
+    sessionId: z.string().nullable(),
+    attemptId: z.string().nullable(),
+    xp: z.number().int().min(0),
+    backfilled: z.boolean(),
+    createdAt: z.string(),
+  })
+  .strict();
+export type PracticeEvent = z.infer<typeof PracticeEvent>;
+
+export const FactSession = z
+  .object({
+    id: Id,
+    localDate: z.string(),
+    startedAt: z.string(),
+    exerciseType: ExerciseType.nullable(),
+    contentId: z.string().nullable(),
+    tags: z.array(z.string()),
+    familiarity: Familiarity.nullable(),
+    preparationSeconds: z.number().int().nonnegative().nullable(),
+    targetSeconds: z.number().int().nonnegative().nullable(),
+    audience: z.boolean(),
+    followUp: z.boolean(),
+    /** Point, reason and example filled in the outline. */
+    outline: z.tuple([z.boolean(), z.boolean(), z.boolean()]),
+    ease: z.number().int().min(1).max(5).nullable(),
+    focus: z.string().nullable(),
+    takeaway: z.boolean(),
+    status: SessionStatus,
+    takeCount: z.number().int().nonnegative(),
+    durationMs: z.number().int().nonnegative(),
+    preferredTake: z.string().nullable(),
+  })
+  .strict();
+export type FactSession = z.infer<typeof FactSession>;
+
+/** A saved take in history with the measures of its newest machine revision (Estimated). */
+export const FactTake = z
+  .object({
+    id: Id,
+    sessionId: Id,
+    ordinal: z.number().int().positive(),
+    localDate: z.string(),
+    createdAt: z.string(),
+    durationMs: z.number().int().nonnegative(),
+    stepKey: z.string().nullable(),
+    transcribed: z.boolean(),
+    revisionId: z.string().nullable(),
+    words: z.number().int().nonnegative().nullable(),
+    paceWpm: z.number().nullable(),
+    speechSpanMs: z.number().int().nonnegative().nullable(),
+    fillerCandidates: z.number().int().nonnegative().nullable(),
+    fillersConfirmed: z.number().int().nonnegative().nullable(),
+    fillersReviewed: z.boolean(),
+    pausesOverThreshold: z.number().int().nonnegative().nullable(),
+    prosodyViewed: z.boolean(),
+    hasAiFeedback: z.boolean(),
+  })
+  .strict();
+export type FactTake = z.infer<typeof FactTake>;
+
+export const FactTransfer = z
+  .object({ id: Id, localDate: z.string(), hasListenerWords: z.boolean(), neededClarification: z.boolean(), hasSuccess: z.boolean(), hasNextFocus: z.boolean() })
+  .strict();
+export type FactTransfer = z.infer<typeof FactTransfer>;
+export const FactPhrase = z.object({ id: Id, createdAt: z.string(), starter: z.boolean(), deleted: z.boolean() }).strict();
+export type FactPhrase = z.infer<typeof FactPhrase>;
+export const FactPhraseReview = z.object({ cardId: Id, localDate: z.string(), rating: PhraseRating }).strict();
+export type FactPhraseReview = z.infer<typeof FactPhraseReview>;
+
+/** One snapshot of your practice for the rule engines (7.6). Sessions and takes in Trash are left out. */
+export const PracticeFacts = z
+  .object({
+    factsVersion: z.number().int().positive(),
+    generatedAt: z.string(),
+    today: z.string(),
+    transcriptionAvailable: z.boolean(),
+    sessions: z.array(FactSession),
+    takes: z.array(FactTake),
+    transferReviews: z.array(FactTransfer),
+    phrases: z.array(FactPhrase),
+    phraseReviews: z.array(FactPhraseReview),
+    progression: z.array(ProgressionEvent),
+  })
+  .strict();
+export type PracticeFacts = z.infer<typeof PracticeFacts>;

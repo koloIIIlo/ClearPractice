@@ -8,7 +8,6 @@ import { addLocalDays, toLocalDate } from "@/lib/phrase-schedule";
 import type {
   Annotation,
   AttemptReview,
-  ExerciseDefinition,
   Guide,
   PhraseCard,
   PracticePrompt,
@@ -25,70 +24,7 @@ const isoAt = (localDate: string, hh: number, mm: number) => {
   return new Date(y, m - 1, d, hh, mm).toISOString();
 };
 
-export const exercises: ExerciseDefinition[] = [
-  {
-    id: "ex-repeat",
-    type: "repeat",
-    version: 1,
-    title: "Repeat an answer",
-    purpose: "Say the same idea twice and make the second take clearer.",
-    typicalMinutes: 6,
-    example: "Describe one habit using point, reason, example.",
-    instructions: [
-      "Write up to three keywords: point, reason, example.",
-      "Record about 60 seconds.",
-      "Listen back and choose one thing to improve.",
-      "Record the same answer again. The wording doesn't need to match.",
-    ],
-    attention: "Did you state your point early?",
-  },
-  {
-    id: "ex-thought-groups",
-    type: "thought_groups",
-    version: 1,
-    title: "Thought groups",
-    purpose: "Finish one thought and leave space before the next.",
-    typicalMinutes: 2,
-    example: "Read a short passage with pause marks, then explain it freely.",
-    instructions: [
-      "Listen to or read the passage.",
-      "Read it aloud, pausing at the marks.",
-      "Hide the text and explain the idea in your own words.",
-    ],
-    attention: "Did you finish each thought before starting another?",
-  },
-  {
-    id: "ex-imitate",
-    type: "imitate",
-    version: 1,
-    title: "Listen and imitate",
-    purpose: "Notice one feature of natural speech and try it yourself.",
-    typicalMinutes: 3,
-    example: "Repeat a 15-second clip, focusing on where the stress falls.",
-    instructions: [
-      "Listen to the clip once or twice.",
-      "Choose one feature: emphasis, phrase rhythm, or clear endings.",
-      "Record your repetition.",
-      "Compare the two by listening, not by looking at waveforms.",
-    ],
-    attention: "Pick one feature. Ignore the rest for now.",
-  },
-  {
-    id: "ex-expression",
-    type: "expression",
-    version: 1,
-    title: "Use a better expression",
-    purpose: "Make a saved expression your own by using it in new sentences.",
-    typicalMinutes: 2,
-    example: "Use “stumble over words” in three different sentences.",
-    instructions: [
-      "Read the expression and its explanation.",
-      "Say or type three sentences that use it in different situations.",
-      "Check that each sentence keeps the meaning you intended.",
-    ],
-    attention: "Can you use it in a situation you actually expect?",
-  },
-];
+export { EXERCISES as exercises } from "@/content/exercises";
 
 const cond = (
   familiarity: "familiar" | "unfamiliar",

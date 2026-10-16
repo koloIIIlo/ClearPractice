@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePreferences } from "@/lib/ipc/queries";
+import { EXERCISE_IDS } from "@/content/exercises";
 
 type Step = { route: string; target: string | null; title: string; body: string };
 
@@ -15,9 +16,9 @@ export const TOUR_STEPS: Step[] = [
   { route: "/", target: "start", title: "Start here", body: "Today's practice is a short sequence of exercises chosen for you. Press Start practice and follow the steps; you can stop whenever you like." },
   { route: "/", target: "focus", title: "Today's focus", body: "One thing to keep in mind today. It also appears inside the recorder while you speak." },
   { route: "/", target: "week", title: "Your week", body: "A dot for each day you practised. “Your year” opens the full activity calendar." },
-  { route: "/practice/ex-repeat", target: "record", title: "Record a take", body: "Press Record, or Ctrl+Enter. Before you start, the waveform already moves with your voice so you can check the microphone; nothing is recorded until you press Record." },
-  { route: "/practice/ex-repeat", target: "focus-switcher", title: "One thing to change", body: "Today's focus is picked for you. Use the arrows to choose another, or the pencil to write your own." },
-  { route: "/practice/ex-repeat", target: "takes", title: "Your takes", body: "Each take appears here. Once it is transcribed you see what went well and one thing to try, right under the take." },
+  { route: `/practice/${EXERCISE_IDS.repeat}`, target: "record", title: "Record a take", body: "Press Record, or Ctrl+Enter. Before you start, the waveform already moves with your voice so you can check the microphone; nothing is recorded until you press Record." },
+  { route: `/practice/${EXERCISE_IDS.repeat}`, target: "focus-switcher", title: "One thing to change", body: "Today's focus is picked for you. Use the arrows to choose another, or the pencil to write your own." },
+  { route: `/practice/${EXERCISE_IDS.repeat}`, target: "takes", title: "Your takes", body: "Each take appears here. Once it is transcribed you see what went well and one thing to try, right under the take." },
   { route: "/sessions", target: "sessions-table", title: "Sessions", body: "Everything you recorded. Tick sessions to transcribe all their takes or move them to Trash; the Transcript column shows what is done. Click a column header to sort." },
   { route: "/sessions", target: "trash", title: "Trash", body: "Sessions and takes you delete wait here, so you can restore them until the Trash is emptied." },
   { route: "/phrases", target: "phrases-actions", title: "Phrases", body: "Keep expressions you want to use more. Add them yourself or let AI suggest some from your sessions; they come back for review on a simple schedule." },

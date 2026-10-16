@@ -45,6 +45,14 @@ pub struct Preferences {
     pub reminder_time: Option<String>,
     /// Coaching prices you entered (5.9), by model ID; others use the built-in prices.
     pub coaching_prices: std::collections::BTreeMap<String, crate::api::coaching::PriceOverride>,
+    /// "playful" shows the game layer (levels, effort points, celebrations); "calm"
+    /// hides it. Progress is kept either way (roadmap 7.5, D-32).
+    pub practice_style: String,
+    /// The one-time Playful-or-Calm choice was made.
+    pub style_chosen: bool,
+    /// "full", "subtle" or "off"; reduced motion turns "full" into "subtle".
+    pub celebrations: String,
+    pub celebration_sounds: bool,
 }
 
 impl Default for Preferences {
@@ -53,7 +61,7 @@ impl Default for Preferences {
             coaching_mode: "api".into(), coaching_model: CoachingModel::default(), delivery_impressions: false,
             onboarded: false, tour_done: false, goals: Vec::new(), goal_note: String::new(), difficulty_language: None,
             local_endpoint: "http://127.0.0.1:8080".into(), local_model: String::new(), budget_warning_micro_usd: 4_000_000, reminder_time: None,
-            coaching_prices: Default::default() }
+            coaching_prices: Default::default(), practice_style: "playful".into(), style_chosen: false, celebrations: "full".into(), celebration_sounds: false }
     }
 }
 
@@ -63,6 +71,12 @@ fn validate(mut p: Preferences) -> Result<Preferences, String> {
     }
     if !matches!(p.coaching_mode.as_str(), "api" | "local" | "off") {
         return Err("Unknown coaching mode.".into());
+    }
+    if !matches!(p.practice_style.as_str(), "playful" | "calm") {
+        return Err("Choose Playful or Calm.".into());
+    }
+    if !matches!(p.celebrations.as_str(), "full" | "subtle" | "off") {
+        return Err("Choose full, subtle or no celebrations.".into());
     }
     p.local_endpoint = crate::api::local_llm::validate_endpoint(&p.local_endpoint)?;
     for (id, price) in &p.coaching_prices {
@@ -144,5 +158,22 @@ mod tests {
         assert_eq!(load(&db).unwrap(), Preferences::default());
         let blank = save(&db, Preferences { input_device_id: Some("  ".into()), ..Default::default() }).unwrap();
         assert_eq!(blank.input_device_id, None);
+    }
+
+    #[test]
+    fn practice_style_round_trips_and_rejects_unknown_values() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        let defaults = load(&db).unwrap();
+        assert_eq!((defaults.practice_style.as_str(), defaults.style_chosen, defaults.celebrations.as_str(), defaults.celebration_sounds), ("playful", false, "full", false));
+        let calm = Preferences { practice_style: "calm".into(), style_chosen: true, celebrations: "off".into(), celebration_sounds: true, ..Default::default() };
+        assert_eq!(save(&db, calm.clone()).unwrap(), calm);
+        assert_eq!(load(&db).unwrap(), calm);
+        assert!(save(&db, Preferences { practice_style: "quiet".into(), ..Default::default() }).is_err());
+        assert!(save(&db, Preferences { celebrations: "loud".into(), ..Default::default() }).is_err());
+        // Preferences saved before 7.5 keep the defaults for the new fields.
+        db.set_setting(KEY, r#"{"recordingSounds":false,"sessionLength":"short"}"#).unwrap();
+        let old = load(&db).unwrap();
+        assert_eq!((old.practice_style.as_str(), old.celebrations.as_str()), ("playful", "full"));
     }
 }

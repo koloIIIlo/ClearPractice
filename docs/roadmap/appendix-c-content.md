@@ -20,21 +20,21 @@ This appendix lists every new content file, how many items each needs, its rules
 
 ## C.1 Drills (`src/content/drills.ts`)
 
-| ID / kind | Title | Base exercise | Minutes | Areas | Defaults | Needs transcript |
+| Exercise type | Title | Exercise ID | Minutes | Areas | Defaults | Needs transcript |
 | --- | --- | --- | --- | --- | --- | --- |
-| `jam` | Just a Minute | repeat | 2 | fluency, spontaneity | think 5, speak 60 | yes (full result) |
-| `roulette` | Topic roulette | repeat | 2 | spontaneity | think 10, speak 60 (30–120) | no |
-| `word_bomb` | Word bomb | repeat | 2 | vocabulary, spontaneity | speak 90, bombs 3 | yes |
-| `three_ways` | Explain it three ways | repeat | 5 | structure, spontaneity | 3 rounds, open | no |
-| `emphasis` | Emphasis game | thought_groups | 3 | voice | 7 rounds | no (audio only) |
-| `pace_ladder` | Pace ladder | repeat | 3 | voice | 3 × 30 s | no (audio only) |
-| `story_spine` | Story spine | repeat | 2 | storytelling | speak 90 | no |
-| `story_cubes` | Story cubes | repeat | 2 | storytelling, spontaneity | 4 icons, think 15, speak 90 | yes (icon matching) |
-| `pitch` | Elevator pitch | repeat | 3 | structure | 60/30/15 s | no |
-| `steelman` | Steelman | repeat | 3 | spontaneity, structure | 90 + 60 s | no |
-| `daily` | Daily prompt | repeat | 2 | spontaneity | think 10, speak 60 | yes (full grid) |
-| `gauntlet` | Gauntlet | repeat | 5 | spontaneity, fluency | 5 rounds | no |
-| `boss` | Boss levels | repeat | 5–8 | per boss | per boss | no |
+| `jam` | Just a Minute | `ex-jam` | 2 | fluency, spontaneity | think 5, speak 60 | yes (full result) |
+| `roulette` | Topic roulette | `ex-roulette` | 2 | spontaneity | think 10, speak 60 (30–120) | no |
+| `word_bomb` | Word bomb | `ex-word-bomb` | 2 | vocabulary, spontaneity | speak 90, bombs 3 | yes |
+| `three_ways` | Explain it three ways | `ex-three-ways` | 5 | structure, spontaneity | 3 rounds, open | no |
+| `emphasis` | Emphasis game | `ex-emphasis` | 3 | voice | 7 rounds | no (audio only) |
+| `pace_ladder` | Pace ladder | `ex-pace-ladder` | 3 | voice | 3 × 30 s | no (audio only) |
+| `story_spine` | Story spine | `ex-story-spine` | 2 | storytelling | speak 90 | no |
+| `story_cubes` | Story cubes | `ex-story-cubes` | 2 | storytelling, spontaneity | 4 icons, think 15, speak 90 | yes (icon matching) |
+| `pitch` | Elevator pitch | `ex-pitch` | 3 | structure | 60/30/15 s | no |
+| `steelman` | Steelman | `ex-steelman` | 3 | spontaneity, structure | 90 + 60 s | no |
+| `daily` | Daily prompt | `ex-daily` | 2 | spontaneity | think 10, speak 60 | yes (full grid) |
+| `gauntlet` | Gauntlet | `ex-gauntlet` | 5 | spontaneity, fluency | 5 rounds | no |
+| `boss` | Boss levels | `ex-boss` | 5–8 | per boss | per boss | no |
 
 ---
 

@@ -1,5 +1,9 @@
+pub mod activity;
 pub mod analysis;
 pub mod api;
+mod commands;
+pub mod engagement;
+pub mod exercise_types;
 mod app_paths;
 pub mod data_location;
 pub mod audio;
@@ -37,13 +41,13 @@ struct Transcription {
     active: transcribe::ActiveJob,
 }
 
-struct ApiAccounting(Result<api::budget::BudgetOwner, String>, std::path::PathBuf);
+pub(crate) struct ApiAccounting(Result<api::budget::BudgetOwner, String>, std::path::PathBuf);
 /// API transcriptions in flight, by request ID, each with a way to stop waiting (3.18).
 #[derive(Default)]
 struct InflightApi(std::sync::Mutex<std::collections::HashMap<String, Box<dyn Fn() + Send + Sync>>>);
 /// The session database owner. Restore swaps it under the write lock; every other
 /// command holds the read lock for the whole of its storage or file work.
-struct SessionStorage(std::sync::RwLock<Result<storage::database::DatabaseOwner, String>>);
+pub(crate) struct SessionStorage(std::sync::RwLock<Result<storage::database::DatabaseOwner, String>>);
 
 impl SessionStorage {
     fn with<T>(
@@ -523,7 +527,7 @@ async fn get_recording_waveform(
     .map_err(|_| "Recording storage failed.".to_string())?
 }
 
-fn with_storage<T: Send + 'static>(
+pub(crate) fn with_storage<T: Send + 'static>(
     storage: &State<'_, Arc<SessionStorage>>,
     work: impl FnOnce(&storage::database::DatabaseOwner) -> Result<T, String> + Send + 'static,
 ) -> tauri::async_runtime::JoinHandle<Result<T, String>> {
@@ -2558,6 +2562,9 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::engagement::list_practice_events,
+            commands::engagement::record_sequence_completed,
+            commands::engagement::get_practice_facts,
             audio_devices::list_input_devices,
             list_sessions,
             get_session,

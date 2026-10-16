@@ -85,7 +85,7 @@ impl DatabaseOwner {
     pub fn add_transfer_review(&self, input: &TransferInput) -> Result<TransferReview> {
         input.validate()?;
         let now = recording::now_ms();
-        let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+        let mut conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
         let mut n = 0u32;
         let id = loop {
             let candidate = if n == 0 { format!("transfer-{now}") } else { format!("transfer-{now}-{n}") };
@@ -95,13 +95,18 @@ impl DatabaseOwner {
             }
             n += 1;
         };
-        conn.execute(
+        let tx = conn.transaction().map_err(db_error)?;
+        tx.execute(
             "INSERT INTO transfer_reviews(id,local_date,situation,preparation,listener_text,clarification,success,self_report,next_focus,created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
             params![id, input.local_date, input.situation.trim(), input.preparation.trim(), input.listener_text.trim(), input.clarification.trim(),
                 input.success.trim(), input.self_report.trim(), input.next_focus.trim(), now as i64],
         )
         .map_err(db_error)?;
-        conn.query_row(&format!("SELECT {COLUMNS} FROM transfer_reviews WHERE id=?1"), [&id], row).map_err(db_error)
+        // Effort points (roadmap 7.4) on the day of the conversation.
+        super::engagement::award(&tx, &crate::engagement::NewEvent { kind: crate::engagement::EventKind::TransferReview, ref_id: &id, local_date: &input.local_date, session_id: None, attempt_id: None, created_at_ms: now as i64, backfilled: false })?;
+        let review = tx.query_row(&format!("SELECT {COLUMNS} FROM transfer_reviews WHERE id=?1"), [&id], row).map_err(db_error)?;
+        tx.commit().map_err(db_error)?;
+        Ok(review)
     }
 
     pub fn delete_transfer_review(&self, id: &str) -> Result<()> {

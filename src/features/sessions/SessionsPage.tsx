@@ -23,15 +23,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatClock, formatDay } from "@/lib/format";
 import { useSessions } from "@/lib/ipc/queries";
-import { ExerciseType, type SessionSummary } from "@/lib/ipc/schemas";
+import type { ExerciseType, SessionSummary } from "@/lib/ipc/schemas";
+import { CORE_EXERCISE_TYPES, EXERCISE_TYPE_INFO } from "@/content/exercises";
 import { cn } from "@/lib/utils";
-
-export const EXERCISE_LABELS: Record<ExerciseType, string> = {
-  repeat: "Repeat an answer",
-  thought_groups: "Thought groups",
-  imitate: "Listen and imitate",
-  expression: "Better expression",
-};
 
 type SortKey = "title" | "date" | "duration" | "takes";
 const SORTS: Record<SortKey, (a: SessionSummary, b: SessionSummary) => number> = {
@@ -214,6 +208,12 @@ export function SessionsPage() {
     );
 
   const sessions = useSessions({ query: q || undefined, exerciseType: type ?? undefined, favoritesOnly });
+  // The four core types, then any other type you have used (drills and later formats, D-30).
+  const everything = useSessions({});
+  const typeOptions = [
+    ...CORE_EXERCISE_TYPES,
+    ...new Set((everything.data ?? []).flatMap((s) => (s.exerciseType && !CORE_EXERCISE_TYPES.includes(s.exerciseType) ? [s.exerciseType] : []))),
+  ];
   const queue = useTranscriptionQueue();
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const toggle = (id: string, on: boolean) =>
@@ -268,9 +268,9 @@ export function SessionsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All exercises</SelectItem>
-            {ExerciseType.options.map((t) => (
+            {typeOptions.map((t) => (
               <SelectItem key={t} value={t}>
-                {EXERCISE_LABELS[t]}
+                {EXERCISE_TYPE_INFO[t].label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -341,7 +341,7 @@ export function SessionsPage() {
                         )}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap text-muted-foreground">{formatDay(s.localDate)}</td>
-                      <td className="hidden px-4 py-2.5 whitespace-nowrap text-muted-foreground lg:table-cell">{s.exerciseType ? EXERCISE_LABELS[s.exerciseType] : "Recording · exercise unavailable"}</td>
+                      <td className="hidden px-4 py-2.5 whitespace-nowrap text-muted-foreground lg:table-cell">{s.exerciseType ? EXERCISE_TYPE_INFO[s.exerciseType].label : "Recording · exercise unavailable"}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{formatClock(s.durationMs)}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums">{s.attemptCount}</td>
                       <td className="hidden px-4 py-2.5 whitespace-nowrap md:table-cell"><TranscriptStatus session={s} busy={queue.busySession(s.id)} /></td>

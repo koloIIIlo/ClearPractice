@@ -285,8 +285,7 @@ export function buildEventPlan(event: { kind: EventKind; localDate: string; minu
 
 **Rehearse**
 - This is a cue-card view with the recorder (`RecorderPanel`) docked at the bottom. The recording is a take in a session:
-  - activity `rehearsal`, with `groupId` set to the talk ID;
-  - base exercise `ex-repeat`;
+  - exercise type `rehearsal` (exercise `ex-rehearsal`), with `activity.groupId` set to the talk ID;
   - the session prompt is the talk title.
 - Moving to the next card during recording writes a `section_mark {sectionId}` take event at the elapsed time. Section 1 starts at 0.
 - On stop, a `rehearsals` row is written with a snapshot of the sections.
@@ -406,7 +405,7 @@ pub fn parse_answers(bytes: &[u8]) -> Result<Answers>
 **Rules**
 - **The capsule prompt** is your baseline prompt (4.19). If there is none, it is the first prompt you ever answered.
 - **On the first app day of each month,** Today's This week list shows "Time capsule: answer your first question again (about 2 minutes)". It stays for 7 days. It is not shown again that month once done or dismissed.
-- **The take** goes in a session with activity `capsule`, after which **Compare with your first** opens A/B listen (8.5). Measures sit side by side in a "then → now" table, with no colours and no judgement.
+- **The take** goes in a session of exercise type `capsule`, after which **Compare with your first** opens A/B listen (8.5). Measures sit side by side in a "then → now" table, with no colours and no judgement.
 - **Progress → Profile** gets a "Your capsules" row with month chips. Clicking two of them compares them.
 - **XP:** a `capsule` event (20 XP). Achievements: `capsule-2`, `capsule-6`, `capsule-12`.
 

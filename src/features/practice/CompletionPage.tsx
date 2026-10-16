@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
-import { useMutation, useQueries } from "@tanstack/react-query";
+import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { BookmarkPlus, Check, CheckCircle2 } from "lucide-react";
 import { PhraseForm } from "@/features/phrases/PhrasesPage";
 import { Page, Panel } from "@/components/page";
@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatClock } from "@/lib/format";
+import { toLocalDate } from "@/lib/phrase-schedule";
+import { keys } from "@/lib/ipc/queries";
 import { useIpc } from "@/lib/ipc";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
@@ -25,6 +27,17 @@ export function CompletionPage() {
   const [addingPhrase, setAddingPhrase] = useState(false);
   const [phraseSaved, setPhraseSaved] = useState(false);
   const sessionIds: string[] = (location.state as { sessionIds?: string[] } | null)?.sessionIds ?? [];
+  // The finished sequence earns effort points once (roadmap 7.4); without a take it records nothing.
+  const qc = useQueryClient();
+  const recorded = useRef(false);
+  useEffect(() => {
+    if (recorded.current || sessionIds.length === 0) return;
+    recorded.current = true;
+    void ipc
+      .recordSequenceCompleted(sessionIds.slice(0, 10), toLocalDate(new Date()))
+      .then(() => qc.invalidateQueries({ queryKey: keys.engagementEvents }))
+      .catch(() => {}); // effort is a bonus; a failure never blocks this page
+  }, [ipc, qc, sessionIds]);
   const sessions = useQueries({ queries: sessionIds.map((id) => ({ queryKey: ["session", id], queryFn: () => ipc.getSession(id), retry: false })) });
   const [ease, setEase] = useState<number | null>(null);
   const [takeaway, setTakeaway] = useState("");

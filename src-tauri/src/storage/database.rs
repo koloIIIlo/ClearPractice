@@ -29,7 +29,9 @@ pub mod transfer;
 pub mod progression;
 #[path = "counts.rs"]
 pub mod counts;
-const VERSION: i64 = 15;
+#[path = "engagement.rs"]
+pub mod engagement;
+const VERSION: i64 = 16;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
@@ -57,6 +59,12 @@ pub struct PracticeContext {
     pub curriculum_version: Option<u32>,
     #[serde(default)]
     pub content_id: Option<String>,
+    /// A run's settings (roadmap 7.3); absent for ordinary practice.
+    #[serde(default)]
+    pub activity: Option<crate::activity::ActivityContext>,
+    /// This take's step within the run (7.3).
+    #[serde(default)]
+    pub step: Option<crate::activity::ActivityStep>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -80,8 +88,7 @@ impl PracticeContext {
         recording::validate_id(&self.exercise_id)?;
         if self.exercise_version == 0
             || self.exercise_version > 10_000
-            || !["repeat", "thought_groups", "imitate", "expression"]
-                .contains(&self.exercise_type.as_str())
+            || !crate::exercise_types::is_known(&self.exercise_type)
             || !["familiar", "unfamiliar"].contains(&self.conditions.familiarity.as_str())
             || !(1..=3600).contains(&self.conditions.target_seconds)
             || self.conditions.preparation_seconds > 3600
@@ -100,6 +107,12 @@ impl PracticeContext {
             .any(|s| s.len() > 8192 || s.contains('\0'))
         {
             return Err("Practice details are invalid or too long.".into());
+        }
+        if let Some(activity) = &self.activity {
+            activity.validate()?;
+        }
+        if let Some(step) = &self.step {
+            step.validate()?;
         }
         Ok(())
     }
@@ -196,9 +209,13 @@ impl DatabaseOwner {
             if version < 14 {
                 migrate(&mut connection, include_str!("schema-v14.sql"))?;
             }
-            migrate(&mut connection, include_str!("schema-v15.sql"))?;
+            if version < 15 {
+                migrate(&mut connection, include_str!("schema-v15.sql"))?;
+            }
+            migrate_rebuild(&connection, include_str!("schema-v16.sql"))?;
         }
         backfill_measures(&connection)?;
+        engagement::backfill_practice_events(&connection)?;
         connection
             .pragma_update(None, "journal_mode", "WAL")
             .map_err(db_error)?;
@@ -317,6 +334,13 @@ impl DatabaseOwner {
         .map_err(db_error)?;
         tx.execute("UPDATE session_steps SET status='completed' WHERE id=(SELECT step_id FROM attempts WHERE id=?1)",[&saved.attempt_id]).map_err(db_error)?;
         tx.execute("UPDATE sessions SET status='completed' WHERE id=(SELECT session_id FROM session_steps WHERE id=(SELECT step_id FROM attempts WHERE id=?1))",[&saved.attempt_id]).map_err(db_error)?;
+        // Effort points for the take (7.4), on the day of its session. Idempotent,
+        // so the receipts reconciled on every start never add a second award.
+        let (ordinal, session, local_date, created): (u32, String, String, i64) = tx
+            .query_row("SELECT a.ordinal,s.id,s.local_date,a.created_at_ms FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id WHERE a.id=?1",
+                [&saved.attempt_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .map_err(db_error)?;
+        engagement::award_take(&tx, &saved.attempt_id, ordinal, saved.duration_ms, &session, &local_date, created, false)?;
         tx.commit().map_err(db_error)
     }
 
@@ -511,7 +535,7 @@ impl DatabaseOwner {
             .lock()
             .map_err(|_| "Session storage owner is unavailable.")?;
         #[allow(clippy::type_complexity)]
-        let (prompt, outline, focus, notes, curriculum_version, content_id, ease, takeaway, preferred_take): (
+        let (prompt, outline, focus, notes, curriculum_version, content_id, ease, takeaway, preferred_take, activity): (
             Option<String>,
             Option<String>,
             Option<String>,
@@ -521,14 +545,15 @@ impl DatabaseOwner {
             Option<i64>,
             Option<String>,
             Option<String>,
+            Option<String>,
         ) = conn
             .query_row(
-                "SELECT prompt_snapshot,outline_snapshot,focus,notes,curriculum_version,content_id,ease,takeaway,preferred_take FROM sessions WHERE id=?1",
+                "SELECT prompt_snapshot,outline_snapshot,focus,notes,curriculum_version,content_id,ease,takeaway,preferred_take,activity_snapshot FROM sessions WHERE id=?1",
                 [id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?)),
             )
             .map_err(db_error)?;
-        let mut stmt=conn.prepare("SELECT a.id,a.ordinal,a.created_at_ms,aa.duration_ms,aa.unavailable_reason,t.familiarity,t.preparation_seconds,t.target_seconds,t.audience,t.follow_up FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN audio_assets aa ON aa.id=a.asset_id LEFT JOIN task_conditions t ON t.attempt_id=a.id WHERE st.session_id=?1 AND a.deleted_at_ms IS NULL ORDER BY a.ordinal").map_err(db_error)?;
+        let mut stmt=conn.prepare("SELECT a.id,a.ordinal,a.created_at_ms,aa.duration_ms,aa.unavailable_reason,t.familiarity,t.preparation_seconds,t.target_seconds,t.audience,t.follow_up,t.challenge FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN audio_assets aa ON aa.id=a.asset_id LEFT JOIN task_conditions t ON t.attempt_id=a.id WHERE st.session_id=?1 AND a.deleted_at_ms IS NULL ORDER BY a.ordinal").map_err(db_error)?;
         let mut conditions = Value::Null;
         let mut attempts = Vec::new();
         let mut rows = stmt.query([id]).map_err(db_error)?;
@@ -539,7 +564,8 @@ impl DatabaseOwner {
                 }
             }
             let ordinal: u32 = r.get(1).map_err(db_error)?;
-            attempts.push(json!({"id":r.get::<_,String>(0).map_err(db_error)?,"ordinal":ordinal,"captureState":"saved","analysisState":null,"durationMs":r.get::<_,i64>(3).map_err(db_error)?,"createdAt":iso(r.get(2).map_err(db_error)?),"firstTake":ordinal==1,"audioUnavailableReason":r.get::<_,Option<String>>(4).map_err(db_error)?}));
+            let step = r.get::<_, Option<String>>(10).map_err(db_error)?.and_then(|s| serde_json::from_str::<Value>(&s).ok()).unwrap_or(Value::Null);
+            attempts.push(json!({"id":r.get::<_,String>(0).map_err(db_error)?,"ordinal":ordinal,"captureState":"saved","analysisState":null,"durationMs":r.get::<_,i64>(3).map_err(db_error)?,"createdAt":iso(r.get(2).map_err(db_error)?),"firstTake":ordinal==1,"audioUnavailableReason":r.get::<_,Option<String>>(4).map_err(db_error)?,"step":step}));
         }
         summary["prompt"] = json!(prompt.unwrap_or_default());
         summary["outline"] = outline
@@ -553,6 +579,7 @@ impl DatabaseOwner {
         summary["takeaway"] = json!(takeaway);
         // A take that has since been deleted no longer counts as the preference.
         summary["preferredTake"] = json!(preferred_take.filter(|p| p == "same" || attempts.iter().any(|a| a["id"] == p.as_str())));
+        summary["activitySnapshot"] = activity.and_then(|a| serde_json::from_str::<Value>(&a).ok()).unwrap_or(Value::Null);
         summary["conditions"] = conditions.clone();
         summary["conditionsUnavailableReason"] = if conditions.is_null() {
             json!("This older recording did not store task conditions.")
@@ -587,15 +614,21 @@ impl DatabaseOwner {
                     .into(),
             );
         }
-        let conn = self
+        let mut conn = self
             .connection
             .lock()
             .map_err(|_| "Session storage owner is unavailable.")?;
-        let count=conn.execute("UPDATE sessions SET title=?1,notes=?2,tags=?3,favorite=?4 WHERE id=?5 AND deleted_at_ms IS NULL",params![title.trim(),notes,serde_json::to_string(tags).map_err(|_|"Invalid tags.")?,favorite,id]).map_err(db_error)?;
+        let tx = conn.transaction().map_err(db_error)?;
+        let count=tx.execute("UPDATE sessions SET title=?1,notes=?2,tags=?3,favorite=?4 WHERE id=?5 AND deleted_at_ms IS NULL",params![title.trim(),notes,serde_json::to_string(tags).map_err(|_|"Invalid tags.")?,favorite,id]).map_err(db_error)?;
         if count != 1 {
             return Err("This session is unavailable.".into());
         }
-        Ok(())
+        // The first-launch baseline (4.19) is tagged after its first take (7.4).
+        if tags.iter().any(|t| t == "baseline") {
+            let date: String = tx.query_row("SELECT local_date FROM sessions WHERE id=?1", [id], |r| r.get(0)).map_err(db_error)?;
+            engagement::award(&tx, &crate::engagement::NewEvent { kind: crate::engagement::EventKind::BaselineSaved, ref_id: id, local_date: &date, session_id: Some(id), attempt_id: None, created_at_ms: recording::now_ms() as i64, backfilled: false })?;
+        }
+        tx.commit().map_err(db_error)
     }
 
     /// The one thing to improve in the next take of a repeated answer (4.6).
@@ -627,17 +660,23 @@ impl DatabaseOwner {
         if takeaway.is_some_and(|t| t.len() > 500 || t.contains('\0')) {
             return Err("Keep the takeaway under 500 characters.".into());
         }
-        let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
-        let count = conn
+        let takeaway = takeaway.filter(|t| !t.is_empty());
+        let mut conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
+        let tx = conn.transaction().map_err(db_error)?;
+        let count = tx
             .execute(
                 "UPDATE sessions SET ease=COALESCE(?1,ease),takeaway=COALESCE(?2,takeaway) WHERE id=?3 AND deleted_at_ms IS NULL",
-                params![ease, takeaway.map(|t| if t.is_empty() { None } else { Some(t) }).flatten(), id],
+                params![ease, takeaway, id],
             )
             .map_err(db_error)?;
         if count != 1 {
             return Err("This session is unavailable.".into());
         }
-        Ok(())
+        if ease.is_some() || takeaway.is_some() {
+            let today = engagement::today();
+            engagement::award(&tx, &crate::engagement::NewEvent { kind: crate::engagement::EventKind::ReflectionSaved, ref_id: id, local_date: &today, session_id: Some(id), attempt_id: None, created_at_ms: recording::now_ms() as i64, backfilled: false })?;
+        }
+        tx.commit().map_err(db_error)
     }
 
     /// Which take felt clearer (4.14): one of this session's takes, "same", or
@@ -1176,14 +1215,22 @@ impl DatabaseOwner {
         if measures.fillers.get(candidate as usize).is_none_or(|f| f.word != word) {
             return Err("That filler candidate has changed. Reopen the transcript.".into());
         }
+        let mut conn = conn;
+        let tx = conn.transaction().map_err(db_error)?;
         match decision {
-            Some(decision) => conn.execute("INSERT INTO annotations(revision_id,definition_version,kind,candidate,word,decision,decided_at_ms) VALUES (?1,?2,'filler',?3,?4,?5,?6) ON CONFLICT(revision_id,definition_version,kind,candidate) DO UPDATE SET decision=excluded.decision,decided_at_ms=excluded.decided_at_ms",
+            Some(decision) => tx.execute("INSERT INTO annotations(revision_id,definition_version,kind,candidate,word,decision,decided_at_ms) VALUES (?1,?2,'filler',?3,?4,?5,?6) ON CONFLICT(revision_id,definition_version,kind,candidate) DO UPDATE SET decision=excluded.decision,decided_at_ms=excluded.decided_at_ms",
                 params![revision_id, crate::analysis::DEFINITION_VERSION, candidate, word, decision, now]),
-            None => conn.execute("DELETE FROM annotations WHERE revision_id=?1 AND definition_version=?2 AND kind='filler' AND candidate=?3",
+            None => tx.execute("DELETE FROM annotations WHERE revision_id=?1 AND definition_version=?2 AND kind='filler' AND candidate=?3",
                 params![revision_id, crate::analysis::DEFINITION_VERSION, candidate]),
         }
         .map_err(db_error)?;
-        Ok(())
+        // Reviewing every candidate of a take earns effort points once (7.4).
+        if decision.is_some() && engagement::every_candidate_decided(&tx, revision_id)? {
+            let attempt: String = tx.query_row("SELECT attempt_id FROM transcript_revisions WHERE id=?1", [revision_id], |r| r.get(0)).map_err(db_error)?;
+            let today = engagement::today();
+            engagement::award(&tx, &crate::engagement::NewEvent { kind: crate::engagement::EventKind::TranscriptReviewed, ref_id: &attempt, local_date: &today, session_id: None, attempt_id: Some(&attempt), created_at_ms: now, backfilled: false })?;
+        }
+        tx.commit().map_err(db_error)
     }
 
     /// Saves your corrected wording as a child revision of a machine transcript.
@@ -1639,6 +1686,15 @@ fn insert_reservation(
         // The first take fixes what the session used; later takes never rewrite it.
         tx.execute("UPDATE sessions SET curriculum_version=?1,content_id=?2 WHERE id=?3 AND curriculum_version IS NULL AND content_id IS NULL",
             params![c.curriculum_version, c.content_id, session]).map_err(db_error)?;
+        // A run's settings (7.3) are fixed by its first take too.
+        if let Some(activity) = &c.activity {
+            let snapshot = serde_json::to_string(activity).map_err(|_| "The activity's settings are invalid.")?;
+            tx.execute("UPDATE sessions SET activity_snapshot=?1 WHERE id=?2 AND activity_snapshot IS NULL", params![snapshot, session]).map_err(db_error)?;
+            let stored: Option<String> = tx.query_row("SELECT activity_snapshot FROM sessions WHERE id=?1", [session], |r| r.get(0)).map_err(db_error)?;
+            if stored.as_deref() != Some(snapshot.as_str()) {
+                return Err("This session belongs to another activity.".into());
+            }
+        }
     }
     let trashed: bool = tx
         .query_row(
@@ -1688,8 +1744,14 @@ fn insert_reservation(
         )
         .map_err(db_error)?;
     tx.execute("INSERT INTO attempts(id,step_id,repetition_group_id,ordinal,capture_state,created_at_ms,idempotency_key,request_snapshot) VALUES (?1,?2,?3,?4,'preparing',?5,?6,?7)",params![id,step,session,ordinal,ms,key,request]).map_err(db_error)?;
+    // The take's step within a run (7.3) lives in the v1 `challenge` column.
+    let step = context
+        .and_then(|c| c.step.as_ref())
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|_| "The take's step is invalid.")?;
     let c = context.map(|c| &c.conditions);
-    tx.execute("INSERT INTO task_conditions(attempt_id,familiarity,preparation_seconds,target_seconds,audience,follow_up,unavailable_reason) VALUES (?1,?2,?3,?4,?5,?6,?7)",params![id,c.map(|c|&c.familiarity),c.map(|c|c.preparation_seconds),c.map(|c|c.target_seconds),c.and_then(|c|c.audience.as_ref()),c.map(|c|c.follow_up),c.is_none().then_some("Task conditions were not recorded.")]).map_err(db_error)?;
+    tx.execute("INSERT INTO task_conditions(attempt_id,familiarity,preparation_seconds,target_seconds,audience,follow_up,challenge,unavailable_reason) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",params![id,c.map(|c|&c.familiarity),c.map(|c|c.preparation_seconds),c.map(|c|c.target_seconds),c.and_then(|c|c.audience.as_ref()),c.map(|c|c.follow_up),step,c.is_none().then_some("Task conditions were not recorded.")]).map_err(db_error)?;
     tx.execute(
         "UPDATE sessions SET status='in_progress' WHERE id=?1",
         [session],
@@ -1701,6 +1763,37 @@ fn migrate(conn: &mut Connection, sql: &str) -> Result<()> {
     let tx = conn.transaction().map_err(db_error)?;
     tx.execute_batch(sql).map_err(db_error)?;
     tx.commit().map_err(db_error)
+}
+
+/// Runs a migration that rebuilds a table (roadmap 7.3, v16). SQLite ignores the
+/// foreign_keys pragma inside a transaction, and dropping a parent table with it
+/// on fails, so it is switched off around the transaction; the result must pass
+/// foreign_key_check before commit, and the pragma is switched back on whatever
+/// happens.
+fn migrate_rebuild(conn: &Connection, sql: &str) -> Result<()> {
+    conn.pragma_update(None, "foreign_keys", false).map_err(db_error)?;
+    let applied = (|| -> Result<()> {
+        conn.execute_batch("BEGIN IMMEDIATE").map_err(db_error)?;
+        let checked = conn.execute_batch(sql).map_err(db_error).and_then(|()| {
+            let broken: i64 = conn
+                .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| r.get(0))
+                .map_err(db_error)?;
+            if broken == 0 {
+                Ok(())
+            } else {
+                Err("The database upgrade found inconsistent rows and was not applied. Your recordings are unchanged.".into())
+            }
+        });
+        match checked {
+            Ok(()) => conn.execute_batch("COMMIT").map_err(db_error),
+            Err(error) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        }
+    })();
+    conn.pragma_update(None, "foreign_keys", true).map_err(db_error)?;
+    applied
 }
 fn snapshot(conn: &Connection, root: &Path, id: &str) -> Result<PathBuf> {
     let folder = root.join("database").join("snapshots");
@@ -1899,7 +1992,7 @@ mod tests {
             prompt: "Explain a trade-off".into(),
             outline: Outline { point: String::new(), reason: String::new(), example: String::new() },
             conditions: Conditions { familiarity: "familiar".into(), preparation_seconds: 15, target_seconds: 60, audience: None, follow_up: false },
-            curriculum_version: Some(1), content_id: Some("p-habit".into()),
+            curriculum_version: Some(1), content_id: Some("p-habit".into()), activity: None, step: None,
         };
         for n in 1..=2 {
             owner.reserve(&format!("take-{n}"), &format!("op-{n}"), "Test take", Some(&context)).unwrap();
@@ -2012,6 +2105,8 @@ mod tests {
             },
             curriculum_version: None,
             content_id: None,
+            activity: None,
+            step: None,
         };
         let handles: Vec<_> = (0..4)
             .map(|n| {
@@ -2111,6 +2206,8 @@ mod tests {
             },
             curriculum_version: None,
             content_id: None,
+            activity: None,
+            step: None,
         }
     }
     #[test]
@@ -2163,7 +2260,7 @@ mod tests {
             .unwrap();
         {
             let conn = owner.connection.lock().unwrap();
-            conn.execute_batch("DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; DROP INDEX phrase_reviews_card; DROP INDEX phrase_cards_due; DROP TABLE phrase_reviews; DROP TABLE phrase_cards; DROP INDEX reference_clips_source; DROP INDEX reference_clips_folder; ALTER TABLE reference_clips DROP COLUMN source_end_ms; ALTER TABLE reference_clips DROP COLUMN source_start_ms; ALTER TABLE reference_clips DROP COLUMN source_id; ALTER TABLE reference_clips DROP COLUMN folder_id; DROP INDEX clip_source_picks_source; DROP TABLE clip_source_picks; DROP TABLE clip_sources; DROP TABLE clip_folders; ALTER TABLE reference_clips DROP COLUMN description; ALTER TABLE reference_clips DROP COLUMN feature; DROP TABLE reference_clips; ALTER TABLE sessions DROP COLUMN ease; ALTER TABLE sessions DROP COLUMN takeaway; ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+            conn.execute_batch("DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; DROP INDEX phrase_reviews_card; DROP INDEX phrase_cards_due; DROP TABLE phrase_reviews; DROP TABLE phrase_cards; DROP INDEX reference_clips_source; DROP INDEX reference_clips_folder; ALTER TABLE reference_clips DROP COLUMN source_end_ms; ALTER TABLE reference_clips DROP COLUMN source_start_ms; ALTER TABLE reference_clips DROP COLUMN source_id; ALTER TABLE reference_clips DROP COLUMN folder_id; DROP INDEX clip_source_picks_source; DROP TABLE clip_source_picks; DROP TABLE clip_sources; DROP TABLE clip_folders; ALTER TABLE reference_clips DROP COLUMN description; ALTER TABLE reference_clips DROP COLUMN feature; DROP TABLE reference_clips; ALTER TABLE sessions DROP COLUMN ease; ALTER TABLE sessions DROP COLUMN takeaway; ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
         }
         drop(owner);
         let upgraded = DatabaseOwner::open(&root.0).unwrap();
@@ -2173,7 +2270,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v15-")));
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v16-")));
         assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
     }
     fn api_result(take: &SavedRecording, run: &str, words: Option<Vec<(&str, u64, u64)>>) -> crate::audio::transcription::TranscriptionResult {
@@ -2518,5 +2615,145 @@ fast.", 3).unwrap_err();
                 Ok(_) => panic!("Expected failure"),
             }
         }
+    }
+}
+
+/// Roadmap 7.3: new exercise types (D-30), activity settings and take steps.
+#[cfg(test)]
+mod exercise_type_tests {
+    use super::engagement::tests::context;
+    use super::*;
+    use crate::storage::recording::{tests::{manifest, TestRoot}, ChunkWriter};
+
+    fn audio(root: &Path, id: &str) -> SavedRecording {
+        let mut w = ChunkWriter::create(root, &manifest(id)).unwrap();
+        for _ in 0..48_000 {
+            w.push(1000).unwrap();
+        }
+        w.flush().unwrap();
+        drop(w);
+        recording::finalize(root, id, false).unwrap()
+    }
+
+    fn activity(seed: &str) -> crate::activity::ActivityContext {
+        serde_json::from_value(json!({"version": 1, "seed": seed, "params": {"speakSeconds": 60}})).unwrap()
+    }
+
+    #[test]
+    fn v16_rebuild_keeps_every_definition_and_step_and_drops_the_type_check() {
+        let root = TestRoot::new();
+        let path = root.0.join("database/app.sqlite");
+        {
+            let db = DatabaseOwner::open(&root.0).unwrap();
+            for (session, take) in [("s1", "t1"), ("s2", "t2")] {
+                db.reserve(take, &format!("op-{take}"), "Take", Some(&context(session, "familiar", ["", "", ""]))).unwrap();
+                db.commit_recording(&audio(&root.0, take)).unwrap();
+            }
+        }
+        // Put the database back into its v15 shape: the v1 CHECK on type, no v16 additions.
+        {
+            let conn = Connection::open(&path).unwrap();
+            // This SQLite build enables foreign keys by default; rebuilding a parent table needs them off.
+            conn.pragma_update(None, "foreign_keys", false).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE ed_v15 (id TEXT NOT NULL, version INTEGER NOT NULL CHECK(version > 0), type TEXT CHECK(type IN ('repeat','thought_groups','imitate','expression')), instructions TEXT, content_id TEXT, PRIMARY KEY(id,version)) STRICT;
+                 INSERT INTO ed_v15 SELECT id,version,type,instructions,content_id FROM exercise_definitions;
+                 DROP TABLE exercise_definitions; ALTER TABLE ed_v15 RENAME TO exercise_definitions;
+                 DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot;
+                 DELETE FROM app_settings WHERE key='engagement_backfill_v1'; PRAGMA user_version=15;",
+            )
+            .unwrap();
+            assert!(conn.execute("INSERT INTO exercise_definitions(id,version,type) VALUES ('ex-jam',1,'jam')", []).is_err(), "v15 refuses new types");
+        }
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        assert_eq!(db.list_sessions(None, None, false).unwrap().len(), 2, "every session survives the rebuild");
+        assert_eq!(db.get_session("s1").unwrap()["exerciseType"], "repeat");
+        let conn = db.connection.lock().unwrap();
+        assert_eq!(conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), 16);
+        assert_eq!(conn.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(conn.pragma_query_value(None, "foreign_keys", |r| r.get::<_, i64>(0)).unwrap(), 1, "foreign keys are on again");
+        conn.execute("INSERT INTO exercise_definitions(id,version,type) VALUES ('ex-jam',1,'jam')", []).unwrap();
+        assert!(
+            conn.execute("INSERT INTO session_steps(id,session_id,exercise_id,exercise_version,position,status) VALUES ('orphan','s1','ex-unknown',1,2,'waiting')", []).is_err(),
+            "steps still need a stored exercise"
+        );
+        assert_eq!(conn.query_row("SELECT count(*) FROM practice_events WHERE kind='take_saved'", [], |r| r.get::<_, i64>(0)).unwrap(), 0, "one-second takes earn nothing");
+        drop(conn);
+        let snapshots: Vec<String> = fs::read_dir(root.0.join("database/snapshots")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v16-")), "{snapshots:?}");
+    }
+
+    #[test]
+    fn migrate_rebuild_restores_foreign_keys_when_the_script_fails() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        let conn = db.connection.lock().unwrap();
+        assert!(migrate_rebuild(&conn, "CREATE TABLE should_roll_back (id TEXT); INSERT INTO nonexistent VALUES (1);").is_err());
+        let broken = migrate_rebuild(&conn, "INSERT INTO session_steps(id,session_id,exercise_id,exercise_version,position,status) VALUES ('orphan','no-session','legacy-recording',1,1,'waiting');").unwrap_err();
+        assert!(broken.contains("inconsistent rows"), "{broken}");
+        assert_eq!(conn.pragma_query_value(None, "foreign_keys", |r| r.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(conn.query_row("SELECT count(*) FROM sqlite_master WHERE name='should_roll_back'", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(conn.query_row("SELECT count(*) FROM session_steps WHERE id='orphan'", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+    }
+
+    #[test]
+    fn activity_snapshot_is_written_once_and_a_different_one_is_refused() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        let mut first = context("run", "familiar", ["", "", ""]);
+        first.activity = Some(activity("seed-1"));
+        db.reserve("t1", "op-t1", "Take", Some(&first)).unwrap();
+        db.commit_recording(&audio(&root.0, "t1")).unwrap();
+        db.reserve("t2", "op-t2", "Take", Some(&first)).unwrap();
+        db.commit_recording(&audio(&root.0, "t2")).unwrap();
+        let mut other = first.clone();
+        other.activity = Some(activity("seed-2"));
+        let refused = db.reserve("t3", "op-t3", "Take", Some(&other)).unwrap_err();
+        assert!(refused.contains("another activity"), "{refused}");
+        let detail = db.get_session("run").unwrap();
+        assert_eq!((detail["activitySnapshot"]["seed"].as_str(), detail["activitySnapshot"]["params"]["speakSeconds"].as_u64()), (Some("seed-1"), Some(60)));
+        record_plain(&db, &root.0);
+        assert!(db.get_session("plain").unwrap()["activitySnapshot"].is_null(), "ordinary practice has none");
+    }
+
+    fn record_plain(db: &DatabaseOwner, root: &Path) {
+        db.reserve("p1", "op-p1", "Take", Some(&context("plain", "familiar", ["", "", ""]))).unwrap();
+        db.commit_recording(&audio(root, "p1")).unwrap();
+    }
+
+    #[test]
+    fn take_step_is_stored_in_task_conditions_and_returned_with_the_attempt() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        let mut ctx = context("ladder", "familiar", ["", "", ""]);
+        ctx.activity = Some(activity("ladder-1"));
+        for (n, key) in [(1, "slow"), (2, "fast")] {
+            ctx.step = Some(crate::activity::ActivityStep { index: n, key: key.into(), prompt_id: Some("p-sport-var".into()) });
+            db.reserve(&format!("k{n}"), &format!("op-k{n}"), "Take", Some(&ctx)).unwrap();
+            db.commit_recording(&audio(&root.0, &format!("k{n}"))).unwrap();
+        }
+        let attempts = db.get_session("ladder").unwrap()["attempts"].as_array().unwrap().clone();
+        let keys: Vec<&str> = attempts.iter().map(|a| a["step"]["key"].as_str().unwrap()).collect();
+        assert_eq!(keys, ["slow", "fast"]);
+        assert_eq!(attempts[1]["step"]["promptId"], "p-sport-var");
+        record_plain(&db, &root.0);
+        assert!(db.get_session("plain").unwrap()["attempts"][0]["step"].is_null());
+    }
+
+    #[test]
+    fn unknown_exercise_type_or_oversized_activity_params_are_refused() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        let mut jam = context("jam", "familiar", ["", "", ""]);
+        jam.exercise_type = "jam".into();
+        assert!(db.reserve("j1", "op-j1", "Take", Some(&jam)).is_err(), "drill types arrive with their drills");
+        let mut big = context("big", "familiar", ["", "", ""]);
+        big.activity = Some(serde_json::from_value(json!({"version": 1, "seed": "s", "params": {"text": "x".repeat(5000)}})).unwrap());
+        assert!(db.reserve("b1", "op-b1", "Take", Some(&big)).is_err());
+        let mut bad_step = context("step", "familiar", ["", "", ""]);
+        bad_step.step = Some(crate::activity::ActivityStep { index: 99, key: "slow".into(), prompt_id: None });
+        assert!(db.reserve("x1", "op-x1", "Take", Some(&bad_step)).is_err());
+        let conn = db.connection.lock().unwrap();
+        assert_eq!(conn.query_row("SELECT count(*) FROM attempts", [], |r| r.get::<_, i64>(0)).unwrap(), 0, "nothing was reserved");
     }
 }

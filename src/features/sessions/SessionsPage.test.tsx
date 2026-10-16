@@ -1,27 +1,13 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes } from "react-router";
-import { Toaster } from "sonner";
 import { expect, it, vi } from "vitest";
-import { IpcContext, type IpcClient } from "@/lib/ipc";
+import type { IpcClient } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
+import { renderWithApp } from "@/test/render";
 import { SessionsPage } from "./SessionsPage";
 
 function setup(client: IpcClient, path = "/sessions") {
-  return render(
-    <MemoryRouter initialEntries={[path]}>
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <IpcContext.Provider value={client}>
-          <Toaster />
-          <Routes>
-            <Route path="/sessions" element={<SessionsPage />} />
-            <Route path="/sessions/trash" element={<p>Trash page</p>} />
-          </Routes>
-        </IpcContext.Provider>
-      </QueryClientProvider>
-    </MemoryRouter>,
-  );
+  return renderWithApp(<SessionsPage />, { client, path, routes: [{ path: "/sessions/trash", element: <p>Trash page</p> }] });
 }
 
 it("marks how much of each session is transcribed and moves a selection to Trash after asking", async () => {
