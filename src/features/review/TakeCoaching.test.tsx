@@ -31,7 +31,7 @@ const preview = (answeredAt: string | null): TakeCoachingPreview => ({
     estimatedMaximumCostMicroUsd: 9_000, priceDate: "2026-10-08", priceSource: "https://developers.openai.com/api/docs/models/gpt-6-luna",
     inputUsdPerMillionTokens: "0.10", outputUsdPerMillionTokens: "0.50", costExplanation: "Only the text below is sent, never audio.", expiresAtMs: 1,
   },
-  answeredAt, timedParts: 1, corrected: false,
+  answeredAt, timedParts: 1, corrected: false, revisionId: "take-1--1",
 });
 
 const run = (revisionId: string): CoachingRun => ({

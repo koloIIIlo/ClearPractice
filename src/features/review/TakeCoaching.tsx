@@ -60,11 +60,21 @@ export function TakeCoaching({ attemptId, sessionId }: { attemptId: string; sess
     const timer = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
     return () => clearInterval(timer);
   }, [sending]);
+  const currentRevision = transcript.data?.correction?.id ?? transcript.data?.revision?.id ?? null;
+  // A correction or a newer transcript after the preview makes it stale (A-17): it is
+  // discarded here, and the native side refuses to send it anyway.
+  const stale = !!prepared && !!currentRevision && !transcript.isFetching && prepared.revisionId !== currentRevision;
+  useEffect(() => {
+    if (!stale) return;
+    if (preparedRef.current) void ipc.cancelCoachingPreview(preparedRef.current.preview.requestId).catch(() => {});
+    preparedRef.current = null;
+    setPrepared(null);
+    setError("The transcript changed, so this preview was discarded and nothing was sent. Prepare a new preview to send the new text.");
+  }, [stale, ipc]);
 
   if (prefs.coachingMode === "off") return null;
   const hasTranscript = !!transcript.data?.revision;
   const local = prefs.coachingMode === "local";
-  const currentRevision = transcript.data?.correction?.id ?? transcript.data?.revision?.id ?? null;
   const list = runs.data ?? [];
 
   async function prepare() {

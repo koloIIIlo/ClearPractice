@@ -36,6 +36,7 @@ pub fn validate_endpoint(endpoint: &str) -> Result<String> {
 }
 
 fn client(timeout: Duration) -> Result<Client> {
+    crate::net_guard::client_built();
     Client::builder()
         .no_proxy()
         .connect_timeout(Duration::from_secs(5))

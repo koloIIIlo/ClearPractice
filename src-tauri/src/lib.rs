@@ -19,7 +19,10 @@ pub mod take_coaching;
 pub mod storage_usage;
 pub mod diagnostics;
 pub mod timings;
+mod net_guard;
 mod redaction_audit;
+// Release acceptance checks (A-1–A-25); one line so the log guard keeps scanning this file.
+#[cfg(test)] mod acceptance;
 pub mod transcribe;
 pub mod whisper_setup;
 
@@ -1604,6 +1607,8 @@ struct TakeCoachingPreview {
     answered_at: Option<String>,
     timed_parts: usize,
     corrected: bool,
+    /// The transcript revision the text was built from; a newer one makes this preview stale (A-17).
+    revision_id: String,
 }
 
 /// Prepares AI feedback on a saved take (M5, P.9). Builds the text from the
@@ -1637,7 +1642,7 @@ async fn preview_take_coaching(
         let timed_parts = text.parts;
         let preview = owner.preview_take(text, model.unwrap_or_default(), delivery_impressions, local)?;
         let answered_at = db.coaching_answered_at(&attempt_id, &preview.payload_sha256)?;
-        Ok(TakeCoachingPreview { preview, answered_at, timed_parts, corrected: input.corrected })
+        Ok(TakeCoachingPreview { preview, answered_at, timed_parts, corrected: input.corrected, revision_id: input.revision_id })
     })
     .await
     .map_err(|_| "Preparing the feedback request failed.".to_string())?
@@ -1661,6 +1666,11 @@ async fn request_take_coaching(
         return Err("Finish the recording first. Nothing was sent.".into());
     }
     let owner = owner.inner().clone();
+    // A correction or new transcript since the preview makes its approval stale (A-17).
+    let current = { let attempt_id = attempt_id.clone(); with_storage(&storage, move |db| db.take_coaching_input(&attempt_id).map(|input| input.revision_id)) }
+        .await
+        .map_err(|_| "Session storage failed.".to_string())??;
+    owner.ensure_take_revision(&request_id, &current)?;
     let accounting = accounting.inner().clone();
     let local = owner.is_local(&request_id);
     if !local {
@@ -1741,6 +1751,7 @@ async fn preview_follow_up(
 /// Sends an approved follow-up preview (Stop waiting as for feedback).
 #[tauri::command]
 async fn request_follow_up(
+    storage: State<'_, Arc<SessionStorage>>,
     owner: State<'_, Arc<api::coaching::PreviewOwner>>,
     accounting: State<'_, Arc<ApiAccounting>>,
     inflight: State<'_, Arc<InflightApi>>,
@@ -1749,6 +1760,10 @@ async fn request_follow_up(
     payload_sha256: String,
 ) -> Result<api::coaching::FollowUp, String> {
     let owner = owner.inner().clone();
+    let current = { let attempt_id = attempt_id.clone(); with_storage(&storage, move |db| db.take_coaching_input(&attempt_id).map(|input| input.revision_id)) }
+        .await
+        .map_err(|_| "Session storage failed.".to_string())??;
+    owner.ensure_take_revision(&request_id, &current)?;
     let accounting = accounting.inner().clone();
     let local = owner.is_local(&request_id);
     if !local {

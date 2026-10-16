@@ -25,6 +25,7 @@ pub struct ApiResponse {
 
 impl ApiTransport {
     pub fn new() -> Result<Self> {
+        crate::net_guard::client_built();
         let client = Client::builder()
             .https_only(true)
             .connect_timeout(Duration::from_secs(10))

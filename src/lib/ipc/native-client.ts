@@ -6,7 +6,7 @@ import { z } from "zod";
 import { IpcError, type IpcClient } from "./client";
 import { createMockClient } from "./mock-client";
 import * as S from "./schemas";
-import { buildProgress, buildTodayPlan } from "../today-plan";
+import { buildProgress, buildTodayPlan, evidenceTakes } from "../today-plan";
 import { schedule } from "../scheduler";
 import { searchLibrary } from "../search";
 import { toLocalDate } from "../phrase-schedule";
@@ -137,10 +137,11 @@ export function createNativeClient(): IpcClient {
         sessions.filter((s) => s.status !== "interrupted" && s.attemptCount > 0).slice(0, 60).map((s) => command("get_session", S.SessionDetail, { sessionId: s.id }).catch(() => null)),
       );
       const kept = details.filter((d): d is S.SessionDetail => d !== null);
-      // Pace: the latest transcribed take with an Estimated pace (needs ≥15 s of timed speech).
+      // Pace: an Estimated pace (needs ≥15 s of timed speech) from the latest transcribed
+      // take, or for unfamiliar tasks from the first take only, before any retry (A-18).
       const paces: Record<string, number | null> = {};
       await Promise.all(kept.map(async (d) => {
-        for (const a of [...d.attempts].reverse()) {
+        for (const a of evidenceTakes(view, d.attempts)) {
           const t = await command("get_attempt_transcript", S.AttemptTranscript, { attemptId: a.id }).catch(() => null);
           const pace = t?.revision?.measures.paceWpm ?? null;
           if (pace !== null) { paces[d.id] = Math.round(pace); return; }

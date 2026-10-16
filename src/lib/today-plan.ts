@@ -110,6 +110,16 @@ export function buildTodayPlan({ localDate, length, sessions, phrases, latest, r
 }
 
 /**
+ * The takes whose pace is a session's evidence, in the order to try (A-18).
+ * Unfamiliar tasks keep the first take, before any retry: a retake has already
+ * rehearsed the answer, so it never stands in for the unfamiliar attempt.
+ * Rehearsed practice uses the latest take that has a measured pace.
+ */
+export function evidenceTakes<T extends { firstTake: boolean }>(view: ProgressView, attempts: T[]): T[] {
+  return view === "unfamiliar" ? attempts.filter((a) => a.firstTake) : [...attempts].reverse();
+}
+
+/**
  * Progress from real sessions (plan 4.16, first part): rehearsed and unfamiliar
  * practice are kept apart by each session's task conditions; ease is your own
  * rating. Pace is the Estimated pace of the session's latest transcribed take

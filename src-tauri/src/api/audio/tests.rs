@@ -110,6 +110,48 @@ fn transport_only_builds_requests_for_the_two_fixed_hosts_with_hidden_keys() {
     assert_eq!(cost_for(AudioProvider::Deepgram, 61_000), 8_600, "billed per started minute");
 }
 
+/// A-23: an approval covers exactly what the preview showed. A change of the
+/// audio, the hints sent with it, the recipient, the model or the price makes
+/// the old approval useless, and changed audio is caught before anything is
+/// reserved or a key is read.
+#[test]
+fn a23_any_change_to_what_was_approved_rejects_the_approval() {
+    let root = TestRoot::new();
+    let saved = take(&root.0, "take");
+    let owner = AudioPreviewOwner::default();
+    let preview = owner.preview(&root.0, &saved, AudioProvider::Deepgram).unwrap();
+    let changes: [(&str, fn(&mut AudioPreview)); 7] = [
+        ("audio", |p| p.audio_sha256 = "f".repeat(64)),
+        ("hints", |p| p.settings["filler_words"] = json!(false)),
+        ("recipient", |p| p.recipient = "api.assemblyai.com".into()),
+        ("model", |p| p.model = "nova-2".into()),
+        ("price", |p| p.estimated_cost_micro_usd += 1),
+        ("price date", |p| p.price_date = "2026-10-09".into()),
+        ("provider", |p| p.provider = AudioProvider::Assemblyai),
+    ];
+    for (what, change) in changes {
+        let mut changed = preview.clone();
+        change(&mut changed);
+        assert_ne!(fingerprint(&changed).unwrap(), preview.payload_sha256, "{what} is part of the approval");
+    }
+    // An approval for one preview never unlocks another.
+    let other = owner.preview(&root.0, &saved, AudioProvider::Assemblyai).unwrap();
+    assert!(owner.consume(&other.request_id, &preview.payload_sha256).is_err());
+
+    // The prepared audio changes after approval: Send stops before reserving or reading a key.
+    let budget = BudgetOwner::open(&root.0).unwrap();
+    let audio = owner.preview_audio(&preview.request_id).unwrap();
+    let mut bytes = fs::read(&audio).unwrap();
+    bytes[100] ^= 1;
+    fs::write(&audio, bytes).unwrap();
+    assert_ne!(recording::hash_file(&audio).unwrap(), preview.audio_sha256, "the audio really changed, so Send must stop at the check");
+    let error = tauri::async_runtime::block_on(owner.send(&budget, &preview.request_id, &preview.payload_sha256)).err().unwrap();
+    assert!(error.contains("changed after approval"), "{error}");
+    let summary = budget.summary().unwrap();
+    assert_eq!((summary.counted_micro_usd, summary.reserved_micro_usd), (0, 0), "nothing reserved");
+    assert!(owner.preview_audio(&preview.request_id).is_err(), "the approval is used up");
+}
+
 #[test]
 fn stopping_releases_unsent_requests_and_keeps_dispatched_ones_uncertain() {
     use super::super::budget::Purpose;

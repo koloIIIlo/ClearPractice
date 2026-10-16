@@ -190,6 +190,7 @@ pub fn expected_sha256(sums: &str) -> Option<String> {
 /// deleted. Reports (received, total) bytes.
 pub async fn download_tool(root: &Path, cancel: &AtomicBool, progress: impl Fn(u64, Option<u64>)) -> Result<PathBuf> {
     use sha2::{Digest, Sha256};
+    crate::net_guard::client_built();
     let client = reqwest::Client::builder()
         .https_only(true)
         .connect_timeout(Duration::from_secs(15))

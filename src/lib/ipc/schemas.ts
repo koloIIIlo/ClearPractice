@@ -883,6 +883,8 @@ export const TakeCoachingPreview = z.object({
   answeredAt: z.string().nullable(),
   timedParts: z.number().int().nonnegative(),
   corrected: z.boolean(),
+  /** The transcript revision the text was built from; a newer one makes the preview stale (A-17). */
+  revisionId: z.string().min(1),
 }).strict();
 export type TakeCoachingPreview = z.infer<typeof TakeCoachingPreview>;
 

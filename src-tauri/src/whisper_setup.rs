@@ -166,6 +166,7 @@ pub fn options(root: &Path) -> Options {
 }
 
 fn client() -> Result<reqwest::Client> {
+    crate::net_guard::client_built();
     reqwest::Client::builder()
         .https_only(true)
         .connect_timeout(Duration::from_secs(20))

@@ -35,11 +35,22 @@ export function StagePanel({ plan }: { plan: TodayPlan }) {
               </div>
             </div>
           )}
-          {p.stage > 1 && (
-            <Button className="mt-3" size="sm" variant="outline" disabled={choose.isPending}
-              onClick={() => choose.mutate({ kind: "easier", reason: "You chose easier practice." })}>
-              Easier practice
-            </Button>
+          {(p.stage > 1 || (!p.offer && p.stage < 5)) && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {p.stage > 1 && (
+                <Button size="sm" variant="outline" disabled={choose.isPending}
+                  onClick={() => choose.mutate({ kind: "easier", reason: "You chose easier practice." })}>
+                  Easier practice
+                </Button>
+              )}
+              {/* A challenge is your choice at any time, not only when the app suggests it (§7). */}
+              {!p.offer && p.stage < 5 && (
+                <Button size="sm" variant="ghost" disabled={choose.isPending}
+                  onClick={() => choose.mutate({ kind: "advance", reason: "You chose more difficulty before the app suggested it." })}>
+                  Try stage {p.stage + 1} anyway
+                </Button>
+              )}
+            </div>
           )}
           {choose.error && <p role="alert" className="mt-2 text-meta text-destructive">{choose.error.message}</p>}
         </>

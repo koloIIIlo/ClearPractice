@@ -569,6 +569,20 @@ impl PreviewOwner {
         self.pending.lock().ok().and_then(|p| p.get(id).map(|x| x.local.is_some())).unwrap_or(false)
     }
 
+    /// A take or follow-up approval is built from one transcript revision. If the
+    /// take's transcript changed since (a correction, or a newer transcript), the
+    /// approval is discarded and nothing is sent (A-17). Feedback already saved
+    /// keeps the revision it was made from.
+    pub fn ensure_take_revision(&self, id: &str, current_revision: &str) -> Result<()> {
+        let mut pending = self.pending.lock().map_err(|_| "Coaching preview owner failed.")?;
+        let stale = pending.get(id).and_then(|p| p.take.as_ref()).is_some_and(|t| t.revision_id != current_revision);
+        if stale {
+            pending.remove(id);
+            return Err("The transcript changed after this preview, so nothing was sent. Preview again to see the new text.".into());
+        }
+        Ok(())
+    }
+
     /// Sends an approved take preview to the local model on this computer (5.4).
     pub async fn send_take_local(&self, attempt_id: &str, id: &str, hash: &str) -> Result<TakeAnswer> {
         let pending = self.consume(id, hash)?;
