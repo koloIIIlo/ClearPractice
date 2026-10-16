@@ -21,7 +21,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 | --- | --- |
 | Active milestone | M6 release hardening: installers rebuilt on 11 Oct (unsigned NSIS and MSI under `src-tauri/target/release/bundle`); the release acceptance suite (6.8) automated on 16 Oct: 19 of 25 items automated and passing, the other 6 have manual recipes for the packaged build. Milestone P is complete: gate P passed on 9 Oct (Praat comparison; D-17 confirmed). M4 and M5: code built; desktop rechecks, the content pack review (4.1–4.3) and a real llama.cpp run (5.4) remain. M3: code complete; desktop checks and the separate API enablement gate remain. M0 is complete (0.23 measured AssemblyAI on 9 Oct; Deepgram unmeasured without a key). M2: desktop checks and the manual exit gate |
 | Last updated | 2026-10-16 |
-| Repository | `main` at 7a2a9cb is committed and pushed to `origin` (github.com/koloIIIlo/ClearPractice); authored by Alex only. The 16 Oct acceptance-suite work (tests, the three fixes below, this plan) is in the working tree, not committed yet |
+| Repository | `main` is committed and pushed to `origin` (github.com/koloIIIlo/ClearPractice); authored by Alex only. Latest commit (16 Oct): the M7–M16 roadmap (`docs/roadmap/` and the M7–M16 section below); nothing uncommitted |
 | Installers | Rebuilt 11 Oct: `nsis/ClearPractice_0.1.0_x64-setup.exe` (212.9 MiB) and `msi/ClearPractice_0.1.0_x64_en-US.msi` (212.3 MiB), not code-signed. They predate the 16 Oct fixes; rebuild before the manual acceptance run |
 | Built, not yet checked in the desktop app | From 16 Oct (no schema change; the take-coaching preview also returns its transcript revision): Today's stage card offers Try stage N anyway when no harder stage is suggested yet (A-19); an open AI-feedback or follow-up preview is discarded when the take's transcript changes, and the desktop refuses to send a stale one (A-17); Progress → Unfamiliar tasks takes each session's pace from its first take only (A-18). From 11 Oct (no schema change; preferences gain tourDone): Help → Guided tour (starts by itself once on Today), Settings → Transcription → Download and set up local Whisper (a real download of about 0.6–1.3 GB with progress and Stop), the app-wide transcription queue (automatic local transcription also when Cloud is the default; Sessions → tick → Transcribe all takes; the Transcript column), AI phrase suggestions from chosen sessions (preview, Send, keep), Ctrl +/−/0 zoom remembered between runs, the Back button and Alt+←, the gliding waveform, no layout shift from the scrollbar. From 10 Oct night (custom title bar, live level, auto-transcribe; no schema change, two new preferences with defaults): the frameless window (drag by the top bar or sidebar header, double-click to maximize, resize from the edges, minimize/maximize/close, close still guarded while recording, light and dark), the Studio's live microphone level before recording (Windows shows the microphone in use while the studio is open), takes transcribed automatically one after another in local mode, the take summary in the session view, the styled dropdowns everywhere (including Settings → Data and the clip screens). From 10 Oct evening (last four UX gaps, no schema change): the take summary under a transcribed Studio take (measures, then saved AI feedback), folded earlier takes of a continued session, the new position slider in the desktop player. From 10 Oct (UI audit fixes, no schema change): the desktop player's labelled 5 s skips and 40 px speed menu, Move to Trash at the end of the session view, and the reordered Studio panels with a real microphone; the rest was verified in the browser preview. From 9 Oct (schema v15): Local LLM coaching (5.4), follow-up questions (5.11), Space used and Clear cache (6.6), diagnostic report (6.7), https links in the system browser (6.1), styled checkboxes and radios everywhere; AI feedback on a take (M5, P.9), Compare takes (4.14), your own prompts and stored favourites (4.13), real-conversation reflections (4.17), stages and suggestions on Today (4.18), first-launch setup (4.19), Settings → Coaching choices (5.10); earlier on 9 Oct (schema v14): Today from real data (4.12), Phrases (4.15), Progress (4.16), imitation overlay (P.5), clip pitch lines (P.6); desktop pass 2 fixes (2.12, 2.20, 2.24, 2.25, 3.8, 3.9, 4.4g–i) |
 | Blockers | None for coding. Desktop and hardware checks need the user at the laptop (or an agent that can drive the desktop app); none |
@@ -32,6 +32,7 @@ This file tracks *how far we are*. Section references like **§9** point into th
 3. Decision for the user: should a Send that cannot connect at all (offline, refused) release its reservation instead of counting the estimate as Uncertain? See Notes, 16 Oct.
 4. Remaining for me: a real llama.cpp run (5.4) and reading the performance figures on the release build (6.5).
 5. User (optional): the 0.23 Deepgram benchmark; the manual M2 exit gate; review of the content pack wording (4.1–4.3).
+6. User: read the roadmap ([docs/roadmap/README.md](docs/roadmap/README.md); milestones M7–M16 below). Confirm or change decisions D-30 to D-32 (needed by M7 work packages 7.3–7.5) and D-29 (needed before M9). M7 (foundations) starts after the M6 gate, or earlier if you say so.
 
 **Standing notes (not blockers)**
 - Do not request another personal speech sample or repeat the completed paid coaching test; the public benchmark (D-24) stands in for personal audio.
@@ -364,6 +365,153 @@ Boundaries: no score, no "correct/incorrect" colouring, no mood or emotion label
 
 ---
 
+## Milestones 7–16 — Roadmap (proposed 2026-10-16)
+
+The detailed specification is in [docs/roadmap/](docs/roadmap/README.md). It covers:
+- the rules, architecture, data model (schema v16–v25) and testing strategy;
+- one file per milestone, giving every work package's screens, data, native functions, IPC, front end, tests and done-when.
+
+The numbers below match those files.
+
+**Entry gate.** Start M7 once M6's gate has passed, or earlier if you explicitly say so.
+
+**Decisions.** Each needs your OK before the work that depends on it (roadmap §9). Each is added to the decision log above once confirmed.
+- D-30 to D-32 before M7 work packages 7.3–7.5, and D-29 before M9;
+- D-33 before M13;
+- D-34 to D-38 with their work packages.
+
+### Milestone 7 — Foundations ([spec](docs/roadmap/M07-foundations.md)) · budget 8–11 days
+- [ ] 7.1 **Speed pass:** lazy routes, prefetch, vendor chunks, bundle budget. Baseline on 16 Oct: one 1.68 MB chunk, 474 kB gzip.
+- [ ] 7.2 **Content modules:** exercises move to `src/content/exercises.ts`.
+- [ ] 7.3 **Activities inside sessions:** `sessions.activity_snapshot`, per-take steps in `task_conditions.challenge` (D-30).
+- [ ] 7.4 **Practice-event ledger:** `practice_events`, awards inside Rust transactions, one-time backfill (D-31).
+- [ ] 7.5 **Practice style:** Playful or Calm, plus celebration preferences (D-32).
+- [ ] 7.6 **Facts snapshot:** `get_practice_facts`.
+- [ ] 7.7 **Test helpers:** `renderWithApp`, `factsBuilder`, the shared no-score check, the axe route script.
+- [ ] 7.8 **`commands/` module** for new native commands.
+- [ ] 7.9 **`RecorderPanel`:** the Studio recorder as a shared component.
+
+### Milestone 8 — Insights and practice extras ([spec](docs/roadmap/M08-insights.md)) · budget 12–16 days
+- [ ] 8.1 **Measures v2:** runs, pause location, words you use often, hedges, vocabulary range, opener and ending.
+- [ ] 8.2 **Phrases spotted** in your takes.
+- [ ] 8.3 **Self-checks and take summary v2.**
+- [ ] 8.4 **Waveform markers.**
+- [ ] 8.5 **A/B listen**, including blind mode and cross-session compare.
+- [ ] 8.6 **Trends**, with Progress built from facts.
+- [ ] 8.7 **Speech profile.**
+- [ ] 8.8 **Syllable rate and the live pace meter** (D-34).
+- [ ] 8.9 **Sequence dots.**
+- [ ] 8.10 **Ctrl+K actions.**
+- [ ] 8.11 **Settings → Words to watch.**
+
+### Milestone 9 — Game core ([spec](docs/roadmap/M09-game-core.md)) · budget 14–19 days
+- [ ] 9.1 **Journey page and navigation;** the style card switched on.
+- [ ] 9.2 **Levels engine:** 8 areas × 5 levels, criteria DSL, evaluation ([appendix A](docs/roadmap/appendix-a-skill-levels.md)).
+- [ ] 9.3 **Engagement storage:** levels, achievements, records, quests.
+- [ ] 9.4 **`EngagementProvider`:** the refresh loop.
+- [ ] 9.5 **XP display.**
+- [ ] 9.6 **Achievements** ([appendix B](docs/roadmap/appendix-b-rewards.md)).
+- [ ] 9.7 **Personal records.**
+- [ ] 9.8 **Weekly goal** and weeks in a row.
+- [ ] 9.9 **Weekly quests.**
+- [ ] 9.10 **Celebrations.**
+- [ ] 9.11 **Companion** (Sprout).
+- [ ] 9.12 **Accent colours.**
+- [ ] 9.13 **Monthly themes** and fresh starts.
+- [ ] 9.14 **Today strip** and Today you earned.
+- [ ] 9.15 **Area sheet**, Practise this, soft locks.
+- [ ] 9.16 **Reflection fields:** flow and kind.
+
+### Milestone 10 — Drills ([spec](docs/roadmap/M10-drills.md)) · budget 16–22 days
+- [ ] 10.1 **Drill framework:** module contract, drill studio, clock, take events, results cache.
+- [ ] 10.2 Just a Minute.
+- [ ] 10.3 Topic roulette.
+- [ ] 10.4 Word bomb.
+- [ ] 10.5 Explain it three ways.
+- [ ] 10.6 Emphasis game.
+- [ ] 10.7 Pace ladder.
+- [ ] 10.8 Story spine and Story cubes.
+- [ ] 10.9 Elevator pitch.
+- [ ] 10.10 Steelman.
+- [ ] 10.11 Daily prompt.
+- [ ] 10.12 Gauntlet.
+- [ ] 10.13 Boss levels (scripted).
+- [ ] 10.14 **Drills tab.**
+- [ ] 10.15 **Drill content** and tests.
+
+### Milestone 11 — Learning engine ([spec](docs/roadmap/M11-learning-engine.md)) · budget 10–14 days
+- [ ] 11.1 Spaced re-answering.
+- [ ] 11.2 Challenge dial and difficulty tuning.
+- [ ] 11.3 Warm-up drill and mixed sets.
+- [ ] 11.4 Feedback timing.
+- [ ] 11.5 Predict, then check.
+- [ ] 11.6 Filler programme and Catch it.
+- [ ] 11.7 Phrases: Say it.
+- [ ] 11.8 Weakest-area sprint.
+
+### Milestone 12 — Confidence pack ([spec](docs/roadmap/M12-confidence.md)) · budget 8–11 days
+- [ ] 12.1 Confidence page.
+- [ ] 12.2 Exposure ladder.
+- [ ] 12.3 Pre-talk routine.
+- [ ] 12.4 After-action review.
+- [ ] 12.5 Liked sentences and the best-moments reel.
+
+### Milestone 13 — AI conversation partner ([spec](docs/roadmap/M13-conversation-partner.md)) · budget 14–20 days
+- [ ] 13.1 **Conversation engine:** per-turn preview and Send, local auto-send opt-in, cost cap (D-33).
+- [ ] 13.2 Scenarios and personas.
+- [ ] 13.3 Partner hub.
+- [ ] 13.4 Conversation screen and turn loop.
+- [ ] 13.5 Pressure dial.
+- [ ] 13.6 Boss levels v2.
+- [ ] 13.7 Offline voices.
+- [ ] 13.8 Scripted partner.
+- [ ] 13.9 Q&A panel.
+- [ ] 13.10 Upgrade loop.
+- [ ] 13.11 Conversation summary and feedback.
+
+### Milestone 14 — Real world ([spec](docs/roadmap/M14-real-world.md)) · budget 12–17 days
+- [ ] 14.1 Missions.
+- [ ] 14.2 Event mode.
+- [ ] 14.3 Talk builder, cue cards, rehearsal report.
+- [ ] 14.4 **Listener pack**, export and import (D-35).
+- [ ] 14.5 Voice time capsule.
+
+### Milestone 15 — Social, optional ([spec](docs/roadmap/M15-social.md)) · budget 6–9 days
+- [ ] 15.1 Buddy feedback presets.
+- [ ] 15.2 Club mode.
+- [ ] 15.3 Challenge codes.
+- [ ] 15.4 Copy my week.
+
+### Milestone 16 — Platform and polish ([spec](docs/roadmap/M16-platform.md)) · budget 25–45 days
+- [ ] 16.1 **Mobile companion and LAN sync.** Feasibility gate first (D-36).
+- [ ] 16.2 Surprise prompts (D-37).
+- [ ] 16.3 Content packs and new content.
+- [ ] 16.4 First-language tips.
+- [ ] 16.5 Local models for phrase suggestions and clip naming.
+- [ ] 16.6 Provider contract tests.
+- [ ] 16.7 User docs, changelog, What's new.
+- [ ] 16.8 Updates and code signing (D-38).
+- [ ] 16.9 Performance and storage pass.
+
+### Roadmap acceptance items (A-26 to A-39)
+These are defined in [roadmap §10.5](docs/roadmap/README.md). Each joins the release acceptance suite below once its milestone is built.
+- [ ] A-26 The game layer shows no score, grade, percentage or mood next to any speech value.
+- [ ] A-27 Calm mode hides every game element and loses no data.
+- [ ] A-28 Trash, permanent deletion and definition changes never take away earned effort.
+- [ ] A-29 Only local facts and your own notes award levels, achievements and records.
+- [ ] A-30 Engagement, drill and insight tables hold no transcript text, audio or paths.
+- [ ] A-31 Timed drills never lose audio.
+- [ ] A-32 Live pace, syllable rate, emphasis, best moments, listener pack and club mode are offline.
+- [ ] A-33 The partner sends nothing to a cloud provider without that turn's Send.
+- [ ] A-34 The listener pack exports only what you chose, and import validates and never runs content.
+- [ ] A-35 Self-reports are labelled Your note and never shown as a judgement of an audio measure.
+- [ ] A-36 Performance holds with two years of seeded history.
+- [ ] A-37 New routes are axe-clean in light and dark, and celebrations respect reduced motion.
+- [ ] A-38 Backups, restore and session export carry the new data.
+- [ ] A-39 Mobile sync stays on the local network and needs pairing on both devices.
+
+---
+
 ## Acceptance suite (§17) — run on a packaged build before release
 
 Status 2026-10-16. Automated checks live in `src-tauri/src/acceptance.rs` (Rust, `cargo test --lib`, named `acceptance::aNN_…`) and `src/acceptance/*.test.ts(x)` (Vitest), next to the older tests named under each item. They use disposable profiles, fake or local stand-in providers and no real network: hosted requests stop before a key is read, and the only servers are on 127.0.0.1. `[x]` = automated and passing; `[~]` = automated part passing, a manual part on the packaged build remains; `[ ]` = manual recipe, not run yet. Manual recipes run on an installed packaged build (`src-tauri/target/release/bundle/nsis/ClearPractice_0.1.0_x64-setup.exe`; the 11 Oct installers predate the 16 Oct fixes, so rebuild with `npm run tauri build` first) and need the user at the laptop.
@@ -457,6 +605,16 @@ Status 2026-10-16. Automated checks live in `src-tauri/src/acceptance.rs` (Rust,
 
 ## Notes & findings
 
+- 2026-10-16 (evening): roadmap for M7–M16 written in `docs/roadmap/`. It has an index plus one file per milestone and five appendices: levels, rewards, content, copy, research.
+  - **What it covers:**
+    - every idea from the "best speaking trainer" list (game layer, drills, learning engine, confidence pack, AI partner, events, social, platform);
+    - for each, function names, files, schemas (v16–v25), IPC, screens, tests and done-when.
+  - **Facts found while writing it:**
+    - the production bundle is one 1.68 MB JavaScript chunk (474 kB gzip; build of 16 Oct 07:34), which is the baseline for 7.1;
+    - `exercise_definitions.type` has a v1 `CHECK` that would need a table rebuild to add types, hence D-30 (activities ride on the four types);
+    - `task_conditions.challenge` is unused and is reused for per-take steps;
+    - the last migration in `DatabaseOwner::open` runs unconditionally, so each new version needs the `if version < N` guard added to the previous one (roadmap §7.3).
+  - **Next step:** nothing is built yet; decisions D-29 to D-38 are proposed only.
 - 2026-10-16: release acceptance suite (6.8) automated. New `src-tauri/src/acceptance.rs` (16 tests covering 15 A-items, plus an ignored child process for A-11) and `api::audio::tests::a23_…`; new Vitest files in `src/acceptance/` (A-14, A-18, A-19, A-22, A-23). New `net_guard.rs`: every HTTP client the app builds is counted (`client_built`), so A-11 can prove in a separate process that recording, local transcription and prosody build none; a source check makes sure every future `reqwest::Client` is counted. No real provider was contacted and no budget was spent: hosted requests stop before a key is read; the only servers are local stand-ins on 127.0.0.1. Three real gaps found and fixed: (1) **A-17** an open AI-feedback or follow-up preview stayed valid after the take's transcript was corrected, so Send would still send the old text and store it against the old revision. Now `request_take_coaching` and `request_follow_up` compare the approval's revision with the take's current one and discard a stale approval (nothing is sent; `PreviewOwner::ensure_take_revision`), the take preview returns its `revisionId`, and TakeCoaching discards the preview with a message when the transcript changes. (2) **A-18** Progress → Unfamiliar tasks took each session's pace from its latest transcribed take, so a rehearsed retry stood in for the unfamiliar attempt; now it uses the first take only (`evidenceTakes`; §6 "keep an unfamiliar first take before any retry"). (3) **A-19** Today's stage card only let you take a harder stage when the app offered one; §7 says a challenge is your choice at any time, so it now has a quiet Try stage N anyway (recorded with its reason). Observed, not changed: (a) a Send that cannot connect at all (offline, connection refused) counts the estimate as Uncertain, like a timeout, although nothing left the computer; this never undercounts, but the reservation could be released when reqwest reports a connect error (needs the user's decision, shared rule 4); (b) a schema upgrade across several versions that fails at a later step stays at the last completed version: each step rolls back on its own and a verified snapshot is taken first, so no data is lost and the next start retries; (c) two audio previews for the same provider created in the same millisecond would share a request ID; the second replaces the first, which then fails closed ("no longer matches"). Verified: `cargo test --lib` 143 passed / 19 ignored (from 126 / 18); Vitest 68 files / 180 tests (from 63 / 163); typecheck clean. The stage-card button only shows in the desktop app (the browser preview has no stages), so it is covered by the Vitest render tests.
 - 2026-10-11 (night): installers rebuilt with everything above (`npm run tauri build`, 24 min): `src-tauri/target/release/bundle/nsis/ClearPractice_0.1.0_x64-setup.exe` (212.9 MiB) and `.../msi/ClearPractice_0.1.0_x64_en-US.msi` (212.3 MiB); not code-signed. Phrase suggestions are refused on the Rust side too unless Coaching is set to the API (no silent switch from a local model to OpenAI).
 - 2026-10-11 (user's list after testing the desktop build): smooth waveform (a canvas that scrolls continuously instead of bars jumping a slot per level event); a year activity calendar on Progress (a square per day shaded by speaking time, a day opens `/sessions?date=`; Today's week row links to it; no streaks); a Back button in the top bar and Alt+←; `scrollbar-gutter: stable` with a slim themed scrollbar (dialogs no longer add the scrollbar width back); Ctrl +/−/0 and Ctrl+wheel zoom (80–200 %, remembered on this computer; Settings → Appearance; `core:webview:allow-set-webview-zoom`); "Trash" in the moved-to-Trash toast opens the Trash page; the Studio notice is gone in the desktop app; one app-wide transcription queue (one take at a time, pauses while recording, Stop in the top bar, retries a cancelled take once) used by automatic transcription (now with local Whisper whenever it is set up, also when Cloud is the default for transcribing by hand; never cloud) and by Sessions' new multi-select (tick sessions → Transcribe all takes or Move to Trash with one confirmation and Undo); sessions list a transcribed-takes count (computed in `list_sessions`, no migration) shown as Transcribed / N of M / Not transcribed; take summaries say what happens next when there is no transcript; one-click local Whisper (`whisper_setup.rs`: the pinned whisper.cpp 1.9.1 CPU or CUDA release plus NVIDIA cuBLAS 11.11.3.6, and the base or large-v3-turbo model, each checked for exact size and SHA-256 from bench/whisper-assets.json, installed under tools/ and models/, worker setup stored; redirects only to GitHub, Hugging Face and NVIDIA hosts; settles 6.2 as a download rather than bundling); the user's existing setup is bench/runtime.local/config-selected.json (CUDA, large-v3-turbo-q5_0 at D:\Programming\Projects\Jellzfin Server\data\WhisperSubs\whisper\models), still usable under Advanced; AI phrase suggestions on Phrases (choose transcribed sessions, preview the exact text, Send under the shared budget; only suggestions that quote the learner's own words are kept; already-saved expressions start unticked); a guided tour (12 steps across Today, Studio, Sessions, Phrases, Progress, Settings and Help; Help menu in the top bar; Settings → About). Verified: cargo test --lib 126 passed / 18 ignored (+ the network check of the pinned Whisper URLs and the live-microphone monitor test); Vitest 63 files / 163 tests; browser preview checked in light and dark.
