@@ -98,3 +98,28 @@ it("asks before leaving while recording and saves on Stop and save", async () =>
   await waitFor(() => expect(client.stopRecording).toHaveBeenCalledTimes(1));
   expect(await screen.findByText("Other page")).toBeInTheDocument();
 });
+
+it("passes livePace to startRecording when enabled and shows the meter while recording", async () => {
+  const user = userEvent.setup();
+  const client = spyClient();
+  await client.setPreferences({ ...(await client.getPreferences()), livePace: true });
+  renderWithApp(<Harness />, { client });
+  const button = await recordButton();
+  await waitFor(() => expect(button).toBeEnabled());
+  await user.click(button);
+  await waitFor(() => expect(client.startRecording).toHaveBeenCalledWith(expect.objectContaining({ livePace: true })));
+  expect(await screen.findByTestId("live-pace")).toHaveTextContent("Listening…");
+  await user.click(await screen.findByRole("button", { name: /Stop and save/ }));
+  await waitFor(() => expect(screen.queryByTestId("live-pace")).not.toBeInTheDocument());
+});
+
+it("leaves live pace off by default", async () => {
+  const client = spyClient();
+  renderWithApp(<Harness />, { client });
+  const button = await recordButton();
+  await waitFor(() => expect(button).toBeEnabled());
+  await userEvent.click(button);
+  await waitFor(() => expect(client.startRecording).toHaveBeenCalledWith(expect.objectContaining({ livePace: false })));
+  expect(screen.queryByTestId("live-pace")).not.toBeInTheDocument();
+  await userEvent.click(await screen.findByRole("button", { name: /Stop and save/ }));
+});

@@ -74,6 +74,7 @@ export const routes: RouteObject[] = [
               },
             ],
           },
+          { path: "compare", lazy: page(() => import("@/features/insights/CrossComparePage"), "CrossComparePage"), handle: crumb("Compare takes") },
           { path: "phrases", lazy: page(() => import("@/features/phrases/PhrasesPage"), "PhrasesPage"), handle: crumb("Phrases") },
           { path: "progress", lazy: page(() => import("@/features/progress/ProgressPage"), "ProgressPage"), handle: crumb("Progress") },
           { path: "settings/:section?", lazy: page(() => import("@/features/settings/SettingsPage"), "SettingsPage"), handle: crumb("Settings") },

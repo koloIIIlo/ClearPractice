@@ -188,6 +188,14 @@ opener: Edge.nullable().optional(), ending: Edge.nullable().optional(),
 - the measures display without a score;
 - the values match the vectors.
 
+**As built (17 Oct)**
+- `FILLER_DEFINITION_VERSION = 1` keeps your hesitation decisions under measures v2; the facts and `every_candidate_decided` read with it.
+- The shared vectors live at `src/lib/insights/fixtures/word-vectors.json` (the Rust test reads them with `include_str!`), so Vite needs no path outside `src/`.
+- `tokens()` strips all outer punctuation and turns curly apostrophes straight ("I’m," → "i'm").
+- A segment of hesitations alone adds no words to a run, and runs with no words are dropped. When finding the word after a pause, leading hesitations are skipped ("Uh, then…" starts with "then"); "…" counts as punctuation.
+- Opener and ending are clipped to 200 characters at a word, with "…".
+- Units: `watch_words_per_100` and `hedges_per_100` are stored as "per 100 words".
+
 ---
 
 ## 8.2 Phrases spotted in your takes
@@ -236,6 +244,12 @@ opener: Edge.nullable().optional(), ending: Edge.nullable().optional(),
   - `TakeSummary.test.tsx` `it("lists saved phrases spotted in the take")`.
 
 **Done when** adding the phrase "lose track of time" finds an earlier take with "I lost track of the time", and the take summary and Phrases page show it.
+
+**As built (17 Oct)**
+- `analysis::PhrasePattern` compiles an expression once and `stemmed()` prepares a revision's words once, so the first start after the upgrade (every revision is measured again) stays quick.
+- `stem` also folds a doubled final consonant ("stopped" → "stop"), a final "e" ("make"/"makes" → "mak") and "y" → "i" ("try"/"tried"); words ending in "ss" keep their "s". Placeholders also include "one's" and "someone's".
+- A take's **current transcript** is your latest correction of its newest machine transcript, else that transcript (`insights::CURRENT_REVISION`). Uses are recorded for every revision with its measures; lists and facts read the current one.
+- Phrases links use the existing `?focus=` (not `?id=`); `keys.phraseUses` sits under `["phrases", …]` so a phrase change (which rescans) refreshes it. `/phrases?review=1` opens the review (used by Ctrl+K).
 
 ---
 
@@ -322,6 +336,11 @@ listSelfChecks(attemptId: string): Promise<SelfCheck[]>;
 
 **Done when** the latest take in the Studio shows the v2 summary and self-checks, which round-trip through native storage and appear in facts.
 
+**As built (17 Oct)**
+- Rust accepts all ten check IDs now (the drills of M10 only add their screens).
+- Facts carry `checks` keyed by the check ID (`{ point_first: true }`), parsed with `z.partialRecord(SelfCheckId, …)`.
+- `TakeSummary` gains `link` (Listen jumps to a saved phrase), `durationMs` (the voice question from 90 s) and `latest` (Flow and Words open). Feedback timing (11.4) does not exist yet, so the folds always follow `latest`.
+
 ---
 
 ## 8.4 Waveform markers
@@ -353,6 +372,10 @@ listSelfChecks(attemptId: string): Promise<SelfCheck[]>;
   - `it("jumps with [ and ]")`.
 
 **Done when** a reviewed take shows markers and the list in both themes, and axe stays clean.
+
+**As built (17 Oct)**
+- `SavedAudio` reads the take's transcript through the query the summary and transcript already use, so markers cost no extra call. Dismissed candidates are left out; candidates a cloud transcript timed sit at their own time and are not approximate.
+- The marker list is a disclosure under the waveform ("Markers (n) · [ and ] jump between them"); ticks over the waveform also seek on click. Tokens: `--cp-marker-pause`, `--cp-marker-filler`, `--cp-marker-liked`.
 
 ---
 
@@ -414,6 +437,12 @@ listSelfChecks(attemptId: string): Promise<SelfCheck[]>;
 
 **Done when** both entry points work in the desktop app, and blind mode keeps the identity hidden until you reveal.
 
+**As built (17 Oct)**
+- The level comes from the waveform peaks the interface already receives: `rmsFromPeaks` (the RMS of the louder half, so pauses don't lower it) lives in `AbListen.tsx`; no Rust `rms_from_peaks` was needed.
+- `AudioPlayer`'s handle gained `play`, `pause`, `seek` and `isPlaying`, and a `volume` prop; no separate `useAudioElement` hook.
+- `save_comparison` refuses two takes of one session (that choice stays the session's preferred take).
+- In a session's Compare, A/B listening replaces the old "Which take felt clearer?" panel, and the take columns and table are hidden while you listen blind. `EarlierAnswers` offers "an earlier answer to this prompt" (same `contentId`) and "your first take" (a baseline-tagged session, else your first take ever), both opening `/compare?a=&b=` (`CrossComparePage`).
+
 ---
 
 ## 8.6 Trends, plus Progress built from facts
@@ -454,6 +483,10 @@ Each chart:
 - A-26 (9.x) also covers Trends.
 
 **Done when** Progress loads with one facts call, and the trends render in both themes.
+
+**As built (17 Oct)**
+- Native `getProgress` is one `get_practice_facts` call plus one `get_session` for the highlighted takeaway's text (facts hold no text); the old 60-session cap is gone.
+- A budget test builds trends, profile and progress from two years of seeded facts (730 sessions, 2,920 takes) in under 150 ms.
 
 ---
 
@@ -502,6 +535,10 @@ Each chart:
 - `SpeechProfile.test.tsx`: `it("renders every row with a label and no score words")`, using `expectNoScores`.
 
 **Done when** the profile renders from facts and every row explains where it came from.
+
+**As built (17 Oct)**
+- Profile is the first Progress tab and the default without `?view=`.
+- "Words you use often" shows how often (per 100 words): facts count them per take but don't name them; the take summary names them.
 
 ---
 
@@ -590,6 +627,13 @@ onLivePace(listener: (p: LivePace) => void): Promise<() => void>;
 - Manual: record 60 s with live pace on; watch CPU in Task Manager; the meter moves smoothly and holds still in silences.
 
 **Done when** the synthetic tests pass, the public sample is within ±15%, the meter works in the desktop app, and CPU stays within budget.
+
+**As built (17 Oct)**
+- On the public sample (D-24) the first settings (50 ms frames, YIN threshold 0.15 at the peak only) found 139 nuclei against 246 written syllables (−43.5%): the intensity peaks were there (228–250), but the strict voicing check dropped about 40% of real syllables.
+- As built: 25 ms frames every 5 ms, the 2 dB dip unchanged, a peak is voiced when YIN finds a period at it or 10 ms either side with threshold 0.35 (`prosody::yin_with`), and nothing counts below −60 dB. Result: 220 nuclei against 246 (−10.6%), 0.04 s for 62 s of audio in a release build.
+- The live counter averages groups of samples down to about 16 kHz (48 kHz → 3), so its pitch checks stay small. Capture sends `live_pace` through the existing event sink; the desktop shell turns it into `{ attemptId, syllablesPerSecond, voicedMs, windowMs }`.
+- `prosody::prepared_samples` now serves both the intonation track and the speech rate.
+- Live pace is off by default (Settings → Practice), as D-34 proposes; D-34 itself is still to be confirmed.
 
 ---
 

@@ -15,7 +15,8 @@ import { formatClock } from "@/lib/format";
 import { useInputDevices, usePreferences } from "@/lib/ipc/queries";
 import type { CoachingModel, Preferences } from "@/lib/ipc/schemas";
 import { Button } from "@/components/ui/button";
-import { Compass, Minus, Plus, RefreshCw } from "lucide-react";
+import { Compass, Minus, Plus, RefreshCw, X } from "lucide-react";
+import { WATCH_WORDS } from "@/lib/insights/words";
 import { useTour } from "@/features/tour/tour";
 import { setZoomLevel, stepZoom, useZoomLevel, ZOOM_STEPS } from "@/app/zoom";
 import { cn } from "@/lib/utils";
@@ -183,7 +184,9 @@ function PracticeSettings() {
           </div>
         )}
         <SwitchRow id="rec-shortcuts" label="Recording keyboard shortcuts" hint="Ctrl+Enter starts or stops a take in the studio." checked={preferences.recordingShortcuts} onCheckedChange={(on) => update({ recordingShortcuts: on })} />
+        <SwitchRow id="live-pace" label="Show live pace while recording" hint="An estimate from the audio. There's no right speed; it shows your range." checked={preferences.livePace} onCheckedChange={(on) => update({ livePace: on })} />
       </Section>
+      <WordsToWatch />
       <PracticeStyleSettings />
       <Section title="Languages">
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1">
@@ -193,6 +196,65 @@ function PracticeSettings() {
         <p className="text-meta text-muted-foreground">This version is for practising English. German practice may follow later.</p>
       </Section>
     </>
+  );
+}
+
+const MAX_WATCH_WORDS = 20;
+const MAX_WATCH_WORD_CHARS = 30;
+
+/** Words to watch (roadmap 8.11): you decide which habits to notice; the app doesn't decide for you. */
+export function WordsToWatch() {
+  const { preferences, update } = usePreferences();
+  const [draft, setDraft] = useState("");
+  const words = preferences.watchWords;
+  const clean = draft.trim().replace(/\s+/g, " ").toLowerCase();
+  const problem = !clean
+    ? null
+    : clean.length > MAX_WATCH_WORD_CHARS
+      ? `Keep it under ${MAX_WATCH_WORD_CHARS} characters.`
+      : words.includes(clean) || (WATCH_WORDS as readonly string[]).includes(clean)
+        ? "Already on the list."
+        : words.length >= MAX_WATCH_WORDS
+          ? `Up to ${MAX_WATCH_WORDS} words of your own.`
+          : null;
+  const add = () => {
+    if (!clean || problem) return;
+    update({ watchWords: [...words, clean] });
+    setDraft("");
+  };
+  return (
+    <Section title="Words to watch" description="Words you use often are counted in every take summary. Counting a word doesn't mean it's wrong.">
+      <div className="space-y-1">
+        <p className="text-meta text-muted-foreground">Counted in every take</p>
+        <ul aria-label="Default words to watch" className="flex flex-wrap gap-1.5">
+          {WATCH_WORDS.map((w) => <li key={w} className="rounded-full border px-2.5 py-0.5 text-meta">{w}</li>)}
+        </ul>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="watch-word">Your words</Label>
+        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); add(); }}>
+          <Input id="watch-word" className="max-w-64" maxLength={60} placeholder="e.g. like" value={draft} onChange={(e) => setDraft(e.target.value)} aria-describedby="watch-word-hint" />
+          <Button type="submit" variant="outline" disabled={!clean || !!problem}>
+            <Plus aria-hidden /> Add
+          </Button>
+        </form>
+        <p id="watch-word-hint" className={cn("text-meta", problem ? "text-destructive" : "text-muted-foreground")}>
+          {problem ?? (clean === "like" ? "“Like” is counted every time, including ordinary uses." : `Up to ${MAX_WATCH_WORDS} words or short phrases.`)}
+        </p>
+        {words.length > 0 && (
+          <ul aria-label="Your words to watch" className="flex flex-wrap gap-1.5">
+            {words.map((w) => (
+              <li key={w} className="flex items-center gap-1 rounded-full border bg-secondary py-0.5 pr-1 pl-2.5 text-meta">
+                {w}
+                <Button type="button" variant="ghost" size="icon-sm" className="size-6 rounded-full" aria-label={`Remove ${w}`} onClick={() => update({ watchWords: words.filter((x) => x !== w) })}>
+                  <X aria-hidden />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Section>
   );
 }
 

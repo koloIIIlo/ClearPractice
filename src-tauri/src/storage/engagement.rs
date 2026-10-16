@@ -14,7 +14,7 @@ use std::collections::HashMap;
 /// app_settings key marking that history was turned into events once.
 const BACKFILL_KEY: &str = "engagement_backfill_v1";
 /// Bumped when facts gain fields, so the interface can tell what to expect.
-pub const FACTS_VERSION: u32 = 1;
+pub const FACTS_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,7 +95,7 @@ pub(crate) fn every_candidate_decided(conn: &Connection, revision_id: &str) -> R
     let decided: i64 = conn
         .query_row(
             "SELECT count(*) FROM annotations WHERE revision_id=?1 AND definition_version=?2 AND kind='filler'",
-            params![revision_id, crate::analysis::DEFINITION_VERSION],
+            params![revision_id, crate::analysis::FILLER_DEFINITION_VERSION],
             |r| r.get(0),
         )
         .map_err(db_error)?;
@@ -238,6 +238,21 @@ pub struct FactTake {
     pub pauses_over_threshold: Option<u32>,
     pub prosody_viewed: bool,
     pub has_ai_feedback: bool,
+    // Facts v2 (roadmap M8): measures v2 of the same revision, saved phrases
+    // spotted in the take's current transcript, your self-checks, the pitch
+    // range of its intonation track and its speech rate from the audio.
+    pub mean_run: Option<f64>,
+    pub longest_run: Option<u32>,
+    pub mid_clause_pauses: Option<u32>,
+    pub boundary_pauses: Option<u32>,
+    pub watch_per_100: Option<f64>,
+    pub hedges_per_100: Option<f64>,
+    pub different_per_50: Option<f64>,
+    pub phrase_ids: Vec<String>,
+    /// Self-check ID → your answer.
+    pub checks: std::collections::BTreeMap<String, bool>,
+    pub pitch_range_st: Option<f64>,
+    pub rate_sps: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -413,23 +428,48 @@ impl DatabaseOwner {
                 .prepare("SELECT revision_id,SUM(decision='confirmed'),COUNT(*) FROM annotations WHERE definition_version=?1 AND kind='filler' GROUP BY revision_id")
                 .map_err(db_error)?;
             let rows = stmt
-                .query_map([crate::analysis::DEFINITION_VERSION], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?, r.get::<_, u32>(2)?)))
+                .query_map([crate::analysis::FILLER_DEFINITION_VERSION], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?, r.get::<_, u32>(2)?)))
                 .map_err(db_error)?;
             for row in rows {
                 let (revision, confirmed, total) = row.map_err(db_error)?;
                 decisions.insert(revision, (confirmed, total));
             }
         }
+        let mut phrase_uses: HashMap<String, Vec<String>> = HashMap::new();
+        {
+            let mut stmt = conn
+                .prepare(&format!(
+                    "SELECT u.attempt_id,u.phrase_id FROM phrase_uses u JOIN attempts a ON a.id=u.attempt_id JOIN phrase_cards p ON p.id=u.phrase_id \
+                     WHERE p.deleted_at_ms IS NULL AND u.revision_id={} ORDER BY u.attempt_id,u.phrase_id",
+                    super::insights::CURRENT_REVISION
+                ))
+                .map_err(db_error)?;
+            for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(db_error)? {
+                let (attempt, phrase) = row.map_err(db_error)?;
+                phrase_uses.entry(attempt).or_default().push(phrase);
+            }
+        }
+        let mut checks: HashMap<String, std::collections::BTreeMap<String, bool>> = HashMap::new();
+        {
+            let mut stmt = conn.prepare("SELECT attempt_id,check_id,value FROM self_checks").map_err(db_error)?;
+            for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, bool>(2)?))).map_err(db_error)? {
+                let (attempt, check, value) = row.map_err(db_error)?;
+                checks.entry(attempt).or_default().insert(check, value);
+            }
+        }
         let mut stmt = conn.prepare(
             "SELECT a.id,st.session_id,a.ordinal,s.local_date,a.created_at_ms,aa.duration_ms,tc.challenge,\
              (SELECT r.id FROM transcript_revisions r WHERE r.attempt_id=a.id AND r.source<>'user' ORDER BY r.created_at_ms DESC,r.id DESC LIMIT 1),\
-             EXISTS(SELECT 1 FROM prosody_tracks p WHERE p.attempt_id=a.id),EXISTS(SELECT 1 FROM coaching_runs c WHERE c.attempt_id=a.id) \
+             EXISTS(SELECT 1 FROM prosody_tracks p WHERE p.attempt_id=a.id),EXISTS(SELECT 1 FROM coaching_runs c WHERE c.attempt_id=a.id),\
+             (SELECT p.range_semitones FROM prosody_tracks p WHERE p.attempt_id=a.id AND p.algorithm=?1 AND p.definition_version=?2),\
+             (SELECT m.rate_sps FROM audio_measures m WHERE m.attempt_id=a.id AND m.method=?3 AND m.definition_version=?4) \
              FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id JOIN audio_assets aa ON aa.id=a.asset_id \
              LEFT JOIN task_conditions tc ON tc.attempt_id=a.id \
              WHERE a.capture_state='saved' AND a.deleted_at_ms IS NULL AND s.deleted_at_ms IS NULL ORDER BY a.created_at_ms,a.id",
         ).map_err(db_error)?;
         let takes = stmt
-            .query_map([], |r| {
+            .query_map(params![crate::prosody::ALGORITHM, crate::prosody::DEFINITION_VERSION, crate::audio::syllables::METHOD, crate::audio::syllables::DEFINITION_VERSION], |r| {
+                let id: String = r.get(0)?;
                 let challenge: Option<String> = r.get(6)?;
                 let revision: Option<String> = r.get(7)?;
                 let measures = revision.as_ref().and_then(|id| metrics.get(id));
@@ -437,7 +477,18 @@ impl DatabaseOwner {
                 let candidates = count(value("filler_candidates"));
                 let (confirmed, decided) = revision.as_ref().and_then(|id| decisions.get(id).copied()).unwrap_or((0, 0));
                 Ok(FactTake {
-                    id: r.get(0)?,
+                    mean_run: value("mean_run_words"),
+                    longest_run: count(value("longest_run_words")),
+                    mid_clause_pauses: count(value("mid_clause_pauses")),
+                    boundary_pauses: count(value("boundary_pauses")),
+                    watch_per_100: value("watch_words_per_100"),
+                    hedges_per_100: value("hedges_per_100"),
+                    different_per_50: value("different_words_per_50"),
+                    phrase_ids: phrase_uses.get(&id).cloned().unwrap_or_default(),
+                    checks: checks.get(&id).cloned().unwrap_or_default(),
+                    pitch_range_st: r.get(10)?,
+                    rate_sps: r.get(11)?,
+                    id,
                     session_id: r.get(1)?,
                     ordinal: r.get(2)?,
                     local_date: r.get(3)?,
@@ -839,7 +890,12 @@ pub(crate) mod tests {
                     params![run, take, revision, crate::analysis::DEFINITION_VERSION, at],
                 )
                 .unwrap();
-                for (metric, value, unit) in [("word_count", 130.0, "words"), ("filler_candidates", 4.0, "words"), ("repeated_words", 1.0, "words"), ("speech_span_ms", 58_000.0, "ms"), ("pace_wpm", 134.5, "words/min"), ("pauses_over_threshold", 3.0, "pauses")] {
+                for (metric, value, unit) in [
+                    ("word_count", 130.0, "words"), ("filler_candidates", 4.0, "words"), ("repeated_words", 1.0, "words"), ("speech_span_ms", 58_000.0, "ms"),
+                    ("pace_wpm", 134.5, "words/min"), ("pauses_over_threshold", 3.0, "pauses"), ("mean_run_words", 7.5, "words"), ("longest_run_words", 18.0, "words"),
+                    ("mid_clause_pauses", 1.0, "pauses"), ("boundary_pauses", 2.0, "pauses"), ("watch_words_per_100", 1.5, "per 100 words"),
+                    ("hedges_per_100", 2.3, "per 100 words"), ("different_words_per_50", 36.2, "words"),
+                ] {
                     tx.execute("INSERT INTO metric_values(run_id,metric,value,unit,source) VALUES (?1,?2,?3,?4,'Estimated')", params![run, metric, value, unit]).unwrap();
                 }
             }
@@ -875,7 +931,7 @@ pub(crate) mod tests {
     }
 
     /// The interface parses facts with strict schemas; its fixture
-    /// (src/lib/ipc/fixtures/facts-v1.json) must have exactly these fields.
+    /// (src/lib/ipc/fixtures/facts-v2.json) must have exactly these fields.
     #[test]
     fn facts_serialize_with_the_same_fields_as_the_interface_fixture() {
         let root = TestRoot::new();
@@ -891,7 +947,7 @@ pub(crate) mod tests {
         db.review_phrase(&card.id, "good", today).unwrap();
         db.record_progression("advance", "Three sessions").unwrap();
         let actual = serde_json::to_value(db.practice_facts("2026-10-16").unwrap()).unwrap();
-        let fixture: Value = serde_json::from_str(include_str!("../../../src/lib/ipc/fixtures/facts-v1.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../../src/lib/ipc/fixtures/facts-v2.json")).unwrap();
         let keys = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<std::collections::BTreeSet<_>>();
         assert_eq!(keys(&actual), keys(&fixture));
         for list in ["sessions", "takes", "transferReviews", "phrases", "phraseReviews", "progression"] {

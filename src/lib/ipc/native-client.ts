@@ -6,7 +6,7 @@ import { z } from "zod";
 import { IpcError, type IpcClient } from "./client";
 import { createMockClient } from "./mock-client";
 import * as S from "./schemas";
-import { buildProgress, buildTodayPlan, evidenceTakes } from "../today-plan";
+import { buildProgressFromFacts, buildTodayPlan, highlightSessionId } from "../today-plan";
 import { schedule } from "../scheduler";
 import { searchLibrary } from "../search";
 import { toLocalDate } from "../phrase-schedule";
@@ -130,29 +130,35 @@ export function createNativeClient(): IpcClient {
       const lastBackup = backups?.backups.filter((b) => b.status === "verified").map((b) => b.createdAt).sort().at(-1) ?? null;
       return S.ServiceStatus.parse({ transcription, coaching, storage: { lastBackupAt: lastBackup } });
     },
-    // Progress from your own sessions (4.16, first part): the 60 most recent are read.
+    // Progress from your own sessions (4.16; one facts call since roadmap 8.6). Pace is the
+    // Estimated pace of the latest transcribed take, or for unfamiliar tasks of the first take
+    // only, before any retry (A-18). Only the highlighted session is read for its text.
     getProgress: async (view) => {
-      const sessions = await command("list_sessions", S.SessionSummary.array(), { filter: null });
-      const details = await Promise.all(
-        sessions.filter((s) => s.status !== "interrupted" && s.attemptCount > 0).slice(0, 60).map((s) => command("get_session", S.SessionDetail, { sessionId: s.id }).catch(() => null)),
-      );
-      const kept = details.filter((d): d is S.SessionDetail => d !== null);
-      // Pace: an Estimated pace (needs ≥15 s of timed speech) from the latest transcribed
-      // take, or for unfamiliar tasks from the first take only, before any retry (A-18).
-      const paces: Record<string, number | null> = {};
-      await Promise.all(kept.map(async (d) => {
-        for (const a of evidenceTakes(view, d.attempts)) {
-          const t = await command("get_attempt_transcript", S.AttemptTranscript, { attemptId: a.id }).catch(() => null);
-          const pace = t?.revision?.measures.paceWpm ?? null;
-          if (pace !== null) { paces[d.id] = Math.round(pace); return; }
-        }
-      }));
-      return S.ProgressSummary.parse(buildProgress(view, kept, paces));
+      const facts = await command("get_practice_facts", S.PracticeFacts);
+      const highlight = highlightSessionId(view, facts);
+      const texts: Record<string, { title: string; takeaway: string | null }> = {};
+      if (highlight) {
+        const d = await command("get_session", S.SessionDetail, { sessionId: highlight }).catch(() => null);
+        if (d) texts[d.id] = { title: d.title, takeaway: d.takeaway ?? null };
+      }
+      return S.ProgressSummary.parse(buildProgressFromFacts(view, facts, texts));
     },
     // Today's plan from your own sessions and phrases plus the curriculum rotation (4.12).
     listPracticeEvents: (from) => command("list_practice_events", S.PracticeEvent.array(), { from: from ?? null }),
     recordSequenceCompleted: (sessionIds, localDate) => command("record_sequence_completed", S.PracticeEvent.nullable(), { sessionIds, localDate }),
     getPracticeFacts: () => command("get_practice_facts", S.PracticeFacts),
+    listPhraseUses: (phraseId) => command("list_phrase_uses", S.PhraseUse.array(), { cardId: phraseId ?? null }),
+    setSelfCheck: async (attemptId, checkId, value) => {
+      await command("set_self_check", z.null(), { attemptId, checkId, value });
+    },
+    listSelfChecks: (attemptId) => command("list_self_checks", S.SelfCheck.array(), { attemptId }),
+    getAudioMeasures: (attemptId) => command("get_audio_measures", S.AudioMeasures, { attemptId }),
+    onLivePace: (listener) => listen("live_pace", ({ payload }) => {
+      const parsed = S.LivePace.safeParse(payload);
+      if (parsed.success) listener(parsed.data);
+    }),
+    saveComparison: (aAttempt, bAttempt, preferred, blind) => command("save_comparison", S.Comparison, { aAttempt, bAttempt, preferred, blind }),
+    listComparisons: (attemptId) => command("list_comparisons", S.Comparison.array(), { attemptId }),
     getTodayPlan: async (length) => {
       const [sessions, phrases, reviews, events, prompts, preferences] = await Promise.all([
         command("list_sessions", S.SessionSummary.array(), { filter: null }),
@@ -289,7 +295,7 @@ export function createNativeClient(): IpcClient {
     storeApiKey: (key) => command("store_api_key", S.CredentialStatus, { key }),
     removeApiKey: () => command("remove_api_key", S.CredentialStatus),
     listInputDevices: () => command("list_input_devices", S.InputDevice.array()),
-    startRecording: ({ context, ...request }) => command("start_recording", S.RecordingStatus, { request, context: context ?? null }),
+    startRecording: ({ context, livePace, ...request }) => command("start_recording", S.RecordingStatus, { request: { ...request, livePace: livePace ?? false }, context: context ?? null }),
     stopRecording: (attemptId) => command("stop_recording", S.SavedRecording, { attemptId }),
     getRecordingStatus: () => command("get_recording_status", S.RecordingStatus.nullable()),
     onRecordingEvent: async (listener) => {

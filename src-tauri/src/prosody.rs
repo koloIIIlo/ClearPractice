@@ -46,6 +46,12 @@ pub struct Contour {
 
 /// YIN estimate for one frame, or `None` when no clear period is found.
 pub fn yin(frame: &[f32], sample_rate: u32) -> Option<f64> {
+    yin_with(frame, sample_rate, YIN_THRESHOLD)
+}
+
+/// YIN with another absolute threshold: the speech-rate voicing check (8.8)
+/// accepts a less clear period than the intonation contour does.
+pub fn yin_with(frame: &[f32], sample_rate: u32, threshold: f64) -> Option<f64> {
     let rate = f64::from(sample_rate);
     let min_lag = (rate / MAX_F0).floor() as usize;
     let max_lag = ((rate / MIN_F0).ceil() as usize).min(frame.len() / 2);
@@ -68,7 +74,7 @@ pub fn yin(frame: &[f32], sample_rate: u32) -> Option<f64> {
         running += sum;
         cmnd[lag] = if running > 0.0 { sum * lag as f64 / running } else { 1.0 };
         match found {
-            None if lag >= min_lag.max(2) && cmnd[lag] < YIN_THRESHOLD => found = Some(lag),
+            None if lag >= min_lag.max(2) && cmnd[lag] < threshold => found = Some(lag),
             Some(best) if cmnd[lag] < cmnd[best] => found = Some(lag),
             Some(_) => break,
             None => {}
@@ -210,9 +216,9 @@ pub fn settings() -> String {
     format!(r#"{{"hopMs":{HOP_MS},"windowMs":{WINDOW_MS},"minF0Hz":{MIN_F0},"maxF0Hz":{MAX_F0},"yinThreshold":{YIN_THRESHOLD},"silenceDb":{SILENCE_DB}}}"#)
 }
 
-/// Runs the contour on a take's prepared 16 kHz audio (original timeline). Frames
-/// are returned at their stored precision, so a fresh result equals a stored one.
-pub fn compute(root: &std::path::Path, asset_id: &str) -> Result<Contour, String> {
+/// A take's prepared 16 kHz mono audio (original timeline) as samples, shared
+/// with the speech-rate estimate (8.8).
+pub fn prepared_samples(root: &std::path::Path, asset_id: &str) -> Result<(Vec<f32>, u32), String> {
     use crate::audio::prepare;
     let audio = prepare::prepare(root, asset_id, &std::sync::atomic::AtomicBool::new(false))?;
     let bytes = std::fs::read(prepare::prepared_path(root, &audio)?).map_err(|_| "The prepared audio is unavailable.")?;
@@ -222,7 +228,14 @@ pub fn compute(root: &std::path::Path, asset_id: &str) -> Result<Contour, String
         .chunks_exact(2)
         .map(|p| f32::from(i16::from_le_bytes([p[0], p[1]])) / 32768.0)
         .collect();
-    let mut contour = contour(&samples, audio.sample_rate);
+    Ok((samples, audio.sample_rate))
+}
+
+/// Runs the contour on a take's prepared 16 kHz audio (original timeline). Frames
+/// are returned at their stored precision, so a fresh result equals a stored one.
+pub fn compute(root: &std::path::Path, asset_id: &str) -> Result<Contour, String> {
+    let (samples, sample_rate) = prepared_samples(root, asset_id)?;
+    let mut contour = contour(&samples, sample_rate);
     let (f0, rms) = decode_frames(&encode_frames(&contour))?;
     contour.f0_hz = f0;
     contour.rms_db = rms;

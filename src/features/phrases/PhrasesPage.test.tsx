@@ -6,6 +6,8 @@ import { expect, it, vi } from "vitest";
 import { IpcContext, type IpcClient } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
 import { PhrasesPage } from "./PhrasesPage";
+import { renderWithApp } from "@/test/render";
+import { phrases, sessions } from "@/lib/ipc/mock-data";
 
 function setup() {
   const base = createMockClient();
@@ -56,3 +58,22 @@ it("adds a phrase that is new and due today, edits its text and removes it after
   expect(client.deletePhrase).toHaveBeenCalledOnce();
   await waitFor(() => expect(screen.queryByText("I put the conclusion first")).not.toBeInTheDocument());
 }, 15_000); // much typing; slow under parallel load
+
+it("shows where a phrase was used (8.2)", async () => {
+  const user = userEvent.setup();
+  // The mock spots the first sample phrase in the first sample session's first take.
+  renderWithApp(<PhrasesPage />, { path: "/phrases" });
+  const used = await screen.findByText("Used in 1 take");
+  const row = used.closest("li")!;
+  expect(within(row).getByText(phrases[0].expression)).toBeInTheDocument();
+  await user.click(used);
+  const session = sessions.find((s) => s.attempts.length > 0)!;
+  expect(within(row).getByRole("link", { name: new RegExp(`${session.title} · .* · take 1`) })).toHaveAttribute("href", `/sessions/${session.id}/attempt/1`);
+  expect(within(row).getByText("Matched by words, so a different meaning can match too.")).toBeInTheDocument();
+  expect(screen.getAllByText(/^Used in/)).toHaveLength(1);
+});
+
+it("opens the review straight away from ?review=1", async () => {
+  renderWithApp(<PhrasesPage />, { path: "/phrases?review=1" });
+  expect(await screen.findByRole("button", { name: "Reveal" })).toBeInTheDocument();
+});

@@ -39,6 +39,19 @@ function transcript(measures: Partial<TranscriptMeasures>): AttemptTranscript {
     },
   };
 }
+const v2: Partial<TranscriptMeasures> = {
+  definitionVersion: 2, pauseKinds: ["mid_clause"], runs: { meanWords: 7.4, longestWords: 14, longestFromSegment: 0, longestToSegment: 0, count: 4 }, runsUnavailableReason: null,
+  watchWords: [{ word: "actually", count: 3, segments: [0] }], hedges: [{ word: "maybe", count: 2, segments: [0] }], wordsUnavailableReason: null,
+  differentPer50: 37.2, vocabularyUnavailableReason: null,
+  opener: { text: "Um, so, uh, indexes help.", segment: 0, hint: "starts_with_hesitation" }, ending: { text: "…so yeah.", segment: 0, hint: "trails_off" },
+};
+const v2Variants: Partial<TranscriptMeasures>[] = [
+  v2,
+  { ...v2, pauses: [{ afterSegment: 0, startMs: 4_000, durationMs: 900 }, { afterSegment: 0, startMs: 6_000, durationMs: 900 }], pauseKinds: ["mid_clause", "mid_clause"] },
+  { ...v2, pauseKinds: ["boundary"], opener: { ...v2.opener!, hint: null }, ending: { ...v2.ending!, hint: null } },
+  { ...v2, runs: null, runsUnavailableReason: "Needs at least 20 words.", watchWords: [], hedges: [], wordsUnavailableReason: "Needs at least 20 words.", differentPer50: null, vocabularyUnavailableReason: "Needs at least 50 words." },
+];
+
 const coaching: CoachingRun = {
   id: "run-1", attemptId: "take-1", revisionId: "rev-1", provider: "OpenAI", model: "gpt-6-luna", payloadSha256: "a".repeat(64), sentText: "…", transcriptText: "…", deliveryImpressions: true,
   feedback: { summary: "Your example made the point concrete.", oneImprovement: "Say the main point first.", nextAttempt: "Open with the answer.", corrections: [], phrases: [],
@@ -64,6 +77,8 @@ it("filler review summaries name candidates and pauses, never a score", () => {
     { fillers: [filler("um", "dismissed")], paceWpm: null, paceUnavailableReason: "Needs at least 15 seconds of speech." },
     { wordCount: 9 },
     { wordCount: 0 },
+    // Measures v2 (8.1): runs, pause location, words you use often, hedges, vocabulary, opener and ending.
+    ...v2Variants,
   ];
   for (const measures of variants) {
     const summary = summarizeTake(transcript(measures));
@@ -87,6 +102,15 @@ it("take summaries, intonation and imitation views show measures and AI impressi
   await screen.findByRole("group", { name: "Take summary" });
   expect(offending(document.body.textContent ?? "")).toEqual([]);
   summary.unmount();
+  // The v2 summary (8.3) with Flow, Words and the self-check, from measures alone.
+  for (const measures of v2Variants) {
+    const v2Client: IpcClient = { ...client, listTakeCoaching: async () => [], getAttemptTranscript: async () => transcript(measures),
+      getAudioMeasures: async (attemptId) => ({ attemptId, method: "nuclei-v1", syllables: 200, spanMs: 50_000, phonationMs: 42_000, rateSps: 4, articulationSps: 4.8, unavailableReason: null }) };
+    const view = shell(v2Client, <TakeSummary attemptId="take-1" />);
+    await screen.findByRole("region", { name: "Quick self-check" });
+    expect(offending(document.body.textContent ?? ""), JSON.stringify(measures)).toEqual([]);
+    view.unmount();
+  }
 
   const track = shell(client, <IntonationTrack attemptId="take-1" />);
   await user.click(screen.getByRole("button", { name: "Show intonation" }));
@@ -114,7 +138,7 @@ it("Progress shows evidence in every view without combining it into a score", as
 
 /** The screens that show filler, prosody and imitation values. */
 const screens = import.meta.glob(
-  ["/src/features/review/*.{ts,tsx}", "/src/features/progress/*.{ts,tsx}", "/src/features/today/*.{ts,tsx}", "/src/features/practice/ImitationOverlay.tsx", "/src/features/practice/CompletionPage.tsx", "!/src/**/*.test.{ts,tsx}"],
+  ["/src/features/review/*.{ts,tsx}", "/src/features/progress/*.{ts,tsx}", "/src/features/today/*.{ts,tsx}", "/src/features/insights/*.{ts,tsx}", "/src/lib/insights/*.ts", "/src/features/practice/ImitationOverlay.tsx", "/src/features/practice/CompletionPage.tsx", "!/src/**/*.test.{ts,tsx}"],
   { query: "?raw", import: "default", eager: true },
 ) as Record<string, string>;
 

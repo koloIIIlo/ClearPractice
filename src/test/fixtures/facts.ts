@@ -19,7 +19,7 @@ export interface FactsBuilder {
 
 export function factsBuilder(today = "2026-10-12"): FactsBuilder {
   const facts: PracticeFacts = {
-    factsVersion: 1, generatedAt: `${today}T12:00:00.000Z`, today, transcriptionAvailable: true,
+    factsVersion: 2, generatedAt: `${today}T12:00:00.000Z`, today, transcriptionAvailable: true,
     sessions: [], takes: [], transferReviews: [], phrases: [], phraseReviews: [], progression: [],
   };
   let offset = 0;
@@ -46,7 +46,8 @@ export function factsBuilder(today = "2026-10-12"): FactsBuilder {
         id: `take-${n}`, sessionId: session.id, ordinal, localDate: session.localDate, createdAt: at(), durationMs: 60_000,
         stepKey: null, transcribed: false, revisionId: null, words: null, paceWpm: null, speechSpanMs: null,
         fillerCandidates: null, fillersConfirmed: null, fillersReviewed: false, pausesOverThreshold: null,
-        prosodyViewed: false, hasAiFeedback: false, ...p,
+        prosodyViewed: false, hasAiFeedback: false, meanRun: null, longestRun: null, midClausePauses: null, boundaryPauses: null,
+        watchPer100: null, hedgesPer100: null, differentPer50: null, phraseIds: [], checks: {}, pitchRangeSt: null, rateSps: null, ...p,
       };
       facts.takes.push(take);
       session.takeCount += 1;

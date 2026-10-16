@@ -18,6 +18,7 @@ const LAZY_PAGES: [string, string][] = [
   ["/settings/practice", "Settings"],
   ["/welcome", "Welcome to ClearPractice"],
   ["/practice/done", "Practice complete"],
+  ["/compare?a=s-01-a1&b=s-02-a1", "Compare takes"],
 ];
 
 it("loads each lazy page on first visit and shows its heading", async () => {

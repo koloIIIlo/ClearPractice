@@ -3,3 +3,4 @@
 //! function inside `with_storage`, and turn failures into plain sentences. The
 //! older commands remain in `lib.rs`.
 pub mod engagement;
+pub mod insights;

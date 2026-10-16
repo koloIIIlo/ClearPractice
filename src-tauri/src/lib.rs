@@ -2185,6 +2185,7 @@ async fn start_mic_test(
             idempotency_key: id.clone(),
             device_id,
             title: "Microphone test".into(),
+            live_pace: false,
         })?;
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(mic_test::TEST_MS));
@@ -2543,6 +2544,18 @@ pub fn run() {
                     if status.phase == "saved" {
                         return;
                     }
+                    // Live pace (8.8) has its own small payload.
+                    if event == "live_pace" {
+                        if let Some(pace) = &status.live_pace {
+                            let _ = handle.emit(event, serde_json::json!({
+                                "attemptId": status.attempt_id,
+                                "syllablesPerSecond": pace.syllables_per_second,
+                                "voicedMs": pace.voiced_ms,
+                                "windowMs": pace.window_ms,
+                            }));
+                        }
+                        return;
+                    }
                     let _ = handle.emit(event, status);
                 }),
             )));
@@ -2565,6 +2578,12 @@ pub fn run() {
             commands::engagement::list_practice_events,
             commands::engagement::record_sequence_completed,
             commands::engagement::get_practice_facts,
+            commands::insights::list_phrase_uses,
+            commands::insights::set_self_check,
+            commands::insights::list_self_checks,
+            commands::insights::get_audio_measures,
+            commands::insights::save_comparison,
+            commands::insights::list_comparisons,
             audio_devices::list_input_devices,
             list_sessions,
             get_session,

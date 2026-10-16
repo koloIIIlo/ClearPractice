@@ -123,4 +123,41 @@ describe("WaveformPlayer", () => {
     unmount();
     expect(link.getPositionMs()).toBeNull();
   });
+
+  it("seeks when a marker is chosen from the list", async () => {
+    const user = userEvent.setup();
+    const markers = [
+      { id: "pause-0", kind: "pause" as const, startMs: 4_000, endMs: 5_000, label: "Pause 1.0 s at 0:04", approximate: false },
+      { id: "filler-0", kind: "filler" as const, startMs: 12_000, label: "Hesitation candidate near 0:12", approximate: true },
+    ];
+    render(<WaveformPlayer url="asset://take" peaks={peaks} label="Take 1" markers={markers} />);
+    expect(screen.getByTestId("wave-markers").children).toHaveLength(2);
+    await user.click(screen.getByText("Markers (2) · [ and ] jump between them"));
+    fake.ws.setTime.mockClear();
+    await user.click(screen.getByRole("button", { name: "Hesitation candidate near 0:12" }));
+    expect(fake.ws.setTime).toHaveBeenCalledWith(12);
+    // Hiding a kind removes it from the waveform and the list.
+    await user.click(screen.getByRole("button", { name: /Hesitations 1/ }));
+    expect(screen.getByTestId("wave-markers").children).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Hesitation candidate near 0:12" })).not.toBeInTheDocument();
+  });
+
+  it("jumps with [ and ]", async () => {
+    const user = userEvent.setup();
+    const markers = [
+      { id: "pause-0", kind: "pause" as const, startMs: 4_000, endMs: 5_000, label: "Pause 1.0 s at 0:04", approximate: false },
+      { id: "filler-0", kind: "filler" as const, startMs: 12_000, label: "Hesitation candidate near 0:12", approximate: true },
+    ];
+    render(<WaveformPlayer url="asset://take" peaks={peaks} label="Take 1" markers={markers} />);
+    screen.getByRole("button", { name: "Play Take 1" }).focus();
+    fake.ws.setTime.mockClear();
+    await user.keyboard("]");
+    expect(fake.ws.setTime).toHaveBeenLastCalledWith(4);
+    act(() => fake.ws.emit("timeupdate", 4));
+    await user.keyboard("]");
+    expect(fake.ws.setTime).toHaveBeenLastCalledWith(12);
+    act(() => fake.ws.emit("timeupdate", 12));
+    await user.keyboard("[[");
+    expect(fake.ws.setTime).toHaveBeenLastCalledWith(4);
+  });
 });

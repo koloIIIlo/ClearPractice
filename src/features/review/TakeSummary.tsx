@@ -1,17 +1,36 @@
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Lightbulb, ThumbsUp } from "lucide-react";
+import { Lightbulb, Play, ThumbsUp } from "lucide-react";
 import { EvidenceLabel } from "@/components/evidence";
+import { Button } from "@/components/ui/button";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
-import { usePreferences } from "@/lib/ipc/queries";
+import { useAudioMeasures, usePhrases, usePhraseUses, usePreferences } from "@/lib/ipc/queries";
 import { useTranscriptionQueue } from "@/features/transcription/queue";
-import type { AttemptTranscript, CoachingRun, EvidenceSource } from "@/lib/ipc/schemas";
+import { SelfChecks } from "@/features/insights/SelfChecks";
+import { countWatchWords } from "@/lib/insights/words";
+import type { AttemptTranscript, CoachingRun, EvidenceSource, TranscriptMeasures, WordCount } from "@/lib/ipc/schemas";
+import type { PlayerLink } from "./player-link";
 
 /** Below this many words the measures say too little to summarise. */
 const MIN_WORDS = 15;
 /** Fewer filler candidates than this don't stand out in a take. */
 const FILLERS_TO_MENTION = 3;
+/** A run of at least this many words between pauses is worth mentioning (8.3). */
+const LONG_RUN_WORDS = 12;
+/** Pauses inside a clause start to matter from this many on. */
+const MID_CLAUSE_TO_MENTION = 2;
+/** A word you use often stands out from this many times in one take. */
+const WATCH_WORD_TO_MENTION = 3;
+
+/** What the summary knows besides the transcript: saved phrases you used and your words to watch (8.2, 8.11). */
+export type SummaryContext = { phrasesUsed?: string[]; watchWords?: WordCount[] };
+
+const firstWords = (text: string, n = 4) => {
+  const words = text.trim().split(/\s+/);
+  return words.length > n ? `${words.slice(0, n).join(" ")}…` : words.join(" ");
+};
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export type SummaryPoint = { text: string; detail?: string; source: EvidenceSource };
 export type TakeSummaryResult =
@@ -24,7 +43,7 @@ export type TakeSummaryResult =
  * what worked). Otherwise only facts from the transcript's measures are used,
  * labelled Estimated; with nothing to go on, the result says why instead.
  */
-export function summarizeTake(transcript: AttemptTranscript | null | undefined, runs: CoachingRun[] = []): TakeSummaryResult {
+export function summarizeTake(transcript: AttemptTranscript | null | undefined, runs: CoachingRun[] = [], context: SummaryContext = {}): TakeSummaryResult {
   const revision = transcript?.revision;
   if (!revision) return { kind: "none", reason: "What went well and one thing to try appear here once this take has a transcript. Nothing is guessed from the audio alone." };
   const m = revision.measures;
@@ -45,16 +64,152 @@ export function summarizeTake(transcript: AttemptTranscript | null | undefined, 
     return { kind: "none", reason: `This take has ${m.wordCount} ${m.wordCount === 1 ? "word" : "words"}, too few to summarise. A few full sentences give the measures something to work with.` };
 
   const fillers = m.fillers.filter((f) => f.decision !== "dismissed");
-  const wentWell: SummaryPoint =
-    fillers.length === 0
-      ? { text: `No filler candidates in ${m.wordCount} words.`, source: "estimated" }
-      : { text: `You finished the take: ${m.wordCount} words${m.speechSpanMs != null ? ` in ${formatClock(m.speechSpanMs)}` : ""}.`, source: "estimated" };
+  const runsQuote = m.runs && revision.segments[m.runs.longestFromSegment] ? `, from “${firstWords(revision.segments[m.runs.longestFromSegment].text)}”` : "";
+  const kinds = m.pausesUnavailableReason ? [] : (m.pauseKinds ?? []);
+  const midClause = kinds.filter((k) => k === "mid_clause").length;
+  // The first that applies (8.3); a personal record leads once the game layer has them (M9).
+  const wentWell: SummaryPoint = context.phrasesUsed?.length
+    ? { text: `You used a saved phrase: “${context.phrasesUsed[0]}”.`, source: "estimated" }
+    : m.runs && m.runs.longestWords >= LONG_RUN_WORDS
+      ? { text: `Your longest run: ${m.runs.longestWords} words between pauses${runsQuote}.`, source: "estimated" }
+      : kinds.length > 0 && midClause === 0
+        ? { text: `Every pause fell between thoughts (${plural(kinds.length, "pause", "pauses")}).`, source: "estimated" }
+        : fillers.length === 0
+          ? { text: `No filler candidates in ${m.wordCount} words.`, source: "estimated" }
+          : { text: `You finished the take: ${m.wordCount} words${m.speechSpanMs != null ? ` in ${formatClock(m.speechSpanMs)}` : ""}.`, source: "estimated" };
   const quoted = [...new Set(fillers.map((f) => f.word))].slice(0, 3).map((w) => `“${w}”`).join(", ");
+  const watched = (context.watchWords ?? m.watchWords ?? []).find((w) => w.count >= WATCH_WORD_TO_MENTION);
   const tryNext: SummaryPoint | null =
-    fillers.length >= FILLERS_TO_MENTION
-      ? { text: "Pause between ideas instead of filling the gap", detail: `${fillers.length} filler candidates (${quoted}). A short silent pause can take their place.`, source: "estimated" }
-      : null;
+    midClause >= MID_CLAUSE_TO_MENTION
+      ? { text: "Pause at the end of a thought, not in the middle", detail: `${midClause} pauses fell inside a clause.`, source: "estimated" }
+      : m.opener?.hint === "starts_with_hesitation"
+        ? { text: "Try opening with your point", detail: `Your opening: “${m.opener.text}”`, source: "estimated" }
+        : m.ending?.hint === "trails_off"
+          ? { text: "Try finishing with one sentence that sums up", detail: `Your ending: “${m.ending.text}”`, source: "estimated" }
+          : watched
+            ? { text: `Notice how often you say “${watched.word}”`, detail: `${watched.count} times in this take.${watched.word === "like" ? " This counts every “like”, including ordinary uses." : ""}`, source: "estimated" }
+            : fillers.length >= FILLERS_TO_MENTION
+              ? { text: "Pause between ideas instead of filling the gap", detail: `${fillers.length} filler candidates (${quoted}). A short silent pause can take their place.`, source: "estimated" }
+              : null;
   return { kind: "ready", wentWell, tryNext, fromAi: false, stale: false };
+}
+
+function Line({ children }: { children: React.ReactNode }) {
+  return <p className="flex flex-wrap gap-x-1.5">{children}</p>;
+}
+const Dot = () => <span aria-hidden className="text-muted-foreground">·</span>;
+const Unavailable = ({ reason }: { reason: string | null | undefined }) => <span className="text-muted-foreground">unavailable ({reason ?? "not measured"})</span>;
+
+/** Folded section with its label; open on the latest take, folded on the others. */
+function Fold({ title, open, children }: { title: string; open: boolean; children: React.ReactNode }) {
+  return (
+    <details open={open} className="group border-t pt-2">
+      <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-2 rounded-md font-medium focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+        <span>
+          <span aria-hidden className="mr-1.5 inline-block text-muted-foreground transition-transform group-open:rotate-90">›</span>
+          {title}
+        </span>
+        <EvidenceLabel source="estimated" />
+      </summary>
+      <div className="space-y-1 pb-1 pl-4">{children}</div>
+    </details>
+  );
+}
+
+/** Runs between pauses, where pauses fell, hesitation candidates, pace and speech rate (8.1, 8.8). */
+export function FlowSection({ measures: m, rate, open = true }: { measures: TranscriptMeasures; rate?: { value: number | null; reason: string | null } | null; open?: boolean }) {
+  const kinds = m.pauseKinds ?? [];
+  const reviewed = m.fillers.length > 0 && m.fillers.every((f) => f.decision !== null);
+  return (
+    <Fold title="Flow" open={open}>
+      {m.runs !== undefined && (
+        <Line>
+          {m.runs ? (
+            <>
+              <span>Mean run {m.runs.meanWords} words between pauses</span><Dot /><span>Longest {m.runs.longestWords}</span>
+            </>
+          ) : (
+            <span>Runs between pauses <Unavailable reason={m.runsUnavailableReason} /></span>
+          )}
+        </Line>
+      )}
+      <Line>
+        {m.pausesUnavailableReason ? (
+          <span>Pauses <Unavailable reason={m.pausesUnavailableReason} /></span>
+        ) : m.pauseKinds ? (
+          <span>
+            Pauses: {kinds.filter((k) => k === "boundary").length} between clauses, {kinds.filter((k) => k === "mid_clause").length} inside one
+          </span>
+        ) : (
+          <span>{plural(m.pauses.length, "pause", "pauses")} over {m.pauseThresholdMs / 1000} s</span>
+        )}
+      </Line>
+      <Line>
+        <span>Hesitation candidates {m.fillers.length}{reviewed ? ", all reviewed" : ""}</span>
+        <Dot />
+        {m.paceWpm != null ? <span>Pace about {Math.round(m.paceWpm)} words a minute</span> : <span>Pace <Unavailable reason={m.paceUnavailableReason} /></span>}
+      </Line>
+      {rate && (
+        <Line>
+          {rate.value != null ? <span>Speech rate (audio) about {rate.value.toFixed(1)} syllables a second</span> : <span>Speech rate (audio) <Unavailable reason={rate.reason} /></span>}
+        </Line>
+      )}
+    </Fold>
+  );
+}
+
+/** Words you use often, hedges, vocabulary range and saved phrases you used (8.1, 8.2, 8.11). */
+export function WordsSection({ measures: m, watchWords, countsLike, phrasesUsed, onListen, open = true }: {
+  measures: TranscriptMeasures;
+  watchWords: WordCount[] | undefined;
+  countsLike: boolean;
+  phrasesUsed: { expression: string; phraseId: string; startMs: number | null }[];
+  onListen?: (ms: number) => void;
+  open?: boolean;
+}) {
+  if (m.watchWords === undefined && m.differentPer50 === undefined && phrasesUsed.length === 0) return null;
+  const hedges = (m.hedges ?? []).reduce((n, h) => n + h.count, 0);
+  return (
+    <Fold title="Words" open={open}>
+      {m.wordsUnavailableReason ? (
+        <Line><span>Words you use often and hedges <Unavailable reason={m.wordsUnavailableReason} /></span></Line>
+      ) : (
+        <>
+          <Line>
+            <span>Words you used often:</span>
+            {watchWords && watchWords.length > 0 ? (
+              watchWords.map((w, i) => (
+                <span key={w.word}>
+                  {i > 0 && <Dot />} {w.word} {w.count}
+                </span>
+              ))
+            ) : (
+              <span className="text-muted-foreground">none of the words you watch</span>
+            )}
+          </Line>
+          {countsLike && <p className="text-meta text-muted-foreground">Counts every “like”, including ordinary uses.</p>}
+          <Line>
+            <span title={(m.hedges ?? []).map((h) => `${h.word} ${h.count}`).join(", ") || undefined}>Hedges: {hedges}</span>
+            <Dot />
+            {m.differentPer50 != null ? <span>Different words: {Math.round(m.differentPer50)} in every 50</span> : <span>Different words <Unavailable reason={m.vocabularyUnavailableReason} /></span>}
+          </Line>
+        </>
+      )}
+      {phrasesUsed.map((p) => (
+        <Line key={p.phraseId}>
+          <span>
+            Saved phrase you used: <Link className="text-primary hover:underline" to={`/phrases?focus=${encodeURIComponent(p.phraseId)}`}>“{p.expression}”</Link>
+          </span>
+          {onListen && p.startMs != null && (
+            <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => onListen(p.startMs!)}>
+              <Play aria-hidden /> Listen
+            </Button>
+          )}
+        </Line>
+      ))}
+      {phrasesUsed.length > 0 && <p className="text-meta text-muted-foreground">Matched by words, so a different meaning can match too.</p>}
+    </Fold>
+  );
 }
 
 /**
@@ -62,7 +217,15 @@ export function summarizeTake(transcript: AttemptTranscript | null | undefined, 
  * Studio. It shares the transcript and AI-feedback queries with the views
  * around it, so it fills in as soon as transcription finishes.
  */
-export function TakeSummary({ attemptId, reviewHref }: { attemptId: string; reviewHref?: string }) {
+export function TakeSummary({ attemptId, reviewHref, link, durationMs, latest = true }: {
+  attemptId: string;
+  reviewHref?: string;
+  /** The take's player, so "Listen" can jump to a saved phrase. */
+  link?: PlayerLink;
+  durationMs?: number | null;
+  /** Flow and Words are open on the latest take and folded on the others (8.3). */
+  latest?: boolean;
+}) {
   const ipc = useIpc();
   const { preferences } = usePreferences();
   const native = ipc.recordingMode === "native";
@@ -70,6 +233,18 @@ export function TakeSummary({ attemptId, reviewHref }: { attemptId: string; revi
   const coaching = preferences.coachingMode !== "off";
   const transcript = useQuery({ queryKey: ["attempt-transcript", attemptId], queryFn: () => ipc.getAttemptTranscript(attemptId), enabled: native });
   const runs = useQuery({ queryKey: ["take-coaching", attemptId], queryFn: () => ipc.listTakeCoaching(attemptId), enabled: native && coaching });
+  const revision = transcript.data?.revision ?? null;
+  const uses = usePhraseUses();
+  const phrases = usePhrases();
+  const audio = useAudioMeasures(attemptId, native && !!revision);
+  const phrasesUsed = (uses.data ?? [])
+    .filter((u) => u.attemptId === attemptId)
+    .flatMap((u) => {
+      const card = phrases.data?.find((p) => p.id === u.phraseId);
+      return card ? [{ phraseId: u.phraseId, expression: card.expression, startMs: revision?.segments[u.segment]?.startMs ?? null }] : [];
+    });
+  // Your own words to watch are counted here, with the default list (8.11).
+  const watchWords = revision && preferences.watchWords.length > 0 ? countWatchWords(revision.segments.length ? revision.segments.map((s) => s.text) : revision.text, preferences.watchWords) : revision?.measures.watchWords;
 
   let result: TakeSummaryResult | null = null;
   if (!native)
@@ -77,7 +252,7 @@ export function TakeSummary({ attemptId, reviewHref }: { attemptId: string; revi
   else if (transcript.error) result = { kind: "none", reason: "The transcript couldn't be loaded, so there's no summary." };
   else if (transcript.data?.job?.state === "running" && !transcript.data.revision) result = { kind: "none", reason: "The summary appears here when the transcript is ready." };
   // Wait for saved AI feedback too, so the summary doesn't switch source once it arrives.
-  else if (transcript.data && !(coaching && runs.isPending)) result = summarizeTake(transcript.data, runs.data ?? []);
+  else if (transcript.data && !(coaching && runs.isPending)) result = summarizeTake(transcript.data, runs.data ?? [], { phrasesUsed: phrasesUsed.map((p) => p.expression), watchWords });
 
   if (result?.kind !== "ready") {
     // Without a transcript, say plainly what happens next (user request 2026-10-10).
@@ -146,6 +321,26 @@ export function TakeSummary({ attemptId, reviewHref }: { attemptId: string; revi
           </p>
         )}
       </div>
+      {revision && (
+        <div className="mt-3 space-y-2">
+          <FlowSection
+            measures={revision.measures}
+            open={latest}
+            rate={audio.data ? { value: audio.data.rateSps, reason: audio.data.unavailableReason } : audio.error ? { value: null, reason: "the audio couldn't be read" } : null}
+          />
+          <WordsSection
+            measures={revision.measures}
+            open={latest}
+            watchWords={watchWords}
+            countsLike={preferences.watchWords.includes("like")}
+            phrasesUsed={phrasesUsed}
+            onListen={link ? (ms) => link.seek(ms, true) : undefined}
+          />
+          <div className="border-t pt-2">
+            <SelfChecks attemptId={attemptId} opener={revision.measures.opener ?? null} ending={revision.measures.ending ?? null} durationMs={durationMs ?? revision.measures.speechSpanMs} />
+          </div>
+        </div>
+      )}
     </section>
   );
 }

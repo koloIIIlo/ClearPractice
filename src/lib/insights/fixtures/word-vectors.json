@@ -1,0 +1,40 @@
+{
+  "about": "Shared vectors for words you use often and hedges (roadmap 8.1). Rust (analysis.rs) and TypeScript (src/lib/insights/words.ts) must both produce these counts. `extra` cases are TypeScript only (your own words, 8.11).",
+  "cases": [
+    {
+      "name": "multi-word items are whole-token sequences",
+      "text": "Basically, I mean, it's actually fine. You know? I meant it, honestly.",
+      "extra": [],
+      "watchWords": { "basically": 1, "i mean": 1, "actually": 1, "you know": 1, "honestly": 1 },
+      "hedges": {}
+    },
+    {
+      "name": "hedges with apostrophes and the longest item first",
+      "text": "I'm not sure. Maybe I think it's kind of a little bit hard, sort of, a bit.",
+      "extra": [],
+      "watchWords": {},
+      "hedges": { "i'm not sure": 1, "maybe": 1, "i think": 1, "kind of": 1, "a little bit": 1, "sort of": 1, "a bit": 1 }
+    },
+    {
+      "name": "capitals, curly apostrophes and an ellipsis",
+      "text": "I’m NOT sure, HONESTLY… And so on, and stuff.",
+      "extra": [],
+      "watchWords": { "honestly": 1, "and so on": 1, "and stuff": 1 },
+      "hedges": { "i'm not sure": 1 }
+    },
+    {
+      "name": "punctuation between the words of an item",
+      "text": "So yeah, or something like that. So, yeah. Probably, probably.",
+      "extra": [],
+      "watchWords": { "so yeah": 2, "or something": 1 },
+      "hedges": { "probably": 2 }
+    },
+    {
+      "name": "your own words are counted with the defaults",
+      "text": "Like, it was, like, right there, right? Actually yes.",
+      "extra": ["like", "right"],
+      "watchWords": { "like": 2, "right": 2, "actually": 1 },
+      "hedges": {}
+    }
+  ]
+}

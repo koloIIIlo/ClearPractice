@@ -8,9 +8,10 @@
 import { expect, it, vi } from "vitest";
 import { PROMPTS } from "@/content/prompts";
 import { sessions } from "@/lib/ipc/mock-data";
-import type { AttemptTranscript, SessionDetail } from "@/lib/ipc/schemas";
+import type { SessionDetail } from "@/lib/ipc/schemas";
 import { schedule, STAGES, type ProgressionEvent } from "@/lib/scheduler";
 import { buildProgress, evidenceTakes } from "@/lib/today-plan";
+import { factsBuilder } from "@/test/fixtures/facts";
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke, convertFileSrc: (s: string) => s, isTauri: () => true }));
@@ -21,15 +22,6 @@ const attempt = (id: string, ordinal: number) => ({ ...base.attempts[0], id, ord
 const session = (id: string, familiarity: "familiar" | "unfamiliar", takes: number, extra: Partial<SessionDetail> = {}): SessionDetail => ({
   ...base, id, status: "completed", attemptCount: takes, localDate: "2026-10-12", startedAt: `2026-10-12T0${takes}:00:00.000Z`,
   conditions: { ...base.conditions!, familiarity }, attempts: Array.from({ length: takes }, (_, i) => attempt(`${id}-t${i + 1}`, i + 1)), ...extra,
-});
-const transcript = (attemptId: string, paceWpm: number | null): AttemptTranscript => ({
-  attemptId, correction: null, job: null,
-  revision: {
-    id: `${attemptId}--1`, source: "local", provider: "whisper.cpp", modelId: "base", backend: "cpu", prompt: null, language: "en", text: "…", workerElapsedMs: 1,
-    createdAt: "2026-10-12T08:00:00.000Z", segments: [],
-    measures: { definitionVersion: 1, source: "Estimated", wordCount: 60, speechSpanMs: 30_000, paceWpm, paceUnavailableReason: paceWpm === null ? "Needs at least 15 seconds of speech." : null,
-      pauseThresholdMs: 700, pauses: [], pausesUnavailableReason: null, fillers: [], repeatedWords: [], untimedSegments: 0, voice: null },
-  },
 });
 
 it("keeps an unfamiliar task's first take as its evidence; a retry is rehearsal and never stands in for it", () => {
@@ -48,10 +40,16 @@ it("Progress reads each view from its own sessions, with an unfamiliar first tak
   const paces: Record<string, number | null> = {
     "unfamiliar-1-t1": 100, "unfamiliar-1-t2": 140, "unfamiliar-2-t1": null, "unfamiliar-2-t2": 150, "rehearsed-1-t1": 110, "rehearsed-1-t2": 150,
   };
+  // Progress reads one facts snapshot (8.6): the same sessions, takes and paces.
+  let b = factsBuilder("2026-10-12");
+  for (const d of details) {
+    b = b.session({ id: d.id, familiarity: d.conditions!.familiarity, startedAt: d.startedAt });
+    for (const a of d.attempts) b = b.take({ id: a.id, transcribed: true, paceWpm: paces[a.id] });
+  }
+  const facts = b.build();
   native.invoke.mockImplementation(async (command: string, args: Record<string, string>) => {
-    if (command === "list_sessions") return details.map(({ attempts: _a, ...summary }) => summary);
+    if (command === "get_practice_facts") return facts;
     if (command === "get_session") return details.find((d) => d.id === args.sessionId);
-    if (command === "get_attempt_transcript") return transcript(args.attemptId, paces[args.attemptId]);
     throw new Error(`unexpected ${command}`);
   });
   const client = createNativeClient();

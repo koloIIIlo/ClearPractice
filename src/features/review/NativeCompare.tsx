@@ -1,17 +1,18 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
 import { ListVideo } from "lucide-react";
 import { EvidenceLabel } from "@/components/evidence";
 import { PageHeader, Panel } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useIpc } from "@/lib/ipc";
 import type { AttemptTranscript, SessionDetail } from "@/lib/ipc/schemas";
 import { formatClock } from "@/lib/format";
 import { NativeTake } from "@/features/sessions/NativeSession";
+import { AbListen } from "@/features/insights/AbListen";
+import { EarlierAnswers } from "@/features/insights/CrossComparePage";
 import { createPlayerLink, type PlayerLink } from "./player-link";
 
 type Row = { label: string; source: "measured" | "estimated"; value: (t: Take) => string };
@@ -42,24 +43,22 @@ const ROWS: Row[] = [
 /**
  * Attempt comparison in the desktop app (4.14): two takes side by side, each
  * with its own player and position (starting one pauses the other), an
- * alternating "Play A, then B", the measures next to each other, and which
- * take felt clearer to you, saved as your own judgement.
+ * alternating "Play A, then B", A/B listening at the same point (blind if you
+ * like, 8.5) with which take felt clearer to you saved as your own judgement,
+ * and the measures next to each other.
  */
 export function NativeCompare({ session }: { session: SessionDetail }) {
   const ipc = useIpc();
-  const qc = useQueryClient();
   const takes = session.attempts.filter((a) => !a.audioUnavailableReason);
   const [aId, setA] = useState(takes[0]?.id ?? "");
   const [bId, setB] = useState(takes.at(-1)?.id ?? "");
   const [links] = useState(() => ({ a: createPlayerLink(), b: createPlayerLink() }));
   const [inTurn, setInTurn] = useState(false);
+  // While you listen blind (8.5), the take columns and measures would give it away.
+  const [hiding, setHiding] = useState(false);
   const pair = [takes.find((t) => t.id === aId), takes.find((t) => t.id === bId)];
   const transcripts = useQueries({
     queries: pair.map((t) => ({ queryKey: ["attempt-transcript", t?.id ?? ""], queryFn: () => ipc.getAttemptTranscript(t!.id), enabled: !!t })),
-  });
-  const preference = useMutation({
-    mutationFn: (value: string | null) => ipc.setPreferredTake(session.id, value),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["session", session.id] }),
   });
   // Alternating playback: when A finishes, B starts from its beginning.
   useEffect(() => {
@@ -78,7 +77,6 @@ export function NativeCompare({ session }: { session: SessionDetail }) {
   }
   const [a, b] = pair;
   const rows: Take[] = pair.map((t, i) => ({ ordinal: t?.ordinal ?? 0, durationMs: t?.durationMs ?? 0, transcript: transcripts[i].data }));
-  const preferred = session.preferredTake ?? "";
   const option = (id: string) => takes.map((t) => <option key={t.id} value={t.id} disabled={t.id === id}>Take {t.ordinal} · {formatClock(t.durationMs)}</option>);
 
   return (
@@ -93,12 +91,29 @@ export function NativeCompare({ session }: { session: SessionDetail }) {
           <Label htmlFor="compare-b">Second take</Label>
           <NativeSelect id="compare-b" value={bId} onChange={(e) => setB(e.target.value)}>{option(aId)}</NativeSelect>
         </div>
-        <Button variant="outline" onClick={() => { setInTurn(true); links.a.seek(0, true); }}>
-          <ListVideo aria-hidden /> Play take {a?.ordinal}, then take {b?.ordinal}
-        </Button>
+        {!hiding && (
+          <Button variant="outline" onClick={() => { setInTurn(true); links.a.seek(0, true); }}>
+            <ListVideo aria-hidden /> Play take {a?.ordinal}, then take {b?.ordinal}
+          </Button>
+        )}
         <Button variant="ghost" asChild><Link to={`/sessions/${session.id}`}>Back to the session</Link></Button>
       </div>
 
+      {a && b && (
+        <AbListen
+          key={`${a.id}-${b.id}`}
+          a={{ attemptId: a.id, sessionId: session.id, label: `Take ${a.ordinal} · ${formatClock(a.durationMs)}` }}
+          b={{ attemptId: b.id, sessionId: session.id, label: `Take ${b.ordinal} · ${formatClock(b.durationMs)}` }}
+          sessionTitle={session.title}
+          onBlindChange={setHiding}
+        />
+      )}
+      <EarlierAnswers session={session} attemptId={b?.id ?? a?.id ?? ""} />
+
+      {hiding ? (
+        <p className="text-meta text-muted-foreground">The takes and their measures are hidden while you listen blind. Reveal to see them.</p>
+      ) : (
+      <>
       <div className="grid gap-4 md:grid-cols-2">
         {pair.map((t, i) => t && (
           <TakeColumn key={`${i}-${t.id}`} title={`Take ${t.ordinal}`} attemptId={t.id} link={i === 0 ? links.a : links.b} transcript={transcripts[i].data} />
@@ -130,31 +145,8 @@ export function NativeCompare({ session }: { session: SessionDetail }) {
         </table>
       </Panel>
 
-      <Panel>
-        <fieldset>
-          <legend className="mb-3 font-semibold">Which take felt clearer to you?</legend>
-          <RadioGroup value={preferred} onValueChange={(v) => preference.mutate(v)} className="flex flex-wrap gap-x-5 gap-y-3" disabled={preference.isPending}>
-            {[a, b].map((t) => t && (
-              <Label key={t.id} htmlFor={`pref-${t.id}`} className="flex items-center gap-2 font-normal">
-                <RadioGroupItem id={`pref-${t.id}`} value={t.id} /> Take {t.ordinal}
-              </Label>
-            ))}
-            <Label htmlFor="pref-same" className="flex items-center gap-2 font-normal">
-              <RadioGroupItem id="pref-same" value="same" /> About the same
-            </Label>
-          </RadioGroup>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-meta text-muted-foreground">
-            <EvidenceLabel source="note" />
-            <span>
-              {preferred && preferred !== "same" && ![a?.id, b?.id].includes(preferred)
-                ? `Saved earlier: take ${takes.find((t) => t.id === preferred)?.ordinal ?? "?"}.`
-                : "Saved with the session as your own judgement, separate from any measures."}
-            </span>
-            {preferred && <Button variant="ghost" size="sm" onClick={() => preference.mutate(null)}>Clear</Button>}
-          </div>
-          {preference.error && <p role="alert" className="mt-2 text-meta text-destructive">{preference.error.message}</p>}
-        </fieldset>
-      </Panel>
+      </>
+      )}
     </div>
   );
 }

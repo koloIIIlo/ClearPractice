@@ -150,7 +150,11 @@ impl DatabaseOwner {
         // Effort points (roadmap 7.4), capped per day.
         super::engagement::award(&tx, &crate::engagement::NewEvent { kind: crate::engagement::EventKind::PhraseSaved, ref_id: &id, local_date: &date, session_id: None, attempt_id: None, created_at_ms: now as i64, backfilled: false })?;
         tx.commit().map_err(db_error)?;
-        self.phrase(&conn, &id)
+        let card = self.phrase(&conn, &id)?;
+        drop(conn);
+        // Earlier takes where you already used it (8.2).
+        self.rescan_phrase(&id)?;
+        Ok(card)
     }
 
     /// Changes a card's text; its schedule and history stay.
@@ -167,7 +171,10 @@ impl DatabaseOwner {
         if changed != 1 {
             return Err("This phrase no longer exists.".into());
         }
-        self.phrase(&conn, id)
+        let card = self.phrase(&conn, id)?;
+        drop(conn);
+        self.rescan_phrase(id)?;
+        Ok(card)
     }
 
     /// Removes a card from practice; its review history is kept.

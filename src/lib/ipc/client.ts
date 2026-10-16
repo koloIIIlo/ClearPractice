@@ -6,6 +6,12 @@
 import type {
   ActivityContext,
   ActivityStep,
+  AudioMeasures,
+  Comparison,
+  LivePace,
+  PhraseUse,
+  SelfCheck,
+  SelfCheckId,
   AttemptReview,
   PracticeEvent,
   PracticeFacts,
@@ -280,7 +286,8 @@ export interface IpcClient {
   getProgress(view: ProgressView): Promise<ProgressSummary>;
   searchContent(query: string): Promise<SearchHit[]>;
   listInputDevices(): Promise<InputDevice[]>;
-  startRecording(request: { attemptId: string; deviceId: string | null; idempotencyKey: string; title: string; context?: PracticeContext }): Promise<RecordingStatus>;
+  /** `livePace` turns on the live pace meter's events for this take (8.8); nothing of it is stored. */
+  startRecording(request: { attemptId: string; deviceId: string | null; idempotencyKey: string; title: string; livePace?: boolean; context?: PracticeContext }): Promise<RecordingStatus>;
   stopRecording(attemptId: string): Promise<SavedRecording>;
   getRecordingStatus(): Promise<RecordingStatus | null>;
   onRecordingEvent(listener: (status: RecordingStatus) => void): Promise<() => void>;
@@ -333,6 +340,18 @@ export interface IpcClient {
   recordSequenceCompleted(sessionIds: string[], localDate: string): Promise<PracticeEvent | null>;
   /** One snapshot of your practice for the rule engines (7.6). */
   getPracticeFacts(): Promise<PracticeFacts>;
+  /** Insights (M8): where saved phrases turned up in takes (one phrase, or all). */
+  listPhraseUses(phraseId?: string): Promise<PhraseUse[]>;
+  /** Your yes/no note about a take; null clears it. */
+  setSelfCheck(attemptId: string, checkId: SelfCheckId, value: boolean | null): Promise<void>;
+  listSelfChecks(attemptId: string): Promise<SelfCheck[]>;
+  /** Speech rate from the take's audio, computed once on this computer. */
+  getAudioMeasures(attemptId: string): Promise<AudioMeasures>;
+  /** About once a second while a take records with `livePace` on. */
+  onLivePace(listener: (pace: LivePace) => void): Promise<() => void>;
+  /** Your A/B choice between takes of two different sessions. */
+  saveComparison(aAttempt: string, bAttempt: string, preferred: "a" | "b" | "same", blind: boolean): Promise<Comparison>;
+  listComparisons(attemptId: string): Promise<Comparison[]>;
 }
 
 /** A command failed in a way the UI should explain in context (§14). */

@@ -2,11 +2,38 @@ import { useNavigate } from "react-router";
 import { ArrowRight, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toLocalDate } from "@/lib/phrase-schedule";
+import { cn } from "@/lib/utils";
 import { advanceSequence, loadSequence, saveSequence, stepUrl } from "./sequence";
 
+/** One dot per step (roadmap 8.9): done is filled with a check, current a ring, upcoming hollow. Not interactive. */
+export function SequenceDots({ steps, index }: { steps: { title: string }[]; index: number }) {
+  return (
+    <ol className="flex items-center gap-1.5" aria-label="Steps">
+      {steps.map((s, i) => {
+        const state = i < index ? "done" : i === index ? "current" : "upcoming";
+        return (
+          <li
+            key={i}
+            aria-label={`Step ${i + 1} of ${steps.length}, ${s.title}, ${state}`}
+            data-state={state}
+            className={cn(
+              "flex size-4 items-center justify-center rounded-full border",
+              state === "done" && "border-primary bg-primary text-primary-foreground",
+              state === "current" && "border-2 border-primary ring-2 ring-primary/25 ring-offset-1 ring-offset-background",
+              state === "upcoming" && "border-muted-foreground/70",
+            )}
+          >
+            {state === "done" && <Check aria-hidden className="size-2.5" strokeWidth={3} />}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 /**
- * Step banner for today's sequence (4.10): where you are, and Next step or
- * Finish. Leaving the sequence keeps every saved take.
+ * Step banner for today's sequence (4.10): where you are, with a dot per step
+ * (8.9), and Next step or Finish. Leaving the sequence keeps every saved take.
  */
 export function SequenceBar({ sessionId, takeCount, locked }: { sessionId: string; takeCount: number; locked: boolean }) {
   const navigate = useNavigate();
@@ -21,6 +48,7 @@ export function SequenceBar({ sessionId, takeCount, locked }: { sessionId: strin
   };
   return (
     <div role="region" aria-label="Today's practice" className="flex flex-wrap items-center gap-3 rounded-panel border bg-secondary/40 px-4 py-3">
+      <SequenceDots steps={state.steps} index={state.index} />
       <p className="text-meta">
         <span className="font-medium">Today's practice · step {state.index + 1} of {state.steps.length}</span>
         <span className="text-muted-foreground"> · {step.title} · about {step.minutes} min</span>

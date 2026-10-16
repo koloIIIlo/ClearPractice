@@ -11,6 +11,11 @@ export type AudioPlayerHandle = {
   playRange: (fromMs: number, toMs: number) => void;
   /** Current position in milliseconds. */
   positionMs: () => number;
+  /** For A/B listening (8.5): play, pause and seek from outside. */
+  play: () => void;
+  pause: () => void;
+  seek: (ms: number) => void;
+  isPlaying: () => boolean;
 };
 
 /** Only one player sounds at a time across the app. */
@@ -21,7 +26,7 @@ let active: HTMLAudioElement | null = null;
  * the take player (play, 5-second skips, time, a seek bar in the accent colour,
  * pitch-preserving speed), instead of the browser's built-in controls.
  */
-export function AudioPlayer({ src, label, speeds, className, ref }: {
+export function AudioPlayer({ src, label, speeds, className, ref, volume = 1, onPositionChange }: {
   src: string;
   /** Names what is played, for screen readers: "Play <label>". */
   label: string;
@@ -29,6 +34,9 @@ export function AudioPlayer({ src, label, speeds, className, ref }: {
   speeds?: readonly number[];
   className?: string;
   ref?: Ref<AudioPlayerHandle>;
+  /** Playback gain from 0 to 1 (level matching only ever turns a take down). */
+  volume?: number;
+  onPositionChange?: (ms: number) => void;
 }) {
   const audio = useRef<HTMLAudioElement>(null);
   const stopAt = useRef<number | null>(null);
@@ -44,6 +52,9 @@ export function AudioPlayer({ src, label, speeds, className, ref }: {
     el.preservesPitch = true;
     el.playbackRate = rate;
   }, [rate, src]);
+  useEffect(() => {
+    if (audio.current) audio.current.volume = Math.min(1, Math.max(0, volume));
+  }, [volume, src]);
   useEffect(() => () => { if (active === audio.current) active = null; }, []);
 
   const play = async () => {
@@ -79,6 +90,10 @@ export function AudioPlayer({ src, label, speeds, className, ref }: {
       void play();
     },
     positionMs: () => (audio.current?.currentTime ?? 0) * 1000,
+    play: () => void play(),
+    pause: () => audio.current?.pause(),
+    seek,
+    isPlaying: () => !!audio.current && !audio.current.paused,
   }));
 
   return (
@@ -98,6 +113,7 @@ export function AudioPlayer({ src, label, speeds, className, ref }: {
               stopAt.current = null;
             }
             setPosition(el.currentTime * 1000);
+            onPositionChange?.(el.currentTime * 1000);
           }}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}

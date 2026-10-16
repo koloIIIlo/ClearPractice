@@ -1,5 +1,5 @@
 {
-  "factsVersion": 1,
+  "factsVersion": 2,
   "generatedAt": "2026-10-16T18:00:00.000Z",
   "today": "2026-10-16",
   "transcriptionAvailable": true,
@@ -45,7 +45,18 @@
       "fillersReviewed": true,
       "pausesOverThreshold": 2,
       "prosodyViewed": false,
-      "hasAiFeedback": false
+      "hasAiFeedback": false,
+      "meanRun": 7.4,
+      "longestRun": 14,
+      "midClausePauses": 1,
+      "boundaryPauses": 1,
+      "watchPer100": 2.3,
+      "hedgesPer100": 1.5,
+      "differentPer50": 37.2,
+      "phraseIds": ["phrase-1"],
+      "checks": { "point_first": true, "clear_ending": false },
+      "pitchRangeSt": 6.5,
+      "rateSps": 4.2
     }
   ],
   "transferReviews": [

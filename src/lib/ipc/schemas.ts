@@ -381,7 +381,26 @@ export const SavedSegment = z.object({
 });
 export type SavedSegment = z.infer<typeof SavedSegment>;
 
-/** Transcript-derived review measures (plan 3.6–3.7); all Estimated, missing values carry a reason. */
+/** A word or phrase you use often, or a hedge, with the segments it was heard in (8.1). */
+export const WordCount = z.object({ word: z.string(), count: z.number().int().positive(), segments: z.array(z.number().int().nonnegative()) }).strict();
+export type WordCount = z.infer<typeof WordCount>;
+/** The opening or ending sentence, quoted for your self-check (8.1, 8.3). */
+export const Edge = z
+  .object({ text: z.string(), segment: z.number().int().nonnegative(), hint: z.enum(["starts_with_hesitation", "trails_off"]).nullable() })
+  .strict();
+export type Edge = z.infer<typeof Edge>;
+export const Runs = z
+  .object({
+    meanWords: z.number().nonnegative(),
+    longestWords: z.number().int().nonnegative(),
+    longestFromSegment: z.number().int().nonnegative(),
+    longestToSegment: z.number().int().nonnegative(),
+    count: z.number().int().nonnegative(),
+  })
+  .strict();
+export type Runs = z.infer<typeof Runs>;
+
+/** Transcript-derived review measures (plan 3.6–3.7; v2 in roadmap 8.1); all Estimated, missing values carry a reason. */
 export const TranscriptMeasures = z.object({
   definitionVersion: z.number().int().positive(),
   source: z.literal("Estimated"),
@@ -406,6 +425,20 @@ export const TranscriptMeasures = z.object({
   ),
   repeatedWords: z.array(z.string()),
   untimedSegments: z.number().int().nonnegative(),
+  // Measures v2 (8.1). Optional, so v1 measures still parse.
+  /** Speech between pauses (mean length of run). */
+  runs: Runs.nullable().optional(),
+  runsUnavailableReason: z.string().nullable().optional(),
+  /** Parallel to `pauses`: between clauses or inside one. */
+  pauseKinds: z.array(z.enum(["boundary", "mid_clause"])).optional(),
+  watchWords: z.array(WordCount).optional(),
+  hedges: z.array(WordCount).optional(),
+  wordsUnavailableReason: z.string().nullable().optional(),
+  /** Different words in every 50 (moving window). */
+  differentPer50: z.number().nonnegative().nullable().optional(),
+  vocabularyUnavailableReason: z.string().nullable().optional(),
+  opener: Edge.nullable().optional(),
+  ending: Edge.nullable().optional(),
   /** Pauses found in the recording's own waveform (plan 3.5); preferred over segment gaps. */
   voice: z
     .object({
@@ -767,6 +800,10 @@ export const Preferences = z
     /** Reduced motion turns "full" into "subtle". */
     celebrations: z.enum(["full", "subtle", "off"]),
     celebrationSounds: z.boolean(),
+    /** A live pace meter from the audio while recording (8.8). */
+    livePace: z.boolean(),
+    /** Your own words to watch (8.11): lowercase, at most 30 characters each, at most 20. */
+    watchWords: z.array(z.string().min(1).max(30)).max(20),
   })
   .strict();
 export type Preferences = z.infer<typeof Preferences>;
@@ -776,6 +813,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   onboarded: false, tourDone: false, goals: [], goalNote: "", difficultyLanguage: null,
   localEndpoint: "http://127.0.0.1:8080", localModel: "", budgetWarningMicroUsd: 4_000_000, reminderTime: null, coachingPrices: {},
   practiceStyle: "playful", styleChosen: false, celebrations: "full", celebrationSounds: false,
+  livePace: false, watchWords: [],
 };
 
 export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api", "off"]), provider: AudioProvider }).strict();
@@ -982,6 +1020,45 @@ export const FactSession = z
 export type FactSession = z.infer<typeof FactSession>;
 
 /** A saved take in history with the measures of its newest machine revision (Estimated). */
+/** Your quick yes/no notes about a take (8.3); drills add the later ones (M10). */
+export const SelfCheckId = z.enum(["point_first", "clear_ending", "varied_voice", "concrete_detail", "fair_other_side", "kept_main_point", "used_all_icons", "fit_child", "fit_colleague", "fit_expert"]);
+export type SelfCheckId = z.infer<typeof SelfCheckId>;
+export const SelfCheck = z.object({ attemptId: Id, checkId: SelfCheckId, value: z.boolean(), createdAt: z.string() }).strict();
+export type SelfCheck = z.infer<typeof SelfCheck>;
+
+/** A saved phrase spotted in a take's current transcript (8.2). IDs only, no text. */
+export const PhraseUse = z
+  .object({ phraseId: Id, attemptId: Id, sessionId: Id, revisionId: Id, segment: z.number().int().nonnegative(), localDate: z.string() })
+  .strict();
+export type PhraseUse = z.infer<typeof PhraseUse>;
+
+/** Speech rate from the take's audio (8.8, method nuclei-v1); all Estimated. */
+export const AudioMeasures = z
+  .object({
+    attemptId: Id,
+    method: z.literal("nuclei-v1"),
+    syllables: z.number().int().nonnegative().nullable(),
+    spanMs: z.number().int().nonnegative().nullable(),
+    phonationMs: z.number().int().nonnegative().nullable(),
+    rateSps: z.number().nonnegative().nullable(),
+    articulationSps: z.number().nonnegative().nullable(),
+    unavailableReason: z.string().nullable(),
+  })
+  .strict();
+export type AudioMeasures = z.infer<typeof AudioMeasures>;
+
+/** About once a second while recording with the live pace meter on (8.8). Nothing is stored. */
+export const LivePace = z
+  .object({ attemptId: Id, syllablesPerSecond: z.number().nonnegative().nullable(), voicedMs: z.number().int().nonnegative(), windowMs: z.number().int().positive() })
+  .strict();
+export type LivePace = z.infer<typeof LivePace>;
+
+/** Your A/B choice between takes of two sessions (8.5), labelled Your note. */
+export const Comparison = z
+  .object({ id: Id, aAttempt: Id, bAttempt: Id, preferred: z.enum(["a", "b", "same"]), blind: z.boolean(), createdAt: z.string() })
+  .strict();
+export type Comparison = z.infer<typeof Comparison>;
+
 export const FactTake = z
   .object({
     id: Id,
@@ -1002,6 +1079,19 @@ export const FactTake = z
     pausesOverThreshold: z.number().int().nonnegative().nullable(),
     prosodyViewed: z.boolean(),
     hasAiFeedback: z.boolean(),
+    // Facts v2 (M8): measures v2 of the same revision, phrases spotted in the
+    // current transcript, your self-checks, pitch range and speech rate from the audio.
+    meanRun: z.number().nonnegative().nullable(),
+    longestRun: z.number().int().nonnegative().nullable(),
+    midClausePauses: z.number().int().nonnegative().nullable(),
+    boundaryPauses: z.number().int().nonnegative().nullable(),
+    watchPer100: z.number().nonnegative().nullable(),
+    hedgesPer100: z.number().nonnegative().nullable(),
+    differentPer50: z.number().nonnegative().nullable(),
+    phraseIds: z.array(Id),
+    checks: z.partialRecord(SelfCheckId, z.boolean()),
+    pitchRangeSt: z.number().nonnegative().nullable(),
+    rateSps: z.number().nonnegative().nullable(),
   })
   .strict();
 export type FactTake = z.infer<typeof FactTake>;

@@ -41,7 +41,7 @@ function TakeWithTranscript({ attemptId, recording, reviewHref }: { attemptId: s
   return (
     <div className="space-y-3">
       {recording ? <SavedAudio recording={recording} link={link} /> : <NativeTake assetId={attemptId} link={link} />}
-      <TakeSummary attemptId={attemptId} reviewHref={reviewHref} />
+      <TakeSummary attemptId={attemptId} reviewHref={reviewHref} link={link} durationMs={recording?.durationMs} />
       <TakeTranscript attemptId={attemptId} link={link} />
     </div>
   );

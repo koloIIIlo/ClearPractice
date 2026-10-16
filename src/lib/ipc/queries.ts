@@ -23,6 +23,12 @@ export const keys = {
   /** Everything under "engagement" is refreshed together after practice (roadmap 9.4). */
   engagementEvents: ["engagement", "events"] as const,
   facts: ["engagement", "facts"] as const,
+  /** Insights (M8). */
+  /** Under "phrases", so adding or changing a phrase (which rescans your takes) refreshes them too. */
+  phraseUses: (phraseId?: string) => ["phrases", "uses", phraseId ?? "all"] as const,
+  selfChecks: (attemptId: string) => ["engagement", "selfChecks", attemptId] as const,
+  audioMeasures: (attemptId: string) => ["audio-measures", attemptId] as const,
+  comparisons: (attemptId: string) => ["comparisons", attemptId] as const,
 };
 
 /** Saved preferences; until they load, the defaults apply. */
@@ -146,4 +152,16 @@ export function usePracticeEvents(from?: string) {
 export function usePracticeFacts() {
   const ipc = useIpc();
   return useQuery({ queryKey: keys.facts, queryFn: () => ipc.getPracticeFacts() });
+}
+
+/** Where saved phrases turned up in your takes (8.2): one phrase, or all of them. */
+export function usePhraseUses(phraseId?: string) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.phraseUses(phraseId), queryFn: () => ipc.listPhraseUses(phraseId) });
+}
+
+/** Speech rate from a take's audio (8.8), computed once in the desktop app. */
+export function useAudioMeasures(attemptId: string | null | undefined, enabled = true) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.audioMeasures(attemptId ?? ""), queryFn: () => ipc.getAudioMeasures(attemptId!), enabled: enabled && !!attemptId, staleTime: Infinity });
 }

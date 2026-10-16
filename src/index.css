@@ -27,6 +27,12 @@
   --cp-on-window-close: #ffffff;
   /* Dims the page around the guided tour's spotlight (same in both themes). */
   --cp-scrim: rgb(0 0 0 / 0.5);
+  /* Waveform markers (roadmap 8.4): pauses are a shaded span, hesitation candidates a dashed tick. */
+  --cp-marker-pause: rgb(23 106 80 / 0.16);
+  --cp-marker-filler: #8a5a00;
+  --cp-marker-liked: #2f5fb3;
+  /* The live pace meter's band (8.8): neutral, never red or green. */
+  --cp-ring-track: #c5d0c7;
 
   --background: var(--cp-app-bg);
   --foreground: var(--cp-text);
@@ -80,6 +86,10 @@
   --cp-border: #34343b;
   --cp-highlight: #4a3c14;
   --cp-error: #ff9aa2;
+  --cp-marker-pause: rgb(95 208 162 / 0.18);
+  --cp-marker-filler: #e0c070;
+  --cp-marker-liked: #8fb3ff;
+  --cp-ring-track: #4d4d57;
 
   --chart-2: #8fb8a6;
   --chart-3: #e0c070;

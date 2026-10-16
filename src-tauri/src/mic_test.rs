@@ -57,6 +57,7 @@ mod tests {
             idempotency_key: "mic-test-1".into(),
             device_id: None,
             title: "Microphone test".into(),
+            live_pace: false,
         };
         test.capture.start(request).unwrap();
         assert!(test.clear().is_err(), "cannot wipe a running test");

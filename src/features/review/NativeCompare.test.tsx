@@ -51,7 +51,7 @@ it("compares the first and last take side by side and saves which felt clearer a
   const client = setup(base);
   expect(await screen.findByText("So uh the index helps.")).toBeInTheDocument();
   expect(screen.getByText("The index makes reads faster.")).toBeInTheDocument();
-  const table = screen.getByRole("table");
+  const table = within(screen.getByRole("heading", { name: "Side by side" }).closest("section")!).getByRole("table");
   const row = (name: string) => within(table).getByRole("rowheader", { name }).closest("tr")!;
   expect(within(row("Duration")).getAllByRole("cell").map((c) => c.textContent)).toEqual(["0:40", "0:38", "Measured"]);
   expect(within(row("Pace")).getAllByRole("cell")[0]).toHaveTextContent("Unavailable");
@@ -65,9 +65,10 @@ it("compares the first and last take side by side and saves which felt clearer a
   expect(await screen.findByText(/Not transcribed yet/)).toBeInTheDocument();
   expect(within(row("Words")).getAllByRole("cell")[1]).toHaveTextContent("Not transcribed");
 
+  // The choice lives in A/B listening now (8.5): A is take 1, B the second take you picked.
   await user.click(screen.getByRole("radio", { name: "About the same" }));
   expect(client.setPreferredTake).toHaveBeenCalledWith("s1", "same");
-  await user.click(screen.getByRole("radio", { name: "Take 2" }));
+  await user.click(screen.getByRole("radio", { name: "B" }));
   expect(client.setPreferredTake).toHaveBeenLastCalledWith("s1", "t2");
 });
 

@@ -9,7 +9,12 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { useSearch } from "@/lib/ipc/queries";
+import { usePreferences, useSearch } from "@/lib/ipc/queries";
+import { toLocalDate } from "@/lib/phrase-schedule";
+import { usePracticeStyle } from "@/features/engagement/style";
+import { matchingActions, type PaletteContext } from "./palette-actions";
+import { useTheme } from "./theme";
+import { setZoomLevel, stepZoom, useZoomLevel } from "./zoom";
 import type { SearchHit } from "@/lib/ipc/schemas";
 import { PRIMARY_NAV, SETTINGS_NAV } from "./nav";
 
@@ -20,11 +25,20 @@ const GROUPS: { kind: SearchHit["kind"]; heading: string; icon: LucideIcon }[] =
   { kind: "guide", heading: "Guides", icon: FileText },
 ];
 
-/** Ctrl+K navigation and local search over saved content (§3). */
+/** Ctrl+K actions (8.10), navigation and local search over saved content (§3). */
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const search = useSearch(query);
+  const { preferences } = usePreferences();
+  const theme = useTheme();
+  const zoomLevel = useZoomLevel();
+  const { playful } = usePracticeStyle();
+  const context: PaletteContext = {
+    navigate, preferences, playful, today: toLocalDate(new Date()),
+    theme: theme.preference, setTheme: theme.setPreference,
+    zoom: (direction) => setZoomLevel(stepZoom(zoomLevel, direction)),
+  };
 
   useEffect(() => {
     if (!open) setQuery("");
@@ -38,6 +52,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const q = query.trim().toLowerCase();
   const destinations = [...PRIMARY_NAV, SETTINGS_NAV].filter((n) => !q || n.label.toLowerCase().includes(q));
   const hits = q ? (search.data ?? []) : [];
+  const actions = matchingActions(context, q);
 
   return (
     <CommandDialog
@@ -50,6 +65,23 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       <CommandInput value={query} onValueChange={setQuery} placeholder="Search sessions, phrases, prompts…" />
       <CommandList>
         <CommandEmpty>{search.isFetching ? "Searching…" : "Nothing found on this computer."}</CommandEmpty>
+        {actions.length > 0 && (
+          <CommandGroup heading="Actions">
+            {actions.map((a) => (
+              <CommandItem
+                key={a.id}
+                value={`action-${a.id}`}
+                onSelect={() => {
+                  onOpenChange(false);
+                  a.run(context);
+                }}
+              >
+                <a.icon aria-hidden />
+                {a.label}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
         {destinations.length > 0 && (
           <CommandGroup heading="Go to">
             {destinations.map((n) => (

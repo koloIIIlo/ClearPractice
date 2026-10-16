@@ -20,6 +20,7 @@ import { useIpc } from "@/lib/ipc";
 import { formatClock, UI_LOCALE } from "@/lib/format";
 import type { SavedRecording } from "@/lib/ipc/schemas";
 import { WaveformPlayer } from "@/features/review/WaveformPlayer";
+import { markersFromTranscript } from "@/features/review/markers";
 import type { PlayerLink } from "@/features/review/player-link";
 
 /** A saved take's player. Peaks are a small cached file and the audio streams on Play, so it opens directly. */
@@ -39,6 +40,8 @@ export function SavedAudio({ recording, link }: { recording: SavedRecording; lin
     retry: false,
     staleTime: Infinity,
   });
+  // The same query the take's transcript and summary use, so markers cost nothing extra (8.4).
+  const transcript = useQuery({ queryKey: ["attempt-transcript", recording.assetId], queryFn: () => ipc.getAttemptTranscript(recording.assetId), enabled, retry: false });
   if (ipc.recordingMode !== "native") return null;
   const error = playback.error ?? waveform.error;
   return (
@@ -48,7 +51,7 @@ export function SavedAudio({ recording, link }: { recording: SavedRecording; lin
       )}
       {error && <p role="alert" className="text-meta text-destructive">{error.message}</p>}
       {playback.data && waveform.data && (
-        <WaveformPlayer url={playback.data} peaks={waveform.data} label={recording.title || "recording"} link={link} />
+        <WaveformPlayer url={playback.data} peaks={waveform.data} label={recording.title || "recording"} link={link} markers={markersFromTranscript(transcript.data)} />
       )}
     </div>
   );

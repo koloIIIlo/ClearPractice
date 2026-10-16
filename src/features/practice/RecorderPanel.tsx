@@ -20,6 +20,7 @@ import { LiveWaveform, levelToHeight } from "@/components/live-waveform";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
 import { useInputDevices, usePreferences } from "@/lib/ipc/queries";
+import { LivePaceMeter, useLivePace, useUsualRate } from "@/features/insights/LivePaceMeter";
 import { playCue } from "@/lib/tone";
 import { cn } from "@/lib/utils";
 import { useLevelMonitor } from "./level-monitor";
@@ -55,6 +56,8 @@ export interface RecorderPanelProps {
   deemphasize?: boolean;
   /** data-tour value of the button. */
   tourId?: string;
+  /** Show the live pace meter whatever the setting (an activity that needs it, e.g. the pace ladder). */
+  livePace?: boolean;
 }
 
 /**
@@ -63,7 +66,7 @@ export interface RecorderPanelProps {
  * state changes. Shared by the Studio and every later activity, so each gets
  * the same audio safety.
  */
-export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBeforeStart, footer, deemphasize, tourId }: RecorderPanelProps) {
+export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBeforeStart, footer, deemphasize, tourId, livePace }: RecorderPanelProps) {
   const ipc = useIpc();
   const native = ipc.recordingMode === "native";
   const { preferences } = usePreferences();
@@ -71,6 +74,10 @@ export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBef
   const [useCountdown, setUseCountdown] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const takeNumber = rec.takes.length + (rec.phase === "saved" || rec.phase === "interrupted" ? 0 : 1);
+  // Live pace (8.8): from Settings, or forced by an activity.
+  const showPace = livePace ?? preferences.livePace;
+  const pace = useLivePace(showPace && rec.phase === "recording");
+  const usual = useUsualRate(showPace);
   const lastTake = rec.takes[rec.takes.length - 1];
 
   // Screen-reader announcements for state changes only — never every timer second (§14).
@@ -95,7 +102,7 @@ export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBef
     else if (rec.phase === "countdown") rec.cancelCountdown();
     else if (!rec.isCapturing) {
       onBeforeStart?.();
-      rec.start({ countdownSeconds: useCountdown && !hideCountdown ? 3 : 0, deviceId: selectedDevice || null });
+      rec.start({ countdownSeconds: useCountdown && !hideCountdown ? 3 : 0, deviceId: selectedDevice || null, livePace: showPace });
     }
   };
 
@@ -141,6 +148,7 @@ export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBef
         ) : (
           <LiveWaveform levels={rec.levels} level={rec.level} active={rec.phase === "recording"} clipping={rec.clipping} />
         )}
+        {showPace && rec.phase === "recording" && <LivePaceMeter rate={pace} usual={usual} />}
         {inside}
         <Button
           data-tour={tourId}

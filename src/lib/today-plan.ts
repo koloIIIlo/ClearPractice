@@ -6,7 +6,7 @@
  */
 import { PROMPTS } from "@/content/prompts";
 import { stagePrompt, type Schedule } from "./scheduler";
-import type { PhraseCard, PracticePrompt, ProgressSummary, ProgressView, SessionDetail, SessionLength, SessionSummary, TodayPlan, TransferReview } from "./ipc/schemas";
+import type { PhraseCard, PracticeFacts, PracticePrompt, ProgressSummary, ProgressView, SessionDetail, SessionLength, SessionSummary, TodayPlan, TransferReview } from "./ipc/schemas";
 
 export const PLAN_STEPS: Record<SessionLength, TodayPlan["steps"]> = {
   standard: [
@@ -138,4 +138,39 @@ export function buildProgress(view: ProgressView, details: SessionDetail[], pace
     points: ordered.map((s) => ({ date: s.localDate, sessionId: s.id, estimatedPaceWpm: paces[s.id] ?? null, ease: s.ease ?? null })),
     highlight: withTakeaway ? { sessionId: withTakeaway.id, title: withTakeaway.title, improvement: withTakeaway.takeaway!.trim(), listenerFeedback: null } : null,
   };
+}
+
+/**
+ * The same summary from one facts snapshot (roadmap 8.6) instead of a
+ * get_session and transcript call per session. Facts carry no text, so the
+ * highlight's title and takeaway come from `texts` (one session's details).
+ * Output equals `buildProgress` on the same history.
+ */
+export function buildProgressFromFacts(view: ProgressView, facts: PracticeFacts, texts: Record<string, { title: string; takeaway: string | null }> = {}): ProgressSummary {
+  const familiarity = view === "rehearsed" ? "familiar" : view === "unfamiliar" ? "unfamiliar" : null;
+  const subset = familiarity === null ? [] : facts.sessions.filter((s) => s.status !== "interrupted" && s.takeCount > 0 && s.familiarity === familiarity);
+  const ordered = [...subset].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  const bySession = new Map<string, PracticeFacts["takes"]>();
+  for (const t of facts.takes) bySession.set(t.sessionId, [...(bySession.get(t.sessionId) ?? []), t]);
+  const pace = (sessionId: string) => {
+    const takes = [...(bySession.get(sessionId) ?? [])].sort((a, b) => a.ordinal - b.ordinal);
+    const evidence = evidenceTakes(view, takes.map((t) => ({ ...t, firstTake: t.ordinal === 1 })));
+    const found = evidence.find((t) => t.paceWpm !== null);
+    return found ? Math.round(found.paceWpm!) : null;
+  };
+  const withTakeaway = [...ordered].reverse().find((s) => s.takeaway && texts[s.id]?.takeaway?.trim());
+  return {
+    view,
+    practiceMinutes: Math.round(subset.reduce((n, s) => n + s.durationMs, 0) / 60_000),
+    completedSessions: subset.length,
+    points: ordered.map((s) => ({ date: s.localDate, sessionId: s.id, estimatedPaceWpm: pace(s.id), ease: s.ease ?? null })),
+    highlight: withTakeaway ? { sessionId: withTakeaway.id, title: texts[withTakeaway.id].title, improvement: texts[withTakeaway.id].takeaway!.trim(), listenerFeedback: null } : null,
+  };
+}
+
+/** The session whose takeaway Progress highlights: the latest in this view with one (no text needed). */
+export function highlightSessionId(view: ProgressView, facts: PracticeFacts): string | null {
+  const familiarity = view === "rehearsed" ? "familiar" : view === "unfamiliar" ? "unfamiliar" : null;
+  const candidates = facts.sessions.filter((s) => s.status !== "interrupted" && s.takeCount > 0 && s.familiarity === familiarity && s.takeaway);
+  return candidates.sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]?.id ?? null;
 }

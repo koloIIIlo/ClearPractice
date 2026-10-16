@@ -24,7 +24,8 @@ ROUTES = [
     "/exercises/ex-repeat", "/exercises/ex-thought-groups", "/exercises/ex-imitate", "/exercises/ex-expression",
     "/practice/ex-repeat", "/practice/ex-thought-groups", "/practice/ex-imitate", "/practice/ex-expression", "/practice/done",
     "/sessions", "/sessions/trash", "/sessions/s-01", "/sessions/s-02/attempt/2", "/sessions/s-02/compare",
-    "/phrases", "/progress", "/progress?view=unfamiliar", "/progress?view=real",
+    "/phrases", "/phrases?review=1", "/progress", "/progress?view=rehearsed", "/progress?view=unfamiliar", "/progress?view=real",
+    "/compare?a=s-07-a1&b=s-01-a2",
     "/settings/audio", "/settings/practice", "/settings/appearance", "/settings/transcription",
     "/settings/coaching", "/settings/data", "/settings/about", "/nope",
 ]

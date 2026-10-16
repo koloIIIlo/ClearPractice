@@ -18,8 +18,14 @@ import { useProgress } from "@/lib/ipc/queries";
 import { useIpc } from "@/lib/ipc";
 import { ProgressView, type ProgressSummary, type TransferReview } from "@/lib/ipc/schemas";
 import { toLocalDate } from "@/lib/phrase-schedule";
+import { SpeechProfile } from "@/features/insights/SpeechProfile";
+import { Trends } from "@/features/insights/Trends";
 
-const VIEW_LABELS: Record<ProgressView, string> = {
+/** Progress tabs: your speech profile first (8.7), then the evidence views. */
+type Tab = "profile" | ProgressView;
+const TABS: Tab[] = ["profile", ...ProgressView.options];
+const VIEW_LABELS: Record<Tab, string> = {
+  profile: "Profile",
   rehearsed: "Rehearsed practice",
   unfamiliar: "Unfamiliar tasks",
   real: "Real conversations",
@@ -41,7 +47,8 @@ function paceAxis(values: number[]): { domain: [number, number]; ticks: number[]
 
 export function ProgressPage() {
   const [params, setParams] = useSearchParams();
-  const view = ProgressView.safeParse(params.get("view")).data ?? "rehearsed";
+  const requested = params.get("view");
+  const view: Tab = requested === "profile" ? "profile" : (ProgressView.safeParse(requested).data ?? "profile");
 
   return (
     <Page>
@@ -54,15 +61,15 @@ export function ProgressPage() {
       </div>
       <Tabs value={view} onValueChange={(v) => setParams({ view: v }, { replace: true })}>
         <TabsList className="mb-6">
-          {ProgressView.options.map((v) => (
+          {TABS.map((v) => (
             <TabsTrigger key={v} value={v}>
               {VIEW_LABELS[v]}
             </TabsTrigger>
           ))}
         </TabsList>
-        {ProgressView.options.map((v) => (
+        {TABS.map((v) => (
           <TabsContent key={v} value={v}>
-            {v === "real" ? <RealConversations /> : <ViewContent view={v} />}
+            {v === "profile" ? <SpeechProfile /> : v === "real" ? <RealConversations /> : <ViewContent view={v} />}
           </TabsContent>
         ))}
       </Tabs>
@@ -70,11 +77,16 @@ export function ProgressPage() {
   );
 }
 
-function ViewContent({ view }: { view: ProgressView }) {
+function ViewContent({ view }: { view: "rehearsed" | "unfamiliar" }) {
   const progress = useProgress(view);
   return (
     <QueryView query={progress} loading={<LoadingBlock rows={3} label="Loading progress" />}>
-      {(p) => <Summary p={p} />}
+      {(p) => (
+        <div className="space-y-8">
+          <Summary p={p} />
+          <Trends view={view} />
+        </div>
+      )}
     </QueryView>
   );
 }

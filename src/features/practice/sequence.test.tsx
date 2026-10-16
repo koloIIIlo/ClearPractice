@@ -8,6 +8,7 @@ import { IpcContext } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
 import { sessions } from "@/lib/ipc/mock-data";
 import { CompletionPage } from "./CompletionPage";
+import { SequenceDots } from "./SequenceBar";
 import { advanceSequence, loadSequence, startSequence, stepUrl } from "./sequence";
 
 const steps = [
@@ -68,4 +69,18 @@ it("stores the ease rating and takeaway on every session of the sequence (4.11)"
   await waitFor(() => expect(client.setSessionReflection).toHaveBeenCalledTimes(2));
   expect(client.setSessionReflection).toHaveBeenCalledWith(ids[1], 4, "Pause before the example");
   expect(await screen.findByText("Saved with today's sessions.")).toBeInTheDocument();
+});
+
+it("marks done, current and upcoming steps", () => {
+  const all = [...steps, { exerciseType: "imitate" as const, title: "Listen and imitate", minutes: 3 }];
+  render(<SequenceDots steps={all} index={1} />);
+  const dots = within(screen.getByRole("list", { name: "Steps" })).getAllByRole("listitem");
+  expect(dots.map((d) => d.getAttribute("aria-label"))).toEqual([
+    "Step 1 of 3, Record and repeat, done",
+    "Step 2 of 3, Thought groups, current",
+    "Step 3 of 3, Listen and imitate, upcoming",
+  ]);
+  expect(dots[0].querySelector("svg")).not.toBeNull();
+  expect(dots[2].querySelector("svg")).toBeNull();
+  expect(screen.queryByRole("button")).not.toBeInTheDocument();
 });

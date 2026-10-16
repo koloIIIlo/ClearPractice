@@ -305,7 +305,7 @@ fn a05_a_transcript_edit_keeps_the_raw_text_and_old_metrics_on_the_original_revi
         for (table, column) in [("transcript_revisions", "id"), ("transcript_segments", "revision_id"), ("annotations", "revision_id"), ("analysis_runs", "revision_id")] {
             out.extend(query_rows(conn, &format!("SELECT '{table}',* FROM {table} WHERE {column}='take--1'")));
         }
-        out.extend(query_rows(conn, "SELECT metric,value,unit,source,unavailable_reason FROM metric_values WHERE run_id='take--1--measures-v1'"));
+        out.extend(query_rows(conn, "SELECT metric,value,unit,source,unavailable_reason FROM metric_values WHERE run_id='take--1--measures-v2'"));
         out
     };
     let before = raw(&read_only(&root.0));
@@ -322,8 +322,8 @@ fn a05_a_transcript_edit_keeps_the_raw_text_and_old_metrics_on_the_original_revi
     assert_eq!(revision(&first), ("user".into(), Some("take--1".into()), "So indexes help. They make reads faster.".into()), "the first correction is kept");
     assert_eq!(revision(&second).1.as_deref(), Some("take--1"), "corrections hang off the raw revision");
     let metric = |run: &str, name: &str| conn.query_row("SELECT value,unavailable_reason FROM metric_values WHERE run_id=?1 AND metric=?2", [run, name], |r| Ok((r.get::<_, Option<f64>>(0)?, r.get::<_, Option<String>>(1)?))).unwrap();
-    assert_eq!(metric(&format!("{first}--measures-v1"), "filler_candidates"), (Some(0.0), None), "each revision has its own metrics");
-    let (span, why) = metric(&format!("{first}--measures-v1"), "speech_span_ms");
+    assert_eq!(metric(&format!("{first}--measures-v2"), "filler_candidates"), (Some(0.0), None), "each revision has its own metrics");
+    let (span, why) = metric(&format!("{first}--measures-v2"), "speech_span_ms");
     assert!(span.is_none() && why.is_some(), "a correction has no timings: a reason, never 0");
 
     let view = db.attempt_transcript("take").unwrap();
@@ -527,10 +527,10 @@ fn sha256_bytes(bytes: &[u8]) -> String {
 
 // ── A-9 Upgrading a populated older schema ──────────────────────────────────
 
-/// Turns a current (v16) profile back into a populated v14 one.
+/// Turns a current (v17) profile back into a populated v14 one.
 fn downgrade_to_v14(root: &Path) {
     let conn = Connection::open(root.join("database/app.sqlite")).unwrap();
-    conn.execute_batch("DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DELETE FROM app_settings WHERE key='engagement_backfill_v1'; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; PRAGMA user_version=14;").unwrap();
+    conn.execute_batch("DROP INDEX comparisons_b; DROP INDEX comparisons_a; DROP TABLE comparisons; DROP TABLE audio_measures; DROP TABLE self_checks; DROP INDEX phrase_uses_attempt; DROP TABLE phrase_uses; DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DELETE FROM app_settings WHERE key='engagement_backfill_v1'; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; PRAGMA user_version=14;").unwrap();
 }
 
 /// A-9 (besides populated_v1_database_upgrades_to_v2_with_a_snapshot and
@@ -579,7 +579,7 @@ fn a09_a_populated_older_profile_upgrades_and_a_failed_upgrade_recovers() {
         assert_eq!(db.attempt_transcript("old-take").unwrap()["correction"]["text"], "Indexes help.");
         assert!(db.list_coaching_runs("old-take").unwrap().is_empty(), "new tables exist and start empty");
         assert_eq!(kept(&read_only(&root.0)), before, "no row lost or changed by the upgrade");
-        let snapshots: Vec<PathBuf> = files(&root.0.join("database/snapshots")).into_iter().filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("before-v16-")).collect();
+        let snapshots: Vec<PathBuf> = files(&root.0.join("database/snapshots")).into_iter().filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("before-v17-")).collect();
         assert_eq!(snapshots.len(), if fail_first { 2 } else { 1 }, "a snapshot before every upgrade attempt");
         for snapshot in snapshots {
             let copy = Connection::open_with_flags(&snapshot, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
@@ -605,7 +605,9 @@ fn a11_every_http_client_is_counted_and_local_modules_name_no_network_code() {
         "storage/recording.rs", "storage/database.rs", "storage/coaching_runs.rs", "storage/library.rs", "storage/phrases.rs", "storage/prompts.rs",
         "storage/transfer.rs", "storage/progression.rs", "storage/counts.rs", "transcribe.rs", "prosody.rs", "analysis.rs", "mic_test.rs",
         "backup/mod.rs", "backup/export.rs", "clips.rs", "models.rs", "storage_usage.rs", "diagnostics.rs", "app_paths.rs", "data_location.rs",
-        "storage/engagement.rs", "engagement.rs", "activity.rs", "exercise_types.rs", "commands/engagement.rs"];
+        "storage/engagement.rs", "engagement.rs", "activity.rs", "exercise_types.rs", "commands/engagement.rs",
+        // Insights (M8, A-32): syllables, phrase matching, self-checks and comparisons stay offline.
+        "storage/insights.rs", "audio/syllables.rs", "commands/insights.rs"];
     let banned = ["reqwest", "Client::", "TcpStream", "UdpSocket", "std::net", "ApiTransport", "local_llm::chat", "send_reserved", "download_tool", "whisper_setup::", "linkaudio::"];
     for file in local {
         let (_, code) = sources.iter().find(|(n, _)| n == file).unwrap_or_else(|| panic!("{file} not found"));
@@ -683,6 +685,16 @@ fn a11_child_local_paths() {
     db.save_transcript_correction("take-1", "take-1--1", "So indexes help.", 5).unwrap();
     db.take_coaching_input("take-1").unwrap();
     assert_eq!(db.search("indexes").unwrap().len(), 1);
+    // Insights (M8, A-32): speech rate from the audio, phrase matching, self-checks.
+    db.audio_measures("take-1").unwrap();
+    let mut live = crate::audio::syllables::LiveCounter::new(48_000);
+    for i in 0..48 {
+        live.push(&(0..1_000).map(|j| f32::from(voice(i * 1_000 + j, 48_000, 150.0)) / 32_768.0).collect::<Vec<_>>());
+    }
+    db.add_phrase(&crate::storage::database::phrases::PhraseText { original: "a", expression: "indexes help", explanation: "", examples: &[] }, None, chrono::NaiveDate::from_ymd_opt(2026, 10, 16).unwrap()).unwrap();
+    assert!(!db.list_phrase_uses(None).unwrap().is_empty());
+    db.set_self_check("take-1", "point_first", Some(true), 6).unwrap();
+    db.practice_facts("2026-10-16").unwrap();
     // Backup, restore check, session export, storage view and diagnostic report.
     let out = TestRoot::new();
     let summary = backup::create(&db, &out.0, recording::now_ms()).unwrap();

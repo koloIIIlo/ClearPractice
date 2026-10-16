@@ -7,11 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useIpc } from "@/lib/ipc";
-import type { PhraseInput } from "@/lib/ipc/schemas";
+import type { PhraseInput, PhraseUse } from "@/lib/ipc/schemas";
 import { EmptyState, LoadingBlock, Page, PageHeader, Panel, QueryView, SectionTitle } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { formatRelativeDay } from "@/lib/format";
-import { usePhrases, useReviewPhrase } from "@/lib/ipc/queries";
+import { usePhrases, usePhraseUses, usePracticeFacts, useReviewPhrase, useSessions } from "@/lib/ipc/queries";
+import { formatDay } from "@/lib/format";
 import type { PhraseCard, PhraseRating } from "@/lib/ipc/schemas";
 import { INTERVAL_LADDER, toLocalDate } from "@/lib/phrase-schedule";
 import { cn } from "@/lib/utils";
@@ -19,7 +20,8 @@ import { cn } from "@/lib/utils";
 export function PhrasesPage() {
   const phrases = usePhrases();
   const [params] = useSearchParams();
-  const [practising, setPractising] = useState(false);
+  // ?review=1 (Ctrl+K "Review due phrases") opens the review straight away.
+  const [practising, setPractising] = useState(params.get("review") === "1");
   const [adding, setAdding] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const focus = params.get("focus");
@@ -53,7 +55,7 @@ export function PhrasesPage() {
                   ) : undefined
                 }
               />
-              {practising ? (
+              {practising && due.length > 0 ? (
                 <PhraseReview due={due} onDone={() => setPractising(false)} />
               ) : (
                 <>
@@ -125,7 +127,29 @@ export function PhraseForm({ card, onDone, initialOriginal = "", sourceSessionId
   );
 }
 
-function PhraseRow({ p, focus, today }: { p: PhraseCard; focus: string | null; today: string }) {
+type UseLink = PhraseUse & { title: string; ordinal: number | null };
+
+/** "Used in 2 takes" (roadmap 8.2): where the phrase turned up in your takes, newest first. */
+function PhraseUses({ uses }: { uses: UseLink[] }) {
+  if (uses.length === 0) return null;
+  return (
+    <details className="text-meta">
+      <summary className="cursor-pointer text-primary hover:underline">Used in {uses.length} {uses.length === 1 ? "take" : "takes"}</summary>
+      <ul className="mt-1 space-y-0.5 pl-3">
+        {uses.map((u) => (
+          <li key={u.attemptId}>
+            <Link className="text-primary hover:underline" to={u.ordinal ? `/sessions/${u.sessionId}/attempt/${u.ordinal}` : `/sessions/${u.sessionId}`}>
+              {u.title} · {formatDay(u.localDate)}{u.ordinal ? ` · take ${u.ordinal}` : ""}
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1 text-muted-foreground">Matched by words, so a different meaning can match too.</p>
+    </details>
+  );
+}
+
+function PhraseRow({ p, focus, today, uses = [] }: { p: PhraseCard; focus: string | null; today: string; uses?: UseLink[] }) {
   const ipc = useIpc();
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -147,6 +171,7 @@ function PhraseRow({ p, focus, today }: { p: PhraseCard; focus: string | null; t
             From a session<span className="sr-only">: where you first used “{p.expression}”</span>
           </Link>
         )}
+        <PhraseUses uses={uses} />
         {confirm && (
           <p className="mt-2 flex flex-wrap items-center gap-2 text-meta">
             Remove “{p.expression}” from practice? Its review history is kept.
@@ -174,6 +199,13 @@ function PhraseRow({ p, focus, today }: { p: PhraseCard; focus: string | null; t
 }
 
 function PhraseList({ list, focus, today }: { list: PhraseCard[]; focus: string | null; today: string }) {
+  const uses = usePhraseUses();
+  const sessions = useSessions({});
+  const facts = usePracticeFacts();
+  const usesOf = (id: string): UseLink[] =>
+    (uses.data ?? [])
+      .filter((u) => u.phraseId === id)
+      .map((u) => ({ ...u, title: sessions.data?.find((s) => s.id === u.sessionId)?.title ?? "A session", ordinal: facts.data?.takes.find((t) => t.id === u.attemptId)?.ordinal ?? null }));
   if (list.length === 0)
     return (
       <EmptyState icon={BookOpenText} title="No saved phrases yet">
@@ -184,7 +216,7 @@ function PhraseList({ list, focus, today }: { list: PhraseCard[]; focus: string 
   return (
     <>
       <ul className="divide-y rounded-panel border bg-card">
-        {sorted.map((p) => <PhraseRow key={p.id} p={p} focus={focus} today={today} />)}
+        {sorted.map((p) => <PhraseRow key={p.id} p={p} focus={focus} today={today} uses={usesOf(p.id)} />)}
       </ul>
       <p className="mt-4 text-meta text-muted-foreground">
         Schedule: {INTERVAL_LADDER.join(", ")} days after each successful recall. “Again” brings a phrase back tomorrow,

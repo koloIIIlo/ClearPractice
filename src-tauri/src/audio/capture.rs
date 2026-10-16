@@ -30,6 +30,9 @@ pub struct StartRequest {
     pub idempotency_key: String,
     pub device_id: Option<String>,
     pub title: String,
+    /// Live pace meter (roadmap 8.8): about once a second, a `live_pace` event.
+    #[serde(default)]
+    pub live_pace: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -43,6 +46,9 @@ pub struct RecordingStatus {
     pub clipping: bool,
     pub error: Option<String>,
     pub asset: Option<SavedRecording>,
+    /// Carried only by `live_pace` events; never part of the status itself.
+    #[serde(skip)]
+    pub live_pace: Option<super::syllables::LiveRate>,
 }
 
 impl RecordingStatus {
@@ -56,6 +62,7 @@ impl RecordingStatus {
             clipping: false,
             error: None,
             asset: None,
+            live_pace: None,
         }
     }
     pub(crate) fn saved(asset: SavedRecording) -> Self {
@@ -68,6 +75,7 @@ impl RecordingStatus {
             clipping: false,
             error: None,
             asset: Some(asset),
+            live_pace: None,
         }
     }
 }
@@ -358,9 +366,11 @@ fn write_block(
     writer: &mut ChunkWriter,
     block: AudioBlock,
     channels: usize,
-) -> Result<(f32, bool)> {
+    live: Option<&mut super::syllables::LiveCounter>,
+) -> Result<(f32, bool, Option<super::syllables::LiveRate>)> {
     let mut sum_squares = 0.0f64;
     let mut clipping = false;
+    let mut downmix = Vec::new();
     for frame in block.samples[..block.len].chunks_exact(channels) {
         let mono = frame
             .iter()
@@ -370,14 +380,18 @@ fn write_block(
         sum_squares += f64::from(mono).powi(2);
         clipping |= frame.iter().any(|s| s.abs() >= 0.995);
         writer.push(pcm(mono))?;
+        if live.is_some() {
+            downmix.push(mono);
+        }
     }
+    let pace = live.and_then(|counter| counter.push(&downmix));
     let frames = block.len / channels;
     let rms = if frames == 0 {
         0.0
     } else {
         (sum_squares / frames as f64).sqrt() as f32
     };
-    Ok((rms.clamp(0.0, 1.0), clipping))
+    Ok((rms.clamp(0.0, 1.0), clipping, pace))
 }
 
 fn run_capture(
@@ -469,13 +483,20 @@ fn run_capture(
     let mut clipping = false;
     let mut peak_level = 0.0f32;
     let mut write_error = None;
+    // Nothing of the live pace is stored; the take's rate is computed from the saved file.
+    let mut live = request.live_pace.then(|| super::syllables::LiveCounter::new(manifest.sample_rate));
     while !stop.load(Ordering::Acquire) && fault.load(Ordering::Acquire) == 0 {
         match rx.recv_timeout(Duration::from_millis(50)) {
             Ok(block) => {
-                match write_block(&mut writer, block, manifest.source_channels as usize) {
-                    Ok((level, clipped)) => {
+                match write_block(&mut writer, block, manifest.source_channels as usize, live.as_mut()) {
+                    Ok((level, clipped, pace)) => {
                         peak_level = peak_level.max(level);
                         clipping |= clipped;
+                        if let Some(pace) = pace {
+                            let mut status = shared.lock().map_err(|_| "Capture state is unavailable.")?.clone();
+                            status.live_pace = Some(pace);
+                            sink("live_pace", &status);
+                        }
                     }
                     Err(error) => {
                         write_error = Some(error);
@@ -510,7 +531,7 @@ fn run_capture(
     drop(stream); // Microphone is closed before finalization or a failure is reported.
     if write_error.is_none() {
         for block in rx.try_iter() {
-            if let Err(error) = write_block(&mut writer, block, manifest.source_channels as usize) {
+            if let Err(error) = write_block(&mut writer, block, manifest.source_channels as usize, None) {
                 write_error = Some(error);
                 break;
             }
@@ -567,6 +588,7 @@ mod tests {
                 idempotency_key: "live-kill-op".into(),
                 device_id: None,
                 title: "Temporary microphone durability test".into(),
+                live_pace: false,
             })
             .unwrap();
         let deadline = Instant::now() + Duration::from_secs(15);
@@ -609,7 +631,8 @@ mod tests {
             len: 4,
         };
         block.samples[..4].copy_from_slice(&[0.5, -0.5, 1.0, 0.0]);
-        let (level, clipped) = write_block(&mut writer, block, 2).unwrap();
+        let (level, clipped, pace) = write_block(&mut writer, block, 2, None).unwrap();
+        assert!(pace.is_none(), "no live pace unless asked");
         writer.flush().unwrap();
         assert!(clipped);
         assert!((level - 0.353553).abs() < 0.0001);
@@ -638,6 +661,7 @@ mod tests {
             idempotency_key: "hardware-op".into(),
             device_id: None,
             title: "Microphone smoke test".into(),
+            live_pace: false,
         };
         let started = service.start(request.clone()).unwrap();
         assert_eq!(started.phase, "recording");
@@ -647,7 +671,8 @@ mod tests {
                 attempt_id: "other".into(),
                 idempotency_key: "other".into(),
                 device_id: None,
-                title: "Rejected".into()
+                title: "Rejected".into(),
+                live_pace: false,
             })
             .is_err());
         thread::sleep(Duration::from_secs(3));

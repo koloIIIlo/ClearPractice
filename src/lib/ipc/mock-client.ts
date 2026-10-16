@@ -36,6 +36,14 @@ export const MOCK_XP: Record<string, { xp: number; dailyCap?: number }> = {
 const MIN_TAKE_MS = 10_000;
 const MAX_COUNTED_ORDINAL = 6;
 
+/** A stable small number from an ID, so sample measures differ per take but never change. */
+function wobble(id: string, spread: number): number {
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 997;
+  return ((h / 997) * 2 - 1) * spread;
+}
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
 function cleanPhrase(input: S.PhraseInput) {
   return {
     original: input.original.trim(),
@@ -70,6 +78,33 @@ export function createMockClient(): IpcClient {
     if (session.ease != null || session.takeaway) award("reflection_saved", session.id, session.localDate, { sessionId: session.id }, true);
   }
   const trash = new Map<string, { session: (typeof sessions)[number]; deletedAtMs: number }>();
+  // Insights (M8): your self-checks and A/B choices; one saved phrase spotted in the sample history.
+  const selfChecks = new Map<string, Map<S.SelfCheckId, string>>();
+  const checkValues = new Map<string, boolean>();
+  const comparisons: S.Comparison[] = [];
+  const sampleTake = sessions.find((s) => s.attempts.length > 0);
+  const phraseUses: { phraseId: string; attemptId: string; sessionId: string; segment: number }[] =
+    sampleTake && phrases[0] ? [{ phraseId: phrases[0].id, attemptId: sampleTake.attempts[0].id, sessionId: sampleTake.id, segment: 1 }] : [];
+  const livePaceListeners = new Set<(pace: S.LivePace) => void>();
+  const attemptOf = (attemptId: string) => {
+    for (const session of sessions) {
+      if (trash.has(session.id)) continue;
+      const attempt = session.attempts.find((a) => a.id === attemptId);
+      if (attempt) return { session, attempt };
+    }
+    return null;
+  };
+  /** Speech rate from the audio, as the desktop app computes it from a take (8.8). */
+  const audioMeasures = (attemptId: string, durationMs: number): S.AudioMeasures => {
+    if (durationMs < 5_000)
+      return { attemptId, method: "nuclei-v1", syllables: null, spanMs: null, phonationMs: null, rateSps: null, articulationSps: null, unavailableReason: "Needs at least 5 seconds of speech." };
+    const rate = round1(4.1 + wobble(attemptId, 0.5));
+    const spanMs = durationMs - 1_500;
+    return {
+      attemptId, method: "nuclei-v1", syllables: Math.round((rate * spanMs) / 1000), spanMs, phonationMs: Math.round(spanMs * 0.82),
+      rateSps: rate, articulationSps: round1(rate / 0.82), unavailableReason: null,
+    };
+  };
   let retentionDays: S.TrashRetentionDays = 30;
   let preferences: S.Preferences = { ...S.DEFAULT_PREFERENCES };
   let transcriptionPreference: S.TranscriptionPreference = { mode: "local", provider: "deepgram" };
@@ -78,6 +113,7 @@ export function createMockClient(): IpcClient {
   let started = 0;
   let timer: ReturnType<typeof setInterval> | undefined;
   let recordingFor: { title: string; context?: PracticeContext } | null = null;
+  let lastPaceSecond = 0;
   const levelListeners = new Set<(level: S.InputLevel) => void>();
   let monitorTimer: ReturnType<typeof setInterval> | undefined;
   const notify = () => { if (recording) recordingListeners.forEach((listener) => listener(structuredClone(recording!))); };
@@ -115,7 +151,7 @@ export function createMockClient(): IpcClient {
     const shown = sessions.filter((s) => !trash.has(s.id) && (s.attemptCount > 0 || s.status === "completed"));
     const filled = (text: string | undefined | null) => !!text && text.trim().length > 0;
     return S.PracticeFacts.parse({
-      factsVersion: 1,
+      factsVersion: 2,
       generatedAt: new Date().toISOString(),
       today: data.today(),
       transcriptionAvailable: false,
@@ -134,6 +170,14 @@ export function createMockClient(): IpcClient {
           words: transcribed ? 128 : null, paceWpm: transcribed ? 126 : null, speechSpanMs: transcribed ? Math.max(0, a.durationMs - 2000) : null,
           fillerCandidates: transcribed ? 3 : null, fillersConfirmed: transcribed ? 0 : null, fillersReviewed: false, pausesOverThreshold: transcribed ? 2 : null,
           prosodyViewed: false, hasAiFeedback: false,
+          meanRun: transcribed ? round1(7.2 + wobble(a.id, 1.6)) : null, longestRun: transcribed ? Math.round(15 + wobble(a.id, 4)) : null,
+          midClausePauses: transcribed ? Math.round(1 + wobble(a.id, 1)) : null, boundaryPauses: transcribed ? 4 : null,
+          watchPer100: transcribed ? round1(1.6 + wobble(a.id, 0.8)) : null, hedgesPer100: transcribed ? round1(2.4 + wobble(a.id, 1)) : null,
+          differentPer50: transcribed ? round1(36 + wobble(a.id, 3)) : null,
+          phraseIds: phraseUses.filter((u) => u.attemptId === a.id && phrases.some((p) => p.id === u.phraseId)).map((u) => u.phraseId),
+          checks: Object.fromEntries([...(selfChecks.get(a.id)?.keys() ?? [])].map((check) => [check, checkValues.get(`${a.id}:${check}`)])),
+          pitchRangeSt: null,
+          rateSps: audioMeasures(a.id, a.durationMs).rateSps,
         };
       })),
       transferReviews: transferReviews.map((r) => ({ id: r.id, localDate: r.localDate, hasListenerWords: filled(r.listenerText), neededClarification: filled(r.clarification), hasSuccess: filled(r.success), hasNextFocus: filled(r.nextFocus) })),
@@ -176,6 +220,48 @@ export function createMockClient(): IpcClient {
       return S.PracticeEvent.parse(structuredClone(events.find((e) => e.kind === "sequence_completed" && e.refId === refId)));
     },
     getPracticeFacts: async () => buildFacts(),
+    listPhraseUses: (phraseId) =>
+      respond(
+        S.PhraseUse.array(),
+        phraseUses
+          .filter((u) => (!phraseId || u.phraseId === phraseId) && phrases.some((p) => p.id === u.phraseId) && attemptOf(u.attemptId))
+          .map((u) => ({ ...u, revisionId: `${u.attemptId}--1`, localDate: attemptOf(u.attemptId)!.session.localDate })),
+      ),
+    setSelfCheck: async (attemptId, checkId, value) => {
+      if (!attemptOf(attemptId)) throw new IpcError("not_found", "This take is unavailable.");
+      const checks = selfChecks.get(attemptId) ?? new Map<S.SelfCheckId, string>();
+      if (value === null) checks.delete(checkId);
+      else {
+        checks.set(checkId, new Date().toISOString());
+        checkValues.set(`${attemptId}:${checkId}`, value);
+      }
+      selfChecks.set(attemptId, checks);
+    },
+    listSelfChecks: (attemptId) =>
+      respond(
+        S.SelfCheck.array(),
+        [...(selfChecks.get(attemptId)?.entries() ?? [])].sort(([a], [b]) => a.localeCompare(b)).map(([checkId, createdAt]) => ({ attemptId, checkId, value: checkValues.get(`${attemptId}:${checkId}`), createdAt })),
+      ),
+    getAudioMeasures: (attemptId) => {
+      const found = attemptOf(attemptId);
+      if (!found) return Promise.reject(new IpcError("not_found", "This take is unavailable."));
+      return respond(S.AudioMeasures, audioMeasures(attemptId, found.attempt.durationMs));
+    },
+    onLivePace: async (listener) => {
+      const registration = (pace: S.LivePace) => listener(pace);
+      livePaceListeners.add(registration);
+      return () => { livePaceListeners.delete(registration); };
+    },
+    saveComparison: async (aAttempt, bAttempt, preferred, blind) => {
+      const a = attemptOf(aAttempt);
+      const b = attemptOf(bAttempt);
+      if (!a || !b) throw new IpcError("not_found", "One of these takes is unavailable.");
+      if (a.session.id === b.session.id) throw new IpcError("invalid", "Both takes are in one session: choose the preferred take there.");
+      const comparison = S.Comparison.parse({ id: `cmp-${Date.now()}-${comparisons.length}`, aAttempt, bAttempt, preferred, blind, createdAt: new Date().toISOString() });
+      comparisons.unshift(comparison);
+      return structuredClone(comparison);
+    },
+    listComparisons: (attemptId) => respond(S.Comparison.array(), comparisons.filter((c) => c.aAttempt === attemptId || c.bAttempt === attemptId)),
     getServiceStatus: () =>
       respond(S.ServiceStatus, {
         transcription: { mode: "local", model: "large-v3-turbo-q5_0", state: "needs_setup" },
@@ -525,8 +611,10 @@ export function createMockClient(): IpcClient {
     startRecording: async (request) => {
       if (recording?.attemptId === request.attemptId) return S.RecordingStatus.parse(recording);
       if (recording?.phase === "recording") throw new IpcError("busy", "Another recording is already active.");
+      lastPaceSecond = 0;
       started = performance.now();
       recordingFor = { title: request.title, context: request.context };
+      const livePace = request.livePace === true;
       recording = S.RecordingStatus.parse({
         attemptId: request.attemptId, phase: "recording", elapsedMs: 0, monotonicMs: 0,
         level: 0, clipping: false, error: null, asset: null,
@@ -537,6 +625,19 @@ export function createMockClient(): IpcClient {
         recording.monotonicMs = recording.elapsedMs;
         recording.level = Math.max(0, Math.sin(recording.elapsedMs / 500) * 0.5);
         notify();
+        // Live pace (8.8): a gently varying rate around 4.2 a second, once a second, after 3 s of speech.
+        const second = Math.floor(recording.elapsedMs / 1000);
+        if (livePace && second > 0 && second !== lastPaceSecond) {
+          lastPaceSecond = second;
+          const voicedMs = Math.round(recording.elapsedMs * 0.8);
+          const pace = S.LivePace.parse({
+            attemptId: recording.attemptId,
+            syllablesPerSecond: voicedMs >= 3_000 ? round1(4.2 + Math.sin(second / 3) * 0.4) : null,
+            voicedMs,
+            windowMs: 8_000,
+          });
+          livePaceListeners.forEach((listener) => listener(pace));
+        }
       }, 100);
       notify();
       return S.RecordingStatus.parse(recording);

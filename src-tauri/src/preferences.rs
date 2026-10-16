@@ -53,6 +53,11 @@ pub struct Preferences {
     /// "full", "subtle" or "off"; reduced motion turns "full" into "subtle".
     pub celebrations: String,
     pub celebration_sounds: bool,
+    /// The recorder shows a live pace meter from the audio (roadmap 8.8); off by default.
+    pub live_pace: bool,
+    /// Your own words to watch (8.11), counted in every take summary next to the
+    /// default list: lowercase, at most 30 characters each, at most 20.
+    pub watch_words: Vec<String>,
 }
 
 impl Default for Preferences {
@@ -61,7 +66,8 @@ impl Default for Preferences {
             coaching_mode: "api".into(), coaching_model: CoachingModel::default(), delivery_impressions: false,
             onboarded: false, tour_done: false, goals: Vec::new(), goal_note: String::new(), difficulty_language: None,
             local_endpoint: "http://127.0.0.1:8080".into(), local_model: String::new(), budget_warning_micro_usd: 4_000_000, reminder_time: None,
-            coaching_prices: Default::default(), practice_style: "playful".into(), style_chosen: false, celebrations: "full".into(), celebration_sounds: false }
+            coaching_prices: Default::default(), practice_style: "playful".into(), style_chosen: false, celebrations: "full".into(), celebration_sounds: false,
+            live_pace: false, watch_words: Vec::new() }
     }
 }
 
@@ -106,6 +112,20 @@ fn validate(mut p: Preferences) -> Result<Preferences, String> {
     if p.difficulty_language.as_deref().is_some_and(|l| !matches!(l, "english" | "both")) {
         return Err("Unknown language choice.".into());
     }
+    let mut words: Vec<String> = Vec::new();
+    for word in &p.watch_words {
+        let word = word.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+        if word.chars().count() > 30 || word.chars().any(char::is_control) {
+            return Err("Keep each word to watch under 30 characters.".into());
+        }
+        if !word.is_empty() && !words.contains(&word) {
+            words.push(word);
+        }
+    }
+    if words.len() > 20 {
+        return Err("Watch up to 20 words of your own.".into());
+    }
+    p.watch_words = words;
     p.input_device_id = p.input_device_id.filter(|id| !id.trim().is_empty());
     if p.input_device_id.as_ref().is_some_and(|id| id.len() > 512) {
         return Err("The microphone ID is too long.".into());
@@ -158,6 +178,21 @@ mod tests {
         assert_eq!(load(&db).unwrap(), Preferences::default());
         let blank = save(&db, Preferences { input_device_id: Some("  ".into()), ..Default::default() }).unwrap();
         assert_eq!(blank.input_device_id, None);
+    }
+
+    #[test]
+    fn watch_words_are_trimmed_deduplicated_and_limited() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        assert!(!load(&db).unwrap().live_pace, "live pace is off until you turn it on");
+        let words = |list: &[&str]| Preferences { watch_words: list.iter().map(|w| w.to_string()).collect(), live_pace: true, ..Default::default() };
+        let saved = save(&db, words(&[" Like ", "like", "", "  you   see ", "Right"])).unwrap();
+        assert_eq!(saved.watch_words, ["like", "you see", "right"]);
+        assert!(load(&db).unwrap().live_pace);
+        assert!(save(&db, words(&["a".repeat(31).as_str()])).is_err());
+        let many: Vec<String> = (0..21).map(|i| format!("word{i}")).collect();
+        assert!(save(&db, words(&many.iter().map(String::as_str).collect::<Vec<_>>())).is_err());
+        assert_eq!(load(&db).unwrap().watch_words, ["like", "you see", "right"], "a refused save keeps the list");
     }
 
     #[test]

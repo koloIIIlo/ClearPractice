@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin, { type Region } from "wavesurfer.js/plugins/regions";
 import { Pause, Play, Repeat, RotateCcw, RotateCw, X } from "lucide-react";
@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatClock } from "@/lib/format";
 import type { WaveformPeaks } from "@/lib/ipc/schemas";
 import type { PlayerLink } from "./player-link";
+import { MARKER_KIND_LABELS, nextMarker, type WaveMarker, type WaveMarkerKind } from "./markers";
 import {
   formatClockTenths,
   loopSeekTarget,
@@ -36,7 +38,15 @@ function tokenColors() {
  * loop range. Every pointer action has a keyboard equivalent (§14): position
  * slider, skip buttons, and start/end fields for the loop.
  */
-export function WaveformPlayer({ url, peaks, label, link }: { url: string; peaks: WaveformPeaks; label: string; link?: PlayerLink }) {
+export function WaveformPlayer({ url, peaks, label, link, markers = [], onMarkerKindsChange }: {
+  url: string;
+  peaks: WaveformPeaks;
+  label: string;
+  link?: PlayerLink;
+  /** Pauses, hesitation candidates and later more, over the waveform and in a list (8.4). */
+  markers?: WaveMarker[];
+  onMarkerKindsChange?: (kinds: WaveMarkerKind[]) => void;
+}) {
   const id = useId();
   const containerRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -52,6 +62,14 @@ export function WaveformPlayer({ url, peaks, label, link }: { url: string; peaks
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [playError, setPlayError] = useState<string | null>(null);
   const durationMs = peaks.durationMs;
+  const kinds = useMemo(() => [...new Set(markers.map((m) => m.kind))], [markers]);
+  const [hidden, setHidden] = useState<WaveMarkerKind[]>([]);
+  const visible = markers.filter((m) => !hidden.includes(m.kind));
+  const showKinds = (shown: WaveMarkerKind[]) => {
+    setHidden(kinds.filter((k) => !shown.includes(k)));
+    onMarkerKindsChange?.(shown);
+  };
+  const at = (ms: number) => `${Math.min(100, Math.max(0, (ms / Math.max(1, durationMs)) * 100))}%`;
 
   const showLoop = (range: LoopRange | null) => {
     loopRef.current = range;
@@ -193,8 +211,17 @@ export function WaveformPlayer({ url, peaks, label, link }: { url: string; peaks
     showLoop(null);
   };
 
+  // [ and ] jump to the previous or next marker while the player has focus (not while typing a time).
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.key !== "[" && e.key !== "]") || e.target instanceof HTMLInputElement) return;
+    const target = nextMarker(visible, positionMs, e.key === "]" ? 1 : -1);
+    if (!target) return;
+    e.preventDefault();
+    seek(target.startMs);
+  };
+
   return (
-    <div className="space-y-3 rounded-panel border bg-card p-3">
+    <div className="space-y-3 rounded-panel border bg-card p-3" onKeyDown={onKeyDown}>
       <audio ref={audioRef} src={url} preload="metadata" aria-hidden className="hidden" />
       <div className="flex flex-wrap items-center gap-2">
         <Button size="icon" onClick={toggle} aria-label={playing ? `Pause ${label}` : `Play ${label}`}>
@@ -224,7 +251,35 @@ export function WaveformPlayer({ url, peaks, label, link }: { url: string; peaks
         </div>
       </div>
 
-      <div ref={containerRef} className="cursor-pointer" aria-hidden />
+      {kinds.length > 0 && (
+        <ToggleGroup type="multiple" variant="outline" aria-label="Markers on the waveform" className="flex-wrap justify-start" value={kinds.filter((k) => !hidden.includes(k))} onValueChange={(v) => showKinds(v as WaveMarkerKind[])}>
+          {kinds.map((k) => (
+            <ToggleGroupItem key={k} value={k} size="sm" className="h-8 px-3">
+              <span aria-hidden className={k === "pause" ? "size-2.5 rounded-sm bg-[var(--cp-marker-pause)] ring-1 ring-border" : "h-3 border-l-2 border-dashed border-[var(--cp-marker-filler)]"} />
+              {MARKER_KIND_LABELS[k]} {markers.filter((m) => m.kind === k).length}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      )}
+      <div className="relative">
+        <div ref={containerRef} className="cursor-pointer" aria-hidden />
+        {/* Drawn over the waveform; only the ticks take clicks, the rest passes through to it. */}
+        <div aria-hidden data-testid="wave-markers" className="pointer-events-none absolute inset-0">
+          {visible.map((m) =>
+            m.kind === "pause" && m.endMs !== undefined ? (
+              <span key={m.id} className="absolute inset-y-0 rounded-sm bg-[var(--cp-marker-pause)]" style={{ left: at(m.startMs), width: `calc(${at(m.endMs)} - ${at(m.startMs)})` }} />
+            ) : (
+              <span
+                key={m.id}
+                title={m.label}
+                onClick={() => seek(m.startMs)}
+                className={`pointer-events-auto absolute inset-y-0 -ml-1 w-2 cursor-pointer border-l-2 ${m.approximate ? "border-dashed" : "border-solid"} ${m.kind === "liked" ? "border-[var(--cp-marker-liked)]" : "border-[var(--cp-marker-filler)]"}`}
+                style={{ left: at(m.startMs) }}
+              />
+            ),
+          )}
+        </div>
+      </div>
       <Slider
         min={0}
         max={Math.max(1, durationMs)}
@@ -266,6 +321,22 @@ export function WaveformPlayer({ url, peaks, label, link }: { url: string; peaks
           ? `Looping ${formatClockTenths(loop.startMs)}–${formatClockTenths(loop.endMs)}.`
           : "Drag across the waveform or enter times to loop a range."}
       </p>
+      {visible.length > 0 && (
+        <details className="text-meta">
+          <summary className="flex min-h-9 cursor-pointer items-center rounded-md text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring">
+            Markers ({visible.length}) · [ and ] jump between them
+          </summary>
+          <ul aria-label="Markers" className="flex flex-wrap gap-1 pt-1">
+            {visible.map((m) => (
+              <li key={m.id}>
+                <Button type="button" variant="ghost" size="sm" className="h-8 px-2 tabular-nums" onClick={() => seek(m.startMs)}>
+                  {m.label}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {fieldError && <p role="alert" className="text-meta text-destructive">{fieldError}</p>}
       {playError && <p role="alert" className="text-meta text-destructive">{playError}</p>}
     </div>

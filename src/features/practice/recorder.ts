@@ -27,7 +27,8 @@ export interface Recorder extends State {
   ready: boolean;
   isCapturing: boolean;
   closeRequested: boolean;
-  start(opts: { countdownSeconds?: number; deviceId: string | null }): void;
+  /** `livePace` asks for the live pace meter's events (8.8). */
+  start(opts: { countdownSeconds?: number; deviceId: string | null; livePace?: boolean }): void;
   stopAndSave(): Promise<boolean>;
   cancelCountdown(): void;
   continueRecording(): void;
@@ -95,13 +96,13 @@ export function useRecorder(title: string, context?: PracticeContext): Recorder 
     };
   }, [ipc, apply]);
 
-  const begin = useCallback((deviceId: string | null) => {
+  const begin = useCallback((deviceId: string | null, livePace = false) => {
     const id = crypto.randomUUID();
     attemptId.current = id;
     lastLevelAt.current = -1;
     setState((s) => ({ ...s, phase: "preparing", elapsedMs: 0, level: 0, clipping: false, levels: [], error: null }));
     const pressed = performance.now();
-    starting.current = ipc.startRecording({ attemptId: id, idempotencyKey: crypto.randomUUID(), deviceId, title, context: contextRef.current })
+    starting.current = ipc.startRecording({ attemptId: id, idempotencyKey: crypto.randomUUID(), deviceId, title, livePace, context: contextRef.current })
       .then((status) => {
         // 6.5: Record pressed → microphone running.
         if (status.phase === "recording" && ipc.recordingMode === "native") void ipc.recordTiming("recordResponse", performance.now() - pressed).catch(() => {});
@@ -113,15 +114,15 @@ export function useRecorder(title: string, context?: PracticeContext): Recorder 
       });
   }, [ipc, title, apply]);
 
-  const start = useCallback((opts: { countdownSeconds?: number; deviceId: string | null }) => {
+  const start = useCallback((opts: { countdownSeconds?: number; deviceId: string | null; livePace?: boolean }) => {
     if (busy.current || !ready) return;
     busy.current = true;
     let remaining = opts.countdownSeconds ?? 0;
-    if (remaining <= 0) { begin(opts.deviceId); return; }
+    if (remaining <= 0) { begin(opts.deviceId, opts.livePace); return; }
     setState((s) => ({ ...s, phase: "countdown", countdown: remaining, elapsedMs: 0, error: null }));
     countdownTimer.current = setInterval(() => {
       remaining -= 1;
-      if (remaining <= 0) { clearInterval(countdownTimer.current); begin(opts.deviceId); }
+      if (remaining <= 0) { clearInterval(countdownTimer.current); begin(opts.deviceId, opts.livePace); }
       else setState((s) => ({ ...s, countdown: remaining }));
     }, 1000);
   }, [ready, begin]);

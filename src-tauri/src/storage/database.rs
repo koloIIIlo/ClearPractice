@@ -31,7 +31,9 @@ pub mod progression;
 pub mod counts;
 #[path = "engagement.rs"]
 pub mod engagement;
-const VERSION: i64 = 16;
+#[path = "insights.rs"]
+pub mod insights;
+const VERSION: i64 = 17;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
@@ -212,7 +214,10 @@ impl DatabaseOwner {
             if version < 15 {
                 migrate(&mut connection, include_str!("schema-v15.sql"))?;
             }
-            migrate_rebuild(&connection, include_str!("schema-v16.sql"))?;
+            if version < 16 {
+                migrate_rebuild(&connection, include_str!("schema-v16.sql"))?;
+            }
+            migrate(&mut connection, include_str!("schema-v17.sql"))?;
         }
         backfill_measures(&connection)?;
         engagement::backfill_practice_events(&connection)?;
@@ -1219,9 +1224,9 @@ impl DatabaseOwner {
         let tx = conn.transaction().map_err(db_error)?;
         match decision {
             Some(decision) => tx.execute("INSERT INTO annotations(revision_id,definition_version,kind,candidate,word,decision,decided_at_ms) VALUES (?1,?2,'filler',?3,?4,?5,?6) ON CONFLICT(revision_id,definition_version,kind,candidate) DO UPDATE SET decision=excluded.decision,decided_at_ms=excluded.decided_at_ms",
-                params![revision_id, crate::analysis::DEFINITION_VERSION, candidate, word, decision, now]),
+                params![revision_id, crate::analysis::FILLER_DEFINITION_VERSION, candidate, word, decision, now]),
             None => tx.execute("DELETE FROM annotations WHERE revision_id=?1 AND definition_version=?2 AND kind='filler' AND candidate=?3",
-                params![revision_id, crate::analysis::DEFINITION_VERSION, candidate]),
+                params![revision_id, crate::analysis::FILLER_DEFINITION_VERSION, candidate]),
         }
         .map_err(db_error)?;
         // Reviewing every candidate of a take earns effort points once (7.4).
@@ -1319,7 +1324,7 @@ impl DatabaseOwner {
                 let mut measures = serde_json::to_value(crate::analysis::measure(&inputs)).map_err(|e| e.to_string())?;
                 let mut decided = conn.prepare("SELECT candidate,decision FROM annotations WHERE revision_id=?1 AND definition_version=?2 AND kind='filler'").map_err(db_error)?;
                 let decisions: std::collections::HashMap<i64, String> = decided
-                    .query_map(params![revision["id"].as_str().unwrap_or(""), crate::analysis::DEFINITION_VERSION], |r| Ok((r.get(0)?, r.get(1)?)))
+                    .query_map(params![revision["id"].as_str().unwrap_or(""), crate::analysis::FILLER_DEFINITION_VERSION], |r| Ok((r.get(0)?, r.get(1)?)))
                     .map_err(db_error)?
                     .collect::<rusqlite::Result<_>>()
                     .map_err(db_error)?;
@@ -1546,9 +1551,10 @@ fn purge_take_rows(tx: &Transaction, takes: &str, id: &str, now: i64) -> Result<
     tx.execute(&format!("DELETE FROM analysis_runs WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
     tx.execute(&format!("DELETE FROM annotations WHERE revision_id IN (SELECT id FROM transcript_revisions WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
     tx.execute(&format!("DELETE FROM transcript_segments WHERE revision_id IN (SELECT id FROM transcript_revisions WHERE attempt_id IN ({takes}))"),[id]).map_err(db_error)?;
-    for table in ["transcript_revisions", "jobs", "prosody_tracks"] {
+    for table in ["transcript_revisions", "jobs", "prosody_tracks", "phrase_uses", "self_checks", "audio_measures"] {
         tx.execute(&format!("DELETE FROM {table} WHERE attempt_id IN ({takes})"),[id]).map_err(db_error)?;
     }
+    tx.execute(&format!("DELETE FROM comparisons WHERE a_attempt IN ({takes}) OR b_attempt IN ({takes})"),[id]).map_err(db_error)?;
     Ok(())
 }
 
@@ -1575,25 +1581,40 @@ fn record_measures(conn: &Connection, attempt_id: &str, revision_id: &str, now_m
     };
     let m = analysis::measure(&inputs);
     let run_id = format!("{revision_id}--measures-v{version}");
-    let settings = json!({"pauseThresholdMs": m.pause_threshold_ms, "fillerLexicon": "unambiguous-v1"}).to_string();
+    let settings = json!({"pauseThresholdMs": m.pause_threshold_ms, "fillerLexicon": "unambiguous-v1", "clauseStarters": "v1", "watchWords": "default-v1", "hedges": "v1", "window": analysis::VOCABULARY_WINDOW}).to_string();
     conn.execute("INSERT INTO analysis_runs(id,attempt_id,revision_id,kind,definition_version,settings,created_at_ms) VALUES (?1,?2,?3,'transcript-measures',?4,?5,?6)",
         params![run_id, attempt_id, revision_id, version, settings, now_ms]).map_err(db_error)?;
     let untimed = "No segment timings were available.";
     let count = |n: usize| Some(n as f64);
     let pauses_reason = m.pauses_unavailable_reason.as_deref();
-    let values: [(&str, Option<f64>, &str, Option<&str>); 6] = [
+    let kinds = |kind: &str| pauses_reason.is_none().then(|| m.pause_kinds.iter().filter(|k| **k == kind).count() as f64);
+    let words_reason = m.words_unavailable_reason.as_deref();
+    let per_100 = |counts: &[analysis::WordCount]| {
+        words_reason.is_none().then(|| (f64::from(counts.iter().map(|c| c.count).sum::<u32>()) * 100.0 / m.word_count.max(1) as f64 * 10.0).round() / 10.0)
+    };
+    let values: [(&str, Option<f64>, &str, Option<&str>); 13] = [
         ("word_count", count(m.word_count), "words", None),
         ("filler_candidates", count(m.fillers.len()), "words", None),
         ("repeated_words", count(m.repeated_words.len()), "words", None),
         ("speech_span_ms", m.speech_span_ms.map(|v| v as f64), "ms", Some(untimed)),
         ("pace_wpm", m.pace_wpm, "words/min", m.pace_unavailable_reason.as_deref()),
         ("pauses_over_threshold", pauses_reason.is_none().then(|| m.pauses.len() as f64), "pauses", pauses_reason),
+        // Measures v2 (roadmap 8.1).
+        ("mean_run_words", m.runs.map(|r| r.mean_words), "words", m.runs_unavailable_reason.as_deref()),
+        ("longest_run_words", m.runs.map(|r| f64::from(r.longest_words)), "words", m.runs_unavailable_reason.as_deref()),
+        ("mid_clause_pauses", kinds("mid_clause"), "pauses", pauses_reason),
+        ("boundary_pauses", kinds("boundary"), "pauses", pauses_reason),
+        ("watch_words_per_100", per_100(&m.watch_words), "per 100 words", words_reason),
+        ("hedges_per_100", per_100(&m.hedges), "per 100 words", words_reason),
+        ("different_words_per_50", m.different_per_50, "words", m.vocabulary_unavailable_reason.as_deref()),
     ];
     for (metric, value, unit, reason) in values {
         let reason = if value.is_some() { None } else { Some(reason.unwrap_or("Not available for this transcript.")) };
         conn.execute("INSERT INTO metric_values(run_id,metric,value,unit,source,unavailable_reason) VALUES (?1,?2,?3,?4,?5,?6)",
             params![run_id, metric, value, unit, m.source, reason]).map_err(db_error)?;
     }
+    // Saved phrases you used (8.2) are found with the measures.
+    insights::record_phrase_uses(conn, attempt_id, revision_id, now_ms)?;
     Ok(())
 }
 
@@ -2260,7 +2281,7 @@ mod tests {
             .unwrap();
         {
             let conn = owner.connection.lock().unwrap();
-            conn.execute_batch("DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; DROP INDEX phrase_reviews_card; DROP INDEX phrase_cards_due; DROP TABLE phrase_reviews; DROP TABLE phrase_cards; DROP INDEX reference_clips_source; DROP INDEX reference_clips_folder; ALTER TABLE reference_clips DROP COLUMN source_end_ms; ALTER TABLE reference_clips DROP COLUMN source_start_ms; ALTER TABLE reference_clips DROP COLUMN source_id; ALTER TABLE reference_clips DROP COLUMN folder_id; DROP INDEX clip_source_picks_source; DROP TABLE clip_source_picks; DROP TABLE clip_sources; DROP TABLE clip_folders; ALTER TABLE reference_clips DROP COLUMN description; ALTER TABLE reference_clips DROP COLUMN feature; DROP TABLE reference_clips; ALTER TABLE sessions DROP COLUMN ease; ALTER TABLE sessions DROP COLUMN takeaway; ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+            conn.execute_batch("DROP INDEX comparisons_b; DROP INDEX comparisons_a; DROP TABLE comparisons; DROP TABLE audio_measures; DROP TABLE self_checks; DROP INDEX phrase_uses_attempt; DROP TABLE phrase_uses; DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; DROP INDEX phrase_reviews_card; DROP INDEX phrase_cards_due; DROP TABLE phrase_reviews; DROP TABLE phrase_cards; DROP INDEX reference_clips_source; DROP INDEX reference_clips_folder; ALTER TABLE reference_clips DROP COLUMN source_end_ms; ALTER TABLE reference_clips DROP COLUMN source_start_ms; ALTER TABLE reference_clips DROP COLUMN source_id; ALTER TABLE reference_clips DROP COLUMN folder_id; DROP INDEX clip_source_picks_source; DROP TABLE clip_source_picks; DROP TABLE clip_sources; DROP TABLE clip_folders; ALTER TABLE reference_clips DROP COLUMN description; ALTER TABLE reference_clips DROP COLUMN feature; DROP TABLE reference_clips; ALTER TABLE sessions DROP COLUMN ease; ALTER TABLE sessions DROP COLUMN takeaway; ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
         }
         drop(owner);
         let upgraded = DatabaseOwner::open(&root.0).unwrap();
@@ -2270,7 +2291,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v16-")));
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v17-")));
         assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
     }
     fn api_result(take: &SavedRecording, run: &str, words: Option<Vec<(&str, u64, u64)>>) -> crate::audio::transcription::TranscriptionResult {
@@ -2324,14 +2345,14 @@ mod tests {
         let metric = |run: &str, name: &str| -> (Option<f64>, Option<String>) {
             owner.connection.lock().unwrap().query_row("SELECT value,unavailable_reason FROM metric_values WHERE run_id=?1 AND metric=?2", params![run, name], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
         };
-        assert_eq!(metric("api-deepgram-1--measures-v1", "word_count"), (Some(5.0), None), "fillers are not counted as words");
-        assert_eq!(metric("api-deepgram-1--measures-v1", "filler_candidates"), (Some(1.0), None));
-        assert_eq!(metric("api-deepgram-1--measures-v1", "speech_span_ms"), (Some(900.0), None));
-        let (pace, why) = metric("api-deepgram-1--measures-v1", "pace_wpm");
+        assert_eq!(metric("api-deepgram-1--measures-v2", "word_count"), (Some(5.0), None), "fillers are not counted as words");
+        assert_eq!(metric("api-deepgram-1--measures-v2", "filler_candidates"), (Some(1.0), None));
+        assert_eq!(metric("api-deepgram-1--measures-v2", "speech_span_ms"), (Some(900.0), None));
+        let (pace, why) = metric("api-deepgram-1--measures-v2", "pace_wpm");
         assert!(pace.is_none() && why.is_some(), "pace needs 15 s of speech: a reason, never 0");
         let correction = owner.save_transcript_correction("take", "api-deepgram-1", "So I think it works.", 6).unwrap();
-        assert_eq!(metric(&format!("{correction}--measures-v1"), "filler_candidates"), (Some(0.0), None));
-        let (span, why) = metric(&format!("{correction}--measures-v1"), "speech_span_ms");
+        assert_eq!(metric(&format!("{correction}--measures-v2"), "filler_candidates"), (Some(0.0), None));
+        let (span, why) = metric(&format!("{correction}--measures-v2"), "speech_span_ms");
         assert!(span.is_none() && why.is_some(), "corrections are untimed");
         // Missing runs (an upgrade, or new definitions) are backfilled on open.
         owner.connection.lock().unwrap().execute_batch("DELETE FROM metric_values; DELETE FROM analysis_runs;").unwrap();
@@ -2659,6 +2680,7 @@ mod exercise_type_tests {
                 "CREATE TABLE ed_v15 (id TEXT NOT NULL, version INTEGER NOT NULL CHECK(version > 0), type TEXT CHECK(type IN ('repeat','thought_groups','imitate','expression')), instructions TEXT, content_id TEXT, PRIMARY KEY(id,version)) STRICT;
                  INSERT INTO ed_v15 SELECT id,version,type,instructions,content_id FROM exercise_definitions;
                  DROP TABLE exercise_definitions; ALTER TABLE ed_v15 RENAME TO exercise_definitions;
+                 DROP INDEX comparisons_b; DROP INDEX comparisons_a; DROP TABLE comparisons; DROP TABLE audio_measures; DROP TABLE self_checks; DROP INDEX phrase_uses_attempt; DROP TABLE phrase_uses;
                  DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot;
                  DELETE FROM app_settings WHERE key='engagement_backfill_v1'; PRAGMA user_version=15;",
             )
@@ -2669,7 +2691,7 @@ mod exercise_type_tests {
         assert_eq!(db.list_sessions(None, None, false).unwrap().len(), 2, "every session survives the rebuild");
         assert_eq!(db.get_session("s1").unwrap()["exerciseType"], "repeat");
         let conn = db.connection.lock().unwrap();
-        assert_eq!(conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), 16);
+        assert_eq!(conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), 17);
         assert_eq!(conn.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
         assert_eq!(conn.pragma_query_value(None, "foreign_keys", |r| r.get::<_, i64>(0)).unwrap(), 1, "foreign keys are on again");
         conn.execute("INSERT INTO exercise_definitions(id,version,type) VALUES ('ex-jam',1,'jam')", []).unwrap();
@@ -2680,7 +2702,7 @@ mod exercise_type_tests {
         assert_eq!(conn.query_row("SELECT count(*) FROM practice_events WHERE kind='take_saved'", [], |r| r.get::<_, i64>(0)).unwrap(), 0, "one-second takes earn nothing");
         drop(conn);
         let snapshots: Vec<String> = fs::read_dir(root.0.join("database/snapshots")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v16-")), "{snapshots:?}");
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v17-")), "{snapshots:?}");
     }
 
     #[test]

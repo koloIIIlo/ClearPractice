@@ -63,3 +63,19 @@ it("builds progress from real sessions, keeping rehearsed and unfamiliar apart a
   expect(buildProgress("unfamiliar", details as never).points.map((p) => p.sessionId)).toEqual(["c"]);
   expect(buildProgress("real", details as never).completedSessions).toBe(0);
 });
+
+it("buildProgressFromFacts matches buildProgress on the same history (8.6)", async () => {
+  const { buildProgress, buildProgressFromFacts, evidenceTakes } = await import("./today-plan");
+  const { createMockClient } = await import("./ipc/mock-client");
+  const facts = await createMockClient().getPracticeFacts();
+  const texts = Object.fromEntries(sessions.map((s) => [s.id, { title: s.title, takeaway: s.takeaway ?? null }]));
+  for (const view of ["rehearsed", "unfamiliar", "real"] as const) {
+    // The paces the per-session path would have read from each take's transcript.
+    const paces: Record<string, number | null> = {};
+    for (const s of sessions) {
+      const found = evidenceTakes(view, s.attempts).map((a) => facts.takes.find((t) => t.id === a.id)?.paceWpm ?? null).find((p) => p !== null);
+      paces[s.id] = found == null ? null : Math.round(found);
+    }
+    expect(buildProgressFromFacts(view, facts, texts), view).toEqual(buildProgress(view, sessions, paces));
+  }
+});

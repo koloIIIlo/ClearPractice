@@ -7,6 +7,9 @@ import { IpcContext, type IpcClient } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
 import { toLocalDate } from "@/lib/phrase-schedule";
 import { ProgressPage } from "./ProgressPage";
+import { factsBuilder } from "@/test/fixtures/facts";
+import { expectNoScores } from "@/test/no-scores";
+import { renderWithApp } from "@/test/render";
 
 it("saves a real-conversation reflection with the listener's words apart from your own reading (4.17)", async () => {
   const user = userEvent.setup();
@@ -47,3 +50,25 @@ it("saves a real-conversation reflection with the listener's words apart from yo
   await user.click(within(saved).getByRole("button", { name: "Remove" }));
   await waitFor(() => expect(screen.getByText("No reflections yet")).toBeInTheDocument());
 }, 15_000);
+
+it("opens on your speech profile, then shows four trend charts with Estimated labels", async () => {
+  const user = userEvent.setup();
+  let b = factsBuilder();
+  for (let day = 6; day >= 1; day -= 1)
+    b = b.onDay(day).session().take({ transcribed: true, paceWpm: 120 + day, meanRun: 6 + day / 2, speechSpanMs: 60_000, midClausePauses: day % 3, differentPer50: 35 + day, words: 120, fillersConfirmed: 2, fillersReviewed: true });
+  const facts = b.build();
+  const client: IpcClient = { ...createMockClient(), getPracticeFacts: async () => facts };
+  renderWithApp(<ProgressPage />, { client, path: "/progress" });
+  expect(await screen.findByRole("heading", { name: "Your speech profile" })).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "Profile" })).toHaveAttribute("aria-selected", "true");
+  expectNoScores();
+  await user.click(screen.getByRole("tab", { name: "Rehearsed practice" }));
+  const trends = await screen.findByRole("region", { name: "Trends" });
+  for (const title of ["Mean run", "Pauses inside a clause", "Different words", "Confirmed hesitations"]) {
+    const panel = within(trends).getByRole("region", { name: title });
+    expect(within(panel).getByText("Estimated")).toBeInTheDocument();
+    expect(within(panel).queryByText(/More comparable sessions are needed/)).not.toBeInTheDocument();
+  }
+  expect(within(trends).getByText("From takes where you reviewed every candidate")).toBeInTheDocument();
+  expectNoScores();
+});

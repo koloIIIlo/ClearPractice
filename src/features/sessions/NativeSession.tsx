@@ -118,7 +118,7 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
 function LinkedTake({ attemptId, sessionId }: { attemptId: string; sessionId: string }) {
   const [link] = useState(createPlayerLink);
   // The take summary sits right under the player, as in the Studio; AI feedback is further down this page.
-  return <><NativeTake assetId={attemptId} link={link} /><TakeSummary attemptId={attemptId} /><IntonationTrack attemptId={attemptId} link={link} /><TakeTranscript attemptId={attemptId} link={link} /><SavePhrase sessionId={sessionId} /><TakeCoaching attemptId={attemptId} sessionId={sessionId} /></>;
+  return <><NativeTake assetId={attemptId} link={link} /><TakeSummary attemptId={attemptId} link={link} /><IntonationTrack attemptId={attemptId} link={link} /><TakeTranscript attemptId={attemptId} link={link} /><SavePhrase sessionId={sessionId} /><TakeCoaching attemptId={attemptId} sessionId={sessionId} /></>;
 }
 
 /**
