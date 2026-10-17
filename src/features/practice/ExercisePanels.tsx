@@ -49,7 +49,7 @@ export function RepeatFocus({ sessionId, takeCount, locked, native }: { sessionI
   const [stored, setStored] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [custom, setCustom] = useState("");
-  const save = useMutation({
+  const save = useMutation({ meta: { engagement: "activity" },
     mutationFn: (value: string) => (native ? ipc.setSessionFocus(sessionId, value) : Promise.resolve()),
     onSuccess: (_, value) => {
       setStored(value);
@@ -238,7 +238,8 @@ export function ExpressionPanel({ phrase, phrases, sessionId, hasTake, locked, n
 
 // ── Listen and imitate (4.8) ─────────────────────────────────────────────────
 
-export const IMITATION_FEATURES = ["Emphasis: which word carries the stress", "Phrase rhythm", "Clear endings: where the voice falls"] as const;
+export { IMITATION_FEATURES } from "@/content/exercises";
+import { IMITATION_FEATURES } from "@/content/exercises";
 
 /**
  * Listen and imitate (4.8): pick a bundled or imported clip (4.4a), choose the
@@ -249,7 +250,7 @@ export function ImitationPanel({ sessionId, hasTake, locked, native, lastTakeAss
   const ipc = useIpc();
   const [feature, setFeature] = useState<string | null>(null);
   const [clip, setClip] = useState<ReferenceClip | null>(null);
-  const save = useMutation({ mutationFn: (value: string) => (native && hasTake ? ipc.setSessionFocus(sessionId, value) : Promise.resolve()) });
+  const save = useMutation({ meta: { engagement: "activity" }, mutationFn: (value: string) => (native && hasTake ? ipc.setSessionFocus(sessionId, value) : Promise.resolve()) });
   // A feature chosen before the first take is stored once that take creates the session.
   const { mutate } = save;
   useEffect(() => {

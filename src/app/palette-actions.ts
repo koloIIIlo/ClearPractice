@@ -7,7 +7,7 @@ import type { Preferences } from "@/lib/ipc/schemas";
 import type { ThemePreference } from "./theme";
 
 /** Features that arrive with later milestones; their actions stay hidden until then. */
-export const PALETTE_FEATURES = { journey: false, justAMinute: false, conversation: false };
+export const PALETTE_FEATURES = { journey: true, justAMinute: false, conversation: false };
 
 export type PaletteContext = {
   navigate: NavigateFunction;

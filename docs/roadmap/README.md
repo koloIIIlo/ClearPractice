@@ -1,6 +1,6 @@
 # ClearPractice roadmap: M7 to M16
 
-> **Status:** proposed on 16 Oct 2026; nothing in this folder is built yet.
+> **Status:** proposed on 16 Oct 2026. Built so far: M7 foundations (16 Oct), M8 insights and M9 game core (17 Oct); progress is tracked in [DEVELOPMENT_PLAN.md](../../DEVELOPMENT_PLAN.md).
 > **Decisions:** entries marked **Proposed** need your OK before the work that depends on them starts (§9).
 > **Entry gate:** M6 (release hardening) is still open. Either finish its manual acceptance items first, or decide explicitly to start M7 alongside it. M7 changes no behaviour that M6 checks, except the lazy routes in 7.1.
 
@@ -476,18 +476,18 @@ If milestones merge in a different order, the version numbers follow the merge o
 
 | # | Decision | Recommendation | Blocks |
 | --- | --- | --- | --- |
-| D-29 | **Game layer within the blueprint.** Levels in 8 areas, XP for effort, achievements and records, all from practice evidence and your notes. No proficiency scores, no CEFR, AI can't award levels. Calm mode turns it off. | Yes. This keeps §1 "avoid a single numerical fluency score" and §7 "observable training criteria" intact. | M9, M10 |
+| D-29 | **Game layer within the blueprint.** Levels in 8 areas, XP for effort, achievements and records, all from practice evidence and your notes. No proficiency scores, no CEFR, AI can't award levels. Calm mode turns it off. | Yes. This keeps §1 "avoid a single numerical fluency score" and §7 "observable training criteria" intact. **Chosen 17 Oct** | M9, M10 |
 | D-30 | **New exercise types for new formats.** Drills, Say it, conversation, upgrade, rehearsal and capsule each get an exercise type of their own, added when their feature lands. v16 rebuilds `exercise_definitions` once without its v1 type `CHECK` (foreign keys off, checked before commit); types are validated in Rust and zod from then on. A run's settings live in `sessions.activity_snapshot`, per-take steps in `task_conditions.challenge`. | **Chosen 16 Oct** (you chose new types over variants of the four) | 7.3, M10–M14 |
 | D-31 | **Evaluation in TypeScript over a Rust facts snapshot.** XP is awarded in Rust transactions; unlocks are recorded natively and never removed by Trash. | **Chosen 16 Oct** | 7.4, 7.6, M9 |
 | D-32 | **Default style** | Playful for everyone, with a one-time choice card ("Playful or Calm?") on the first Today visit after the update. Celebrations are full unless reduced motion is on. **Chosen 16 Oct** | 7.5 |
-| D-33 | **Conversation partner approvals.** Each cloud turn keeps its own Send (single-use approval, rule 2). Local-model turns may be sent automatically during one conversation when you opt in, because nothing leaves the computer. Each conversation also has a cost cap. | Yes. The alternative, one approval for a whole conversation, would change data rule 2. | M13 |
-| D-34 | **Live pace and syllable rate from syllable nuclei** (after de Jong and Wempe 2009, pure Rust, Estimated), opt-in, used for range drills, never a target speed (§7 "Do not demand faster speech"). | Yes | 8.8, 10.7 |
-| D-35 | **The listener pack is a file exchange.** No hosted links, no accounts. | Yes | 14.4 |
-| D-36 | **Mobile companion** | Feasibility gate first: Tauri 2 Android build, recording, LAN pairing and sync of one take. Only if it passes, build it (16.1). | 16.1 |
-| D-37 | **Surprise prompts and system notifications** | In-app only by default; Windows notifications via `tauri-plugin-notification` (pinned) only as an explicit opt-in. | 16.2 |
-| D-38 | **Updates and signing** | Code-sign the installer when you have a certificate. An update check (contacts GitHub) is opt-in, with "Check now" in Settings → About, and never automatic downloads (rule 1). | 16.8 |
+| D-33 | **Conversation partner approvals.** Each cloud turn keeps its own Send (single-use approval, rule 2). Local-model turns may be sent automatically during one conversation when you opt in, because nothing leaves the computer. Each conversation also has a cost cap. | Yes. The alternative, one approval for a whole conversation, would change data rule 2. **Chosen 17 Oct** | M13 |
+| D-34 | **Live pace and syllable rate from syllable nuclei** (after de Jong and Wempe 2009, pure Rust, Estimated), opt-in, used for range drills, never a target speed (§7 "Do not demand faster speech"). | Yes. **Chosen 17 Oct** | 8.8, 10.7 |
+| D-35 | **The listener pack is a file exchange.** No hosted links, no accounts. | Yes. **Chosen 17 Oct** | 14.4 |
+| D-36 | **Mobile companion** | Feasibility gate first: Tauri 2 Android build, recording, LAN pairing and sync of one take. Only if it passes, build it (16.1). **Chosen 17 Oct** | 16.1 |
+| D-37 | **Surprise prompts and system notifications** | In-app only by default; Windows notifications via `tauri-plugin-notification` (pinned) only as an explicit opt-in. **Chosen 17 Oct** | 16.2 |
+| D-38 | **Updates and signing** | Code-sign the installer when you have a certificate. An update check (contacts GitHub) is opt-in, with "Check now" in Settings → About, and never automatic downloads (rule 1). **Chosen 17 Oct** | 16.8 |
 
-D-30, D-31 and D-32 were decided on 16 Oct and are in the decision log. Still to decide: D-29 before M9; D-33 before M13; D-34 to D-38 with their work packages. Add each to the decision log in `DEVELOPMENT_PLAN.md` once you confirm it.
+D-30, D-31 and D-32 were decided on 16 Oct; D-29 and D-33 to D-38 on 17 Oct, all as recommended. Every decision is in the decision log in `DEVELOPMENT_PLAN.md`.
 
 ---
 

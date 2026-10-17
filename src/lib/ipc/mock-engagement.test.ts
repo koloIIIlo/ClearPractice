@@ -14,7 +14,7 @@ const context: PracticeContext = {
 };
 
 it("mirrors the native effort amounts", () => {
-  expect(Object.values(MOCK_XP).reduce((sum, r) => sum + r.xp, 0)).toBe(112);
+  expect(Object.values(MOCK_XP).reduce((sum, r) => sum + r.xp, 0)).toBe(287);
   expect(MOCK_XP.phrase_reviewed.dailyCap).toBe(10);
 });
 

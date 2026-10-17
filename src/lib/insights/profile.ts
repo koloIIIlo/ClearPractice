@@ -28,6 +28,22 @@ export function middleHalf(values: readonly number[]): [number, number] | null {
   return [percentile(sorted, 0.25), percentile(sorted, 0.75)];
 }
 
+// ISO timestamps sort as plain strings; localeCompare is far slower over two years of takes.
+const byCreated = (a: FactTake, b: FactTake) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0);
+const finite = (v: number | null): v is number => v != null && Number.isFinite(v);
+/** The measured rows' values, in row order (the saved-phrases row always has one). */
+const MEASURED: readonly ((t: FactTake) => number | null)[] = [(t) => t.paceWpm, (t) => t.meanRun, (t) => t.pitchRangeSt, (t) => t.rateSps, (t) => t.watchPer100, (t) => t.hedgesPer100];
+
+/**
+ * How many profile rows have a value, without building the profile: the
+ * "Know your voice" achievement asks this on every refresh (A-36).
+ */
+export function profileReadiness(facts: PracticeFacts): { filled: number; total: number } {
+  const recent = [...facts.takes].sort(byCreated).slice(-RECENT);
+  const filled = MEASURED.filter((f) => recent.reduce((n, t) => (finite(f(t)) ? n + 1 : n), 0) >= 2).length;
+  return { filled: filled + 1, total: MEASURED.length + 1 };
+}
+
 const median = (values: readonly number[]) => {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted.length ? percentile(sorted, 0.5) : null;
@@ -45,7 +61,7 @@ function row(key: string, label: string, values: number[], format: (r: [number, 
 
 export function buildProfile(facts: PracticeFacts, opts: { recent?: number } = {}): Profile {
   const familiarity = new Map(facts.sessions.map((s) => [s.id, s.familiarity]));
-  const takes = [...facts.takes].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const takes = [...facts.takes].sort(byCreated);
   const recent = takes.slice(-(opts.recent ?? RECENT));
   const pick = (list: FactTake[], f: (t: FactTake) => number | null) => list.map(f).filter((v): v is number => v != null);
   const paceBy = (view: "familiar" | "unfamiliar") => median(pick(recent.filter((t) => familiarity.get(t.sessionId) === view), (t) => t.paceWpm));

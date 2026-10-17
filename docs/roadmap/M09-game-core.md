@@ -268,6 +268,11 @@ The full definitions are in [appendix A](appendix-a-skill-levels.md).
   - every `practise` link points to an existing route or activity;
   - level `n+1` is never easier than level `n` on the same counted dimension (a simple check: the same filter with a lower `atLeast` is flagged).
 
+**As built (17 Oct)**
+- The criteria are typed data in `src/lib/engagement/criteria.ts`; kinds that need a later milestone (drills, missions, the confidence pack, the conversation partner, events) report `unavailable` with a reason and a fix ("Arrives with Drills") instead of counting as unmet; so do criteria waiting for your first five reviewed takes or for local transcription. An `anyOf` shows its first available option; an `allOf` is unavailable while any part is.
+- Baselines (the median of your first five reviewed takes) are computed once per evaluation (`computeBaselines`).
+- Golden files: `src/lib/engagement/__golden__/sample-history.json` and `expected-areas.json`; the test writes them when they are missing or with `UPDATE_GOLDEN=1`, so a deliberate change is reviewed as a diff.
+
 ---
 
 ## 9.3 Engagement storage
@@ -328,6 +333,12 @@ impl DatabaseOwner {
   - `ledgers_survive_permanent_deletion` (A-28, `acceptance::a28_ledgers_survive_purges`).
 - Vitest: `mock-client.test.ts` `it("validates unlocks like the native core")`.
 
+**As built (17 Oct)**
+- The native side is `src-tauri/src/storage/game.rs` (not `storage/engagement.rs`, which keeps the ledger and facts from M7); commands are `get_engagement_state(week)`, `record_unlocks(input)`, `set_weekly_quests(week, quests)` and `swap_weekly_quest(week, slot, quest)`.
+- `record_unlocks` validates everything before one transaction: a level needs the one below it, evidence holds IDs, dates and numbers only (4 KB, depth below 6), a record's first value is stored silently with no XP, and a tie is not a record.
+- Facts v3 add `userPrompts`, `blindComparisons` and each real-conversation reflection's `flow` and `tags` (fixture `src/lib/ipc/fixtures/facts-v3.json`).
+- Downgrade fixtures and snapshots follow the v17 pattern (`before-v18-`).
+
 ---
 
 ## 9.4 `EngagementProvider`: the refresh loop
@@ -374,6 +385,11 @@ impl DatabaseOwner {
 - `it("does not celebrate on start")`
 - `it("refreshes after a tagged mutation succeeds")`
 - `it("keeps working when the engagement call fails")`
+
+**As built (17 Oct)**
+- Errors are swallowed without logging (the no-logging test forbids `console` in app code); the next trigger simply tries again.
+- One pass reads facts, all events, the state and your prompts in parallel, chooses the week's quests if the week has none, evaluates, and writes once. Achievements see the levels and goal weeks recorded in the same pass, so nothing appears one refresh late.
+- Triggers: tagged mutations (`meta.engagement`), a saved take, a finished transcript, Practice complete and a saved intonation review.
 
 ---
 
@@ -436,6 +452,11 @@ impl DatabaseOwner {
 - `AchievementsPage.test.tsx`:
   - `it("groups, filters and shows progress")`;
   - `expectNoScores`.
+
+**As built (17 Oct)**
+- The catalogue holds the achievements M9 can award from its own facts; the drill, mission and learning-engine ones join with their milestones, so nothing shown is impossible to earn yet.
+- Locked cards use a dashed border on a transparent card instead of opacity, which keeps text contrast in dark mode.
+- The tests live in `src/lib/engagement/rewards.test.ts` (achievements, records and quests together) and `src/features/journey/JourneyPage.test.tsx`.
 
 ---
 
@@ -534,6 +555,10 @@ export function questProgress(q: QuestRow, facts, events): { done: number; neede
 - `it("detects completion from this week's facts only")`
 - Rust: covered in 9.3.
 
+**As built (17 Oct)**
+- A quest's "Why?" reason is built from its stored params (`questReason`), so it reads the same after a reload.
+- Swap offers one different quest (`swapCandidate`), once a week, never for a completed one; the native core refuses a second swap too.
+
 ---
 
 ## 9.10 Celebrations
@@ -572,6 +597,10 @@ export function questProgress(q: QuestRow, facts, events): { done: number; neede
 - `it("never takes focus and closes with Escape")`
 - A-37: `a37-motion.test.tsx` checks the `animate-*` classes are absent under reduced motion.
 
+**As built (17 Oct)**
+- More than three in one batch becomes three plus "And N more in Journey". A quiet record's headline is clipped at 90 characters.
+- The card waits while a take is recording and while a dialog is open; Escape is caught in the capture phase so a toast can't swallow it.
+
 ---
 
 ## 9.11 Companion: Sprout
@@ -598,6 +627,10 @@ export function questProgress(q: QuestRow, facts, events): { done: number; neede
 - `companion.test.ts`: `it("maps practice days to stages")`.
 - `Companion.test.tsx`: `it("renders every stage with a label")`.
 - Visual check of all 9 stages in both themes, as screenshots in the PR description.
+
+**As built (17 Oct)**
+- Sprout's colours are tokens (`--cp-sprout-*`, `--cp-pot-*` in `src/index.css`), with dark values.
+- It sways only while on screen (IntersectionObserver) and never under reduced motion (covered by A-37).
 
 ---
 
@@ -682,6 +715,11 @@ export function questProgress(q: QuestRow, facts, events): { done: number; neede
   - `it("lists today's unlocks in order")`;
   - `expectNoScores`.
 
+**As built (17 Oct)**
+- The strip's heading is "Journey this week", because Today's plan already has a "This week" region and two regions must not share a name.
+- The area suggestion ("Give Voice & delivery five minutes today") sits in the strip (`areaSuggestion` in `src/lib/scheduler.ts`) rather than in Today's plan.
+- After 14 days away, Today offers the short length by default and the strip shows the fresh-start note.
+
 ---
 
 ## 9.15 Area sheet, Practise this, soft locks
@@ -751,6 +789,10 @@ Saved as `flow` and `tags`. The `Reflection` card shows them with the Your note 
 **Tests**
 - Rust: `transfer_reviews_store_flow_and_known_tags_only`.
 - Vitest: `it("saves flow and kind with the reflection")`.
+
+**As built (17 Oct)**
+- The kinds are stored as `tags` (story, meeting, presentation, interview, small_talk, phone, other), de-duplicated and checked natively; the flow is checked by the column's `CHECK`.
+- The reflection card shows both with the Your note label.
 
 ---
 

@@ -1,11 +1,11 @@
 /**
  * Short, quiet cue tones for recording start and stop (Settings → Audio →
- * Recording sounds). Generated with Web Audio, so there is no sound file to ship.
+ * Recording sounds), and the optional celebration chime. Generated with Web Audio, so there is no sound file to ship.
  * The start tone plays while the microphone is still opening, before capture.
  */
 let context: AudioContext | null = null;
 
-export function playCue(kind: "start" | "stop"): void {
+export function playCue(kind: "start" | "stop" | "celebrate"): void {
   try {
     const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;
@@ -13,7 +13,8 @@ export function playCue(kind: "start" | "stop"): void {
     if (context.state === "suspended") void context.resume();
     const now = context.currentTime;
     // Rising pair to start, falling pair to stop.
-    const notes = kind === "start" ? [660, 880] : [880, 660];
+    // A soft two-note chime for a celebration (9.10), quieter than the recording cues.
+    const notes = kind === "start" ? [660, 880] : kind === "stop" ? [880, 660] : [784, 1047];
     notes.forEach((frequency, i) => {
       const osc = context!.createOscillator();
       const gain = context!.createGain();

@@ -159,6 +159,10 @@ export function createNativeClient(): IpcClient {
     }),
     saveComparison: (aAttempt, bAttempt, preferred, blind) => command("save_comparison", S.Comparison, { aAttempt, bAttempt, preferred, blind }),
     listComparisons: (attemptId) => command("list_comparisons", S.Comparison.array(), { attemptId }),
+    getEngagementState: (week) => command("get_engagement_state", S.EngagementState, { week }),
+    recordUnlocks: (input) => command("record_unlocks", S.UnlockOutcome, { input }),
+    setWeeklyQuests: (week, quests) => command("set_weekly_quests", S.QuestRow.array(), { week, quests }),
+    swapWeeklyQuest: (week, slot, quest) => command("swap_weekly_quest", S.QuestRow, { week, slot, quest }),
     getTodayPlan: async (length) => {
       const [sessions, phrases, reviews, events, prompts, preferences] = await Promise.all([
         command("list_sessions", S.SessionSummary.array(), { filter: null }),

@@ -15,7 +15,12 @@ import { formatClock } from "@/lib/format";
 import { useInputDevices, usePreferences } from "@/lib/ipc/queries";
 import type { CoachingModel, Preferences } from "@/lib/ipc/schemas";
 import { Button } from "@/components/ui/button";
-import { Compass, Minus, Plus, RefreshCw, X } from "lucide-react";
+import { Compass, Lock, Minus, Plus, RefreshCw, X } from "lucide-react";
+import { Link as RouterLink } from "react-router";
+import { ACCENTS, unlockedAccents } from "@/lib/engagement/accents";
+import { weekStart } from "@/lib/engagement/weekly";
+import { toLocalDate } from "@/lib/phrase-schedule";
+import { keys as queryKeys } from "@/lib/ipc/queries";
 import { WATCH_WORDS } from "@/lib/insights/words";
 import { useTour } from "@/features/tour/tour";
 import { setZoomLevel, stepZoom, useZoomLevel, ZOOM_STEPS } from "@/app/zoom";
@@ -320,6 +325,44 @@ export function PracticeStyleSettings() {
         disabled={calm || preferences.celebrations === "off"}
         onCheckedChange={(on) => update({ celebrationSounds: on })}
       />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label htmlFor="weekly-goal">Weekly goal</Label>
+          <Select value={String(preferences.weeklyGoalDays)} onValueChange={(v) => update({ weeklyGoalDays: Number(v) })}>
+            <SelectTrigger id="weekly-goal" className="h-10 w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[1, 2, 3, 4, 5, 6, 7].map((n) => <SelectItem key={n} value={String(n)}>{n} {n === 1 ? "day" : "days"} a week</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <p className="text-meta text-muted-foreground">Rest days are part of practice. The goal resets each week; nothing is lost.</p>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="week-start">Week starts on</Label>
+          <Select value={preferences.weekStartsOn} onValueChange={(v) => update({ weekStartsOn: v as Preferences["weekStartsOn"] })}>
+            <SelectTrigger id="week-start" className="h-10 w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="monday">Monday</SelectItem>
+              <SelectItem value="sunday">Sunday</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <SwitchRow
+        id="companion"
+        label="Companion"
+        hint="Sprout, a small plant that grows with your practice days. It never wilts or shrinks."
+        checked={preferences.companion}
+        onCheckedChange={(on) => update({ companion: on })}
+      />
+      {calm && (
+        <p className="text-meta">
+          Your levels and achievements are still kept. <RouterLink className="text-primary underline underline-offset-2 hover:no-underline" to="/journey">Open Journey anyway</RouterLink>
+        </p>
+      )}
     </Section>
   );
 }
@@ -373,7 +416,46 @@ function AppearanceSettings() {
         onCheckedChange={theme.setReducedMotion}
       />
       <ZoomRow />
+      <AccentSettings />
     </Section>
+  );
+}
+
+/** Accent colours (roadmap 9.12): green, plus the ones you unlocked. Unlocked colours stay unlocked. */
+export function AccentSettings() {
+  const ipc = useIpc();
+  const { preferences, update } = usePreferences();
+  const week = weekStart(toLocalDate(new Date()), preferences.weekStartsOn);
+  const state = useQuery({ queryKey: queryKeys.engagementState(week), queryFn: () => ipc.getEngagementState(week) });
+  const unlocked = unlockedAccents(state.data);
+  return (
+    <fieldset>
+      <legend className="mb-2 text-body font-medium">Accent colour</legend>
+      <RadioGroup value={preferences.accent} onValueChange={(v) => update({ accent: v as Preferences["accent"] })} className="grid gap-2 sm:grid-cols-2">
+        {ACCENTS.map((a) => {
+          const open = unlocked.has(a.id);
+          return (
+            <Label
+              key={a.id}
+              htmlFor={`accent-${a.id}`}
+              data-accent={a.id}
+              className={cn("flex min-h-12 items-center gap-3 rounded-lg border px-3 py-2 font-normal", open ? "cursor-pointer has-[[data-state=checked]]:border-primary" : "cursor-not-allowed")}
+            >
+              <RadioGroupItem id={`accent-${a.id}`} value={a.id} disabled={!open} aria-labelledby={`accent-${a.id}-name`} aria-describedby={open ? undefined : `accent-${a.id}-unlock`} />
+              <span aria-hidden className="size-6 shrink-0 rounded-full border bg-[var(--cp-accent)]" />
+              <span className="min-w-0">
+                <span id={`accent-${a.id}-name`} className="block font-medium">{a.name}</span>
+                {!open && (
+                  <span id={`accent-${a.id}-unlock`} className="flex items-center gap-1 text-meta text-muted-foreground">
+                    <Lock aria-hidden className="size-3" /> Unlocks with: {a.unlock}
+                  </span>
+                )}
+              </span>
+            </Label>
+          );
+        })}
+      </RadioGroup>
+    </fieldset>
   );
 }
 

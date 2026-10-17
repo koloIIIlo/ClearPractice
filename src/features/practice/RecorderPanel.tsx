@@ -21,6 +21,10 @@ import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
 import { useInputDevices, usePreferences } from "@/lib/ipc/queries";
 import { LivePaceMeter, useLivePace, useUsualRate } from "@/features/insights/LivePaceMeter";
+import { requestEngagementRefresh } from "@/features/engagement/refresh";
+import { usePracticeStyle } from "@/features/engagement/style";
+import { takeXp } from "@/lib/engagement/xp";
+import { toLocalDate } from "@/lib/phrase-schedule";
 import { playCue } from "@/lib/tone";
 import { cn } from "@/lib/utils";
 import { useLevelMonitor } from "./level-monitor";
@@ -76,6 +80,7 @@ export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBef
   const takeNumber = rec.takes.length + (rec.phase === "saved" || rec.phase === "interrupted" ? 0 : 1);
   // Live pace (8.8): from Settings, or forced by an activity.
   const showPace = livePace ?? preferences.livePace;
+  const { playful } = usePracticeStyle();
   const pace = useLivePace(showPace && rec.phase === "recording");
   const usual = useUsualRate(showPace);
   const lastTake = rec.takes[rec.takes.length - 1];
@@ -94,7 +99,18 @@ export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBef
       if (rec.phase === "preparing") playCue("start");
       if (rec.phase === "saved") playCue("stop");
     }
-    if (rec.phase === "saved" && lastTake) toast.success(`Take ${lastTake.ordinal} ${native ? "saved" : "simulated"}`);
+    if (rec.phase === "saved" && lastTake) {
+      const text = `Take ${lastTake.ordinal} ${native ? "saved" : "simulated"}`;
+      // Playful style adds the take's XP to the same toast (9.5); without it, no suffix.
+      if (!playful) toast.success(text);
+      else
+        void ipc
+          .listPracticeEvents(toLocalDate(new Date()))
+          .then((events) => takeXp(events, lastTake.asset.assetId))
+          .catch(() => 0)
+          .then((xp) => toast.success(xp > 0 ? `${text} · +${xp} XP` : text));
+      requestEngagementRefresh("take");
+    }
   }, [rec.phase]);
 
   const primary = () => {

@@ -1,8 +1,8 @@
-import { BookOpenText, CalendarCheck, Dumbbell, History, LineChart, Settings, type LucideIcon } from "lucide-react";
+import { BookOpenText, CalendarCheck, Dumbbell, History, LineChart, Settings, Sprout, type LucideIcon } from "lucide-react";
 
-/** The five primary destinations plus Settings — blueprint §3. */
+/** The five primary destinations, Journey in Playful style (roadmap 9.1), plus Settings — blueprint §3. */
 export interface NavItem {
-  id: "today" | "exercises" | "sessions" | "phrases" | "progress" | "settings";
+  id: "today" | "exercises" | "sessions" | "phrases" | "progress" | "journey" | "settings";
   label: string;
   to: string;
   icon: LucideIcon;
@@ -14,6 +14,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { id: "sessions", label: "Sessions", to: "/sessions", icon: History },
   { id: "phrases", label: "Phrases", to: "/phrases", icon: BookOpenText },
   { id: "progress", label: "Progress", to: "/progress", icon: LineChart },
+  { id: "journey", label: "Journey", to: "/journey", icon: Sprout },
 ];
 
 export const SETTINGS_NAV: NavItem = { id: "settings", label: "Settings", to: "/settings", icon: Settings };

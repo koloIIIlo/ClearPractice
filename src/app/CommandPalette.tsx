@@ -50,7 +50,8 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   };
 
   const q = query.trim().toLowerCase();
-  const destinations = [...PRIMARY_NAV, SETTINGS_NAV].filter((n) => !q || n.label.toLowerCase().includes(q));
+  // Journey is a destination in Playful style only (9.1); Calm reaches it through Settings.
+  const destinations = [...PRIMARY_NAV, SETTINGS_NAV].filter((n) => (n.id !== "journey" || playful) && (!q || n.label.toLowerCase().includes(q)));
   const hits = q ? (search.data ?? []) : [];
   const actions = matchingActions(context, q);
 

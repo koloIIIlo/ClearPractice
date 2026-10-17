@@ -21,10 +21,16 @@ pub enum EventKind {
     PhraseReviewed,
     TransferReview,
     BaselineSaved,
+    // Game core (M9): unlocks recorded by `record_unlocks`.
+    LevelReached,
+    Achievement,
+    PersonalRecord,
+    WeeklyGoal,
+    Quest,
 }
 
 impl EventKind {
-    pub const ALL: [EventKind; 9] = [
+    pub const ALL: [EventKind; 14] = [
         EventKind::TakeSaved,
         EventKind::Retake,
         EventKind::SequenceCompleted,
@@ -34,6 +40,11 @@ impl EventKind {
         EventKind::PhraseReviewed,
         EventKind::TransferReview,
         EventKind::BaselineSaved,
+        EventKind::LevelReached,
+        EventKind::Achievement,
+        EventKind::PersonalRecord,
+        EventKind::WeeklyGoal,
+        EventKind::Quest,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -47,6 +58,11 @@ impl EventKind {
             EventKind::PhraseReviewed => "phrase_reviewed",
             EventKind::TransferReview => "transfer_review",
             EventKind::BaselineSaved => "baseline_saved",
+            EventKind::LevelReached => "level_reached",
+            EventKind::Achievement => "achievement",
+            EventKind::PersonalRecord => "personal_record",
+            EventKind::WeeklyGoal => "weekly_goal",
+            EventKind::Quest => "quest",
         }
     }
 
@@ -65,6 +81,11 @@ impl EventKind {
             EventKind::PhraseReviewed => 2,
             EventKind::TransferReview => 30,
             EventKind::BaselineSaved => 20,
+            EventKind::LevelReached => 50,
+            EventKind::Achievement => 20,
+            EventKind::PersonalRecord => 25,
+            EventKind::WeeklyGoal => 50,
+            EventKind::Quest => 30,
         }
     }
 
@@ -106,9 +127,10 @@ mod tests {
             assert_eq!(EventKind::parse(kind.as_str()), Some(kind));
             assert!(kind.xp() <= 1000);
         }
-        assert_eq!(EventKind::parse("level_reached"), None, "added with M9");
+        assert_eq!(EventKind::parse("drill_round"), None, "added with M10");
+        assert_eq!(EventKind::parse("level_reached").map(|k| k.xp()), Some(50));
         let total: u32 = EventKind::ALL.iter().map(|k| k.xp()).sum();
-        assert_eq!(total, 112, "update appendix B when amounts change");
+        assert_eq!(total, 287, "update appendix B when amounts change");
     }
 
     #[test]

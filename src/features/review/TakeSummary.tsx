@@ -5,7 +5,12 @@ import { EvidenceLabel } from "@/components/evidence";
 import { Button } from "@/components/ui/button";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
-import { useAudioMeasures, usePhrases, usePhraseUses, usePreferences } from "@/lib/ipc/queries";
+import { keys, useAudioMeasures, usePhrases, usePhraseUses, usePreferences } from "@/lib/ipc/queries";
+import { recordLine } from "@/features/engagement/celebrations";
+import { usePracticeStyle } from "@/features/engagement/style";
+import { recordDef } from "@/lib/engagement/records";
+import { weekStart } from "@/lib/engagement/weekly";
+import { toLocalDate } from "@/lib/phrase-schedule";
 import { useTranscriptionQueue } from "@/features/transcription/queue";
 import { SelfChecks } from "@/features/insights/SelfChecks";
 import { countWatchWords } from "@/lib/insights/words";
@@ -24,7 +29,7 @@ const MID_CLAUSE_TO_MENTION = 2;
 const WATCH_WORD_TO_MENTION = 3;
 
 /** What the summary knows besides the transcript: saved phrases you used and your words to watch (8.2, 8.11). */
-export type SummaryContext = { phrasesUsed?: string[]; watchWords?: WordCount[] };
+export type SummaryContext = { phrasesUsed?: string[]; watchWords?: WordCount[]; personalRecord?: { line: string; source: EvidenceSource } };
 
 const firstWords = (text: string, n = 4) => {
   const words = text.trim().split(/\s+/);
@@ -68,7 +73,9 @@ export function summarizeTake(transcript: AttemptTranscript | null | undefined, 
   const kinds = m.pausesUnavailableReason ? [] : (m.pauseKinds ?? []);
   const midClause = kinds.filter((k) => k === "mid_clause").length;
   // The first that applies (8.3); a personal record leads once the game layer has them (M9).
-  const wentWell: SummaryPoint = context.phrasesUsed?.length
+  const wentWell: SummaryPoint = context.personalRecord
+    ? { text: `New personal record: ${context.personalRecord.line}.`, source: context.personalRecord.source }
+    : context.phrasesUsed?.length
     ? { text: `You used a saved phrase: “${context.phrasesUsed[0]}”.`, source: "estimated" }
     : m.runs && m.runs.longestWords >= LONG_RUN_WORDS
       ? { text: `Your longest run: ${m.runs.longestWords} words between pauses${runsQuote}.`, source: "estimated" }
@@ -237,6 +244,12 @@ export function TakeSummary({ attemptId, reviewHref, link, durationMs, latest = 
   const uses = usePhraseUses();
   const phrases = usePhrases();
   const audio = useAudioMeasures(attemptId, native && !!revision);
+  // A personal record set by this take leads in Playful style (9.7).
+  const { playful } = usePracticeStyle();
+  const week = weekStart(toLocalDate(new Date()), preferences.weekStartsOn);
+  const engagement = useQuery({ queryKey: keys.engagementState(week), queryFn: () => ipc.getEngagementState(week), enabled: native && playful });
+  const recordRow = playful ? engagement.data?.records.find((r) => r.attemptId === attemptId && r.previous !== null) : undefined;
+  const personalRecord = recordRow ? { line: recordLine(recordRow, engagement.data?.records), source: recordDef(recordRow.record)?.source ?? "estimated" } : undefined;
   const phrasesUsed = (uses.data ?? [])
     .filter((u) => u.attemptId === attemptId)
     .flatMap((u) => {
@@ -252,7 +265,7 @@ export function TakeSummary({ attemptId, reviewHref, link, durationMs, latest = 
   else if (transcript.error) result = { kind: "none", reason: "The transcript couldn't be loaded, so there's no summary." };
   else if (transcript.data?.job?.state === "running" && !transcript.data.revision) result = { kind: "none", reason: "The summary appears here when the transcript is ready." };
   // Wait for saved AI feedback too, so the summary doesn't switch source once it arrives.
-  else if (transcript.data && !(coaching && runs.isPending)) result = summarizeTake(transcript.data, runs.data ?? [], { phrasesUsed: phrasesUsed.map((p) => p.expression), watchWords });
+  else if (transcript.data && !(coaching && runs.isPending)) result = summarizeTake(transcript.data, runs.data ?? [], { phrasesUsed: phrasesUsed.map((p) => p.expression), watchWords, personalRecord });
 
   if (result?.kind !== "ready") {
     // Without a transcript, say plainly what happens next (user request 2026-10-10).

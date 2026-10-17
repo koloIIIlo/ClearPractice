@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { EarnedToday } from "@/features/journey/EarnedToday";
+import { requestEngagementRefresh } from "@/features/engagement/refresh";
 import { Link, useLocation } from "react-router";
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { BookmarkPlus, Check, CheckCircle2 } from "lucide-react";
@@ -35,7 +37,10 @@ export function CompletionPage() {
     recorded.current = true;
     void ipc
       .recordSequenceCompleted(sessionIds.slice(0, 10), toLocalDate(new Date()))
-      .then(() => qc.invalidateQueries({ queryKey: keys.engagementEvents }))
+      .then(() => {
+        requestEngagementRefresh("activity");
+        return qc.invalidateQueries({ queryKey: keys.engagementEvents });
+      })
       .catch(() => {}); // effort is a bonus; a failure never blocks this page
   }, [ipc, qc, sessionIds]);
   const sessions = useQueries({ queries: sessionIds.map((id) => ({ queryKey: ["session", id], queryFn: () => ipc.getSession(id), retry: false })) });
@@ -46,7 +51,7 @@ export function CompletionPage() {
   const anyPending = sessions.some((q) => q.isPending);
   // A step left without a take has no session; it is counted, not listed as an error.
   const skipped = sessions.filter((q) => q.isError).length;
-  const save = useMutation({
+  const save = useMutation({ meta: { engagement: "reflection" },
     mutationFn: () => Promise.all(loaded.map((s) => ipc.setSessionReflection(s.id, ease, takeaway.trim() || null))),
   });
   const focuses = loaded.flatMap((s) => (s.focus ? [s.focus] : []));
@@ -107,6 +112,8 @@ export function CompletionPage() {
             )}
           </section>
         )}
+
+        {hasTakes && <EarnedToday />}
 
         {hasTakes && (
           <Panel className="space-y-4">

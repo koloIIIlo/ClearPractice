@@ -105,7 +105,7 @@ export function AbListen({ a, b, sessionTitle, onBlindChange }: { a: AttemptRef;
   const [choice, setChoice] = useState<Side | "same" | null>(null);
   const shown = choice ?? (hidden ? null : savedChoice);
 
-  const save = useMutation({
+  const save = useMutation({ meta: { engagement: "review" },
     mutationFn: async (preferred: Side | "same") => {
       if (sameSession) await ipc.setPreferredTake(a.sessionId, preferred === "same" ? "same" : refs[preferred].attemptId);
       else await ipc.saveComparison(a.attemptId, b.attemptId, preferred, blind);

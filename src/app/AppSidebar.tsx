@@ -13,6 +13,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { PRIMARY_NAV, SETTINGS_NAV, activeSection, type NavItem } from "./nav";
+import { usePracticeStyle } from "@/features/engagement/style";
 import { prefetchRoute } from "./prefetch";
 
 function NavEntry({ item, active }: { item: NavItem; active: boolean }) {
@@ -45,6 +46,7 @@ function NavEntry({ item, active }: { item: NavItem; active: boolean }) {
 }
 
 export function AppSidebar() {
+  const { playful } = usePracticeStyle();
   const location = useLocation();
   const current = activeSection(location.pathname, (location.state as { section?: string } | null)?.section);
 
@@ -63,7 +65,8 @@ export function AppSidebar() {
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
-                {PRIMARY_NAV.map((item) => (
+                {/* Journey is part of the game layer: hidden in Calm style (9.1); the route still works. */}
+                {PRIMARY_NAV.filter((item) => item.id !== "journey" || playful).map((item) => (
                   <NavEntry key={item.id} item={item} active={current === item.id} />
                 ))}
               </SidebarMenu>

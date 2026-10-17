@@ -96,12 +96,19 @@ export const PracticePrompt = z.object({
 export type PracticePrompt = z.infer<typeof PracticePrompt>;
 
 /** A real-conversation reflection (4.17). `listenerText` is the listener's own words; `selfReport` is yours. */
+/** How your speaking flowed in a real conversation (9.16, Your note). */
+export const TransferFlow = z.enum(["smooth", "mixed", "hard"]);
+export type TransferFlow = z.infer<typeof TransferFlow>;
+/** What kind of conversation it was (9.16). */
+export const TransferTag = z.enum(["story", "meeting", "presentation", "interview", "small_talk", "phone", "other"]);
+export type TransferTag = z.infer<typeof TransferTag>;
 export const TransferReview = z.object({
   id: Id, localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), situation: z.string().min(1), preparation: z.string(),
   listenerText: z.string(), clarification: z.string(), success: z.string(), selfReport: z.string(), nextFocus: z.string(), createdAt: z.string(),
+  flow: TransferFlow.nullable().default(null), tags: z.array(TransferTag).default([]),
 }).strict();
 export type TransferReview = z.infer<typeof TransferReview>;
-export type TransferInput = Omit<TransferReview, "id" | "createdAt">;
+export type TransferInput = Omit<TransferReview, "id" | "createdAt" | "flow" | "tags"> & { flow?: TransferFlow | null; tags?: TransferTag[] };
 /** What you write for your own prompt (4.13). */
 export type PromptInput = { text: string; tags: PromptTag[]; conditions: TaskConditions };
 /** Your prompts and favourite marks, stored natively; bundled prompts come from the content pack. */
@@ -804,6 +811,13 @@ export const Preferences = z
     livePace: z.boolean(),
     /** Your own words to watch (8.11): lowercase, at most 30 characters each, at most 20. */
     watchWords: z.array(z.string().min(1).max(30)).max(20),
+    /** Practise on this many days of each week (9.8). */
+    weeklyGoalDays: z.number().int().min(1).max(7),
+    weekStartsOn: z.enum(["monday", "sunday"]),
+    /** Sprout, the plant that grows with your practice days (9.11). */
+    companion: z.boolean(),
+    /** Accent colour (9.12). */
+    accent: z.enum(["green", "ocean", "amber", "violet", "rose", "graphite"]),
   })
   .strict();
 export type Preferences = z.infer<typeof Preferences>;
@@ -814,6 +828,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   localEndpoint: "http://127.0.0.1:8080", localModel: "", budgetWarningMicroUsd: 4_000_000, reminderTime: null, coachingPrices: {},
   practiceStyle: "playful", styleChosen: false, celebrations: "full", celebrationSounds: false,
   livePace: false, watchWords: [],
+  weeklyGoalDays: 3, weekStartsOn: "monday", companion: true, accent: "green",
 };
 
 export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api", "off"]), provider: AudioProvider }).strict();
@@ -1097,7 +1112,11 @@ export const FactTake = z
 export type FactTake = z.infer<typeof FactTake>;
 
 export const FactTransfer = z
-  .object({ id: Id, localDate: z.string(), hasListenerWords: z.boolean(), neededClarification: z.boolean(), hasSuccess: z.boolean(), hasNextFocus: z.boolean() })
+  .object({
+    id: Id, localDate: z.string(), hasListenerWords: z.boolean(), neededClarification: z.boolean(), hasSuccess: z.boolean(), hasNextFocus: z.boolean(),
+    // Facts v3 (9.16): Your note.
+    flow: TransferFlow.nullable(), tags: z.array(TransferTag),
+  })
   .strict();
 export type FactTransfer = z.infer<typeof FactTransfer>;
 export const FactPhrase = z.object({ id: Id, createdAt: z.string(), starter: z.boolean(), deleted: z.boolean() }).strict();
@@ -1118,6 +1137,43 @@ export const PracticeFacts = z
     phrases: z.array(FactPhrase),
     phraseReviews: z.array(FactPhraseReview),
     progression: z.array(ProgressionEvent),
+    /** Facts v3 (M9 achievements): prompts you wrote and blind A/B choices you saved. */
+    userPrompts: z.number().int().nonnegative(),
+    blindComparisons: z.number().int().nonnegative(),
   })
   .strict();
 export type PracticeFacts = z.infer<typeof PracticeFacts>;
+
+// ── Game core (roadmap M9) ──────────────────────────────────────────────────
+/** Evidence holds IDs and numbers only (A-30). */
+const Evidence = z.unknown();
+export const LevelRow = z.object({ area: z.string(), level: z.number().int().min(1).max(5), definitionVersion: z.number().int().positive(), evidence: Evidence, achievedAt: z.string() }).strict();
+export type LevelRow = z.infer<typeof LevelRow>;
+export const AchievementRow = z.object({ id: z.string(), definitionVersion: z.number().int().positive(), evidence: Evidence, unlockedAt: z.string() }).strict();
+export type AchievementRow = z.infer<typeof AchievementRow>;
+export const RecordRow = z
+  .object({
+    id: z.number().int(), record: z.string(), value: z.number().nonnegative(), unit: z.string(), previous: z.number().nullable(),
+    attemptId: z.string().nullable(), sessionId: z.string().nullable(), definitionVersion: z.number().int().positive(), achievedAt: z.string(),
+  })
+  .strict();
+export type RecordRow = z.infer<typeof RecordRow>;
+export const QuestRow = z
+  .object({ week: z.string(), slot: z.number().int().min(1).max(3), quest: z.string(), params: z.unknown(), swapped: z.boolean(), createdAt: z.string(), completedAt: z.string().nullable() })
+  .strict();
+export type QuestRow = z.infer<typeof QuestRow>;
+export const EngagementState = z
+  .object({ levels: z.array(LevelRow), achievements: z.array(AchievementRow), records: z.array(RecordRow), quests: z.array(QuestRow), goalWeeks: z.array(z.string()) })
+  .strict();
+export type EngagementState = z.infer<typeof EngagementState>;
+export type NewLevel = { area: string; level: number; definitionVersion: number; evidence: Record<string, unknown> };
+export type NewAchievement = { id: string; definitionVersion: number; evidence: Record<string, unknown> };
+export type NewRecord = { record: string; value: number; unit: string; attemptId: string | null; sessionId: string | null; definitionVersion: number };
+export type QuestInput = { slot: number; quest: string; params: Record<string, unknown> };
+export type UnlockInput = {
+  levels: NewLevel[]; achievements: NewAchievement[]; records: NewRecord[]; questsDone: { week: string; slot: number }[]; weeklyGoal: string | null; localDate: string;
+};
+export const UnlockOutcome = z
+  .object({ levels: z.array(LevelRow), achievements: z.array(AchievementRow), records: z.array(RecordRow), questsDone: z.array(QuestRow), weeklyGoal: z.string().nullable(), xp: z.number().int().nonnegative() })
+  .strict();
+export type UnlockOutcome = z.infer<typeof UnlockOutcome>;

@@ -19,8 +19,8 @@ export interface FactsBuilder {
 
 export function factsBuilder(today = "2026-10-12"): FactsBuilder {
   const facts: PracticeFacts = {
-    factsVersion: 2, generatedAt: `${today}T12:00:00.000Z`, today, transcriptionAvailable: true,
-    sessions: [], takes: [], transferReviews: [], phrases: [], phraseReviews: [], progression: [],
+    factsVersion: 3, generatedAt: `${today}T12:00:00.000Z`, today, transcriptionAvailable: true,
+    sessions: [], takes: [], transferReviews: [], phrases: [], phraseReviews: [], progression: [], userPrompts: 0, blindComparisons: 0,
   };
   let offset = 0;
   let n = 0;
@@ -56,7 +56,7 @@ export function factsBuilder(today = "2026-10-12"): FactsBuilder {
     },
     transfer(p = {}) {
       n += 1;
-      facts.transferReviews.push({ id: `transfer-${n}`, localDate: day(), hasListenerWords: false, neededClarification: false, hasSuccess: false, hasNextFocus: false, ...p });
+      facts.transferReviews.push({ id: `transfer-${n}`, localDate: day(), hasListenerWords: false, neededClarification: false, hasSuccess: false, hasNextFocus: false, flow: null, tags: [], ...p });
       return builder;
     },
     phrase(p = {}) {

@@ -80,7 +80,7 @@ export function PhraseForm({ card, onDone, initialOriginal = "", sourceSessionId
   const [expression, setExpression] = useState(card?.expression ?? "");
   const [explanation, setExplanation] = useState(card?.explanation ?? "");
   const [examples, setExamples] = useState((card?.examples ?? []).join("\n"));
-  const save = useMutation({
+  const save = useMutation({ meta: { engagement: "phrase" },
     mutationFn: (input: PhraseInput) => (card ? ipc.updatePhrase(card.id, input) : ipc.addPhrase(input, sourceSessionId)),
     onSuccess: async () => {
       await Promise.all([qc.invalidateQueries({ queryKey: ["phrases"] }), qc.invalidateQueries({ queryKey: ["today"] })]);

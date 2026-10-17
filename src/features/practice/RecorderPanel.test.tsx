@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -122,4 +123,35 @@ it("leaves live pace off by default", async () => {
   await waitFor(() => expect(client.startRecording).toHaveBeenCalledWith(expect.objectContaining({ livePace: false })));
   expect(screen.queryByTestId("live-pace")).not.toBeInTheDocument();
   await userEvent.click(await screen.findByRole("button", { name: /Stop and save/ }));
+});
+
+it("adds the XP to the saved toast in playful style only", async () => {
+  const user = userEvent.setup();
+  const take = async (calm: boolean) => {
+    const base = spyClient();
+    let attemptId = "";
+    const event = (kind: string, xp: number) => ({ id: xp, kind, refId: kind, localDate: "2026-10-16", sessionId: null, attemptId, xp, backfilled: false, createdAt: "x" });
+    const client: IpcClient = {
+      ...base,
+      startRecording: async (request) => {
+        attemptId = request.attemptId;
+        return base.startRecording(request);
+      },
+      listPracticeEvents: async () => [event("take_saved", 10), event("retake", 5)],
+    };
+    await client.setPreferences({ ...(await client.getPreferences()), practiceStyle: calm ? "calm" : "playful" });
+    const view = renderWithApp(<Harness />, { client });
+    const button = await recordButton();
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.click(button);
+    await user.click(await screen.findByRole("button", { name: /Stop and save/ }));
+    return view;
+  };
+  const playful = await take(false);
+  expect(await screen.findByText("Take 1 simulated · +15 XP")).toBeInTheDocument();
+  playful.unmount();
+  toast.dismiss();
+  await take(true);
+  expect((await screen.findAllByText("Take 1 simulated")).length).toBeGreaterThan(0);
+  expect(screen.queryAllByText(/\+\d+ XP/)).toHaveLength(0);
 });

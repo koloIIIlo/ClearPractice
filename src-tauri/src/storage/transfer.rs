@@ -21,7 +21,16 @@ pub struct TransferInput {
     /// Your own reading of how it went.
     pub self_report: String,
     pub next_focus: String,
+    /// How your speaking flowed (9.16, Your note): "smooth", "mixed" or "hard".
+    #[serde(default)]
+    pub flow: Option<String>,
+    /// What kind of conversation it was (9.16), from `TRANSFER_TAGS`.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
+
+/// Kinds of conversation you can note (9.16).
+pub const TRANSFER_TAGS: [&str; 7] = ["story", "meeting", "presentation", "interview", "small_talk", "phone", "other"];
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +44,8 @@ pub struct TransferReview {
     pub success: String,
     pub self_report: String,
     pub next_focus: String,
+    pub flow: Option<String>,
+    pub tags: Vec<String>,
     pub created_at: String,
 }
 
@@ -50,11 +61,17 @@ impl TransferInput {
         if fields.iter().any(|f| f.chars().count() > 2000 || f.contains('\0')) {
             return Err("Keep each answer under 2,000 characters.".into());
         }
+        if self.flow.as_deref().is_some_and(|f| !matches!(f, "smooth" | "mixed" | "hard")) {
+            return Err("Choose how your speaking flowed from the list.".into());
+        }
+        if self.tags.len() > TRANSFER_TAGS.len() || self.tags.iter().any(|tag| !TRANSFER_TAGS.contains(&tag.as_str())) {
+            return Err("Choose the kind of conversation from the list.".into());
+        }
         Ok(())
     }
 }
 
-const COLUMNS: &str = "id,local_date,situation,preparation,listener_text,clarification,success,self_report,next_focus,created_at_ms";
+const COLUMNS: &str = "id,local_date,situation,preparation,listener_text,clarification,success,self_report,next_focus,created_at_ms,flow,tags";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<TransferReview> {
     Ok(TransferReview {
@@ -68,7 +85,19 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<TransferReview> {
         self_report: r.get(7)?,
         next_focus: r.get(8)?,
         created_at: iso(r.get(9)?),
+        flow: r.get(10)?,
+        tags: serde_json::from_str(&r.get::<_, String>(11)?).unwrap_or_default(),
     })
+}
+
+fn dedup(tags: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for tag in tags {
+        if !out.contains(tag) {
+            out.push(tag.clone());
+        }
+    }
+    out
 }
 
 impl DatabaseOwner {
@@ -97,9 +126,9 @@ impl DatabaseOwner {
         };
         let tx = conn.transaction().map_err(db_error)?;
         tx.execute(
-            "INSERT INTO transfer_reviews(id,local_date,situation,preparation,listener_text,clarification,success,self_report,next_focus,created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+            "INSERT INTO transfer_reviews(id,local_date,situation,preparation,listener_text,clarification,success,self_report,next_focus,created_at_ms,flow,tags) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
             params![id, input.local_date, input.situation.trim(), input.preparation.trim(), input.listener_text.trim(), input.clarification.trim(),
-                input.success.trim(), input.self_report.trim(), input.next_focus.trim(), now as i64],
+                input.success.trim(), input.self_report.trim(), input.next_focus.trim(), now as i64, input.flow, serde_json::to_string(&dedup(&input.tags)).map_err(|e| e.to_string())?],
         )
         .map_err(db_error)?;
         // Effort points (roadmap 7.4) on the day of the conversation.
@@ -137,6 +166,8 @@ mod tests {
             success: "Led with the decision".into(),
             self_report: "I think the reason came too late.".into(),
             next_focus: "Give the reason in the first sentence".into(),
+            flow: None,
+            tags: Vec::new(),
         }
     }
 
@@ -155,5 +186,21 @@ mod tests {
         db.delete_transfer_review(&saved.id).unwrap();
         assert!(db.list_transfer_reviews().unwrap().is_empty());
         assert!(db.delete_transfer_review(&saved.id).is_err());
+    }
+
+    #[test]
+    fn transfer_reviews_store_flow_and_known_tags_only() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        let saved = db.add_transfer_review(&TransferInput { flow: Some("smooth".into()), tags: vec!["story".into(), "meeting".into(), "story".into()], ..input("2026-10-16") }).unwrap();
+        assert_eq!((saved.flow.as_deref(), saved.tags.clone()), (Some("smooth"), vec!["story".to_string(), "meeting".to_string()]));
+        assert_eq!(db.list_transfer_reviews().unwrap()[0].tags, ["story", "meeting"]);
+        assert!(db.add_transfer_review(&TransferInput { flow: Some("great".into()), ..input("2026-10-16") }).is_err());
+        assert!(db.add_transfer_review(&TransferInput { tags: vec!["date".into()], ..input("2026-10-16") }).is_err());
+        let plain = db.add_transfer_review(&input("2026-10-16")).unwrap();
+        assert_eq!((plain.flow, plain.tags), (None, Vec::<String>::new()));
+        let facts = db.practice_facts("2026-10-16").unwrap();
+        let story = facts.transfer_reviews.iter().find(|r| r.id == saved.id).unwrap();
+        assert_eq!((story.flow.as_deref(), story.tags.clone()), (Some("smooth"), vec!["story".to_string(), "meeting".to_string()]));
     }
 }

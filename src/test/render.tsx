@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { Toaster } from "sonner";
 import { IpcContext, type IpcClient } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export type AppRenderOptions = {
   /** Defaults to a fresh mock client. */
@@ -30,6 +31,7 @@ export function renderWithApp(ui: ReactNode, opts: AppRenderOptions = {}): Rende
     <MemoryRouter initialEntries={[entry]}>
       <QueryClientProvider client={queryClient}>
         <IpcContext.Provider value={client}>
+          <TooltipProvider>
           <Toaster />
           {opts.routes ? (
             <Routes>
@@ -39,6 +41,7 @@ export function renderWithApp(ui: ReactNode, opts: AppRenderOptions = {}): Rende
           ) : (
             ui
           )}
+          </TooltipProvider>
         </IpcContext.Provider>
       </QueryClientProvider>
     </MemoryRouter>,

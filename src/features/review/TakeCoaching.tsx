@@ -226,7 +226,7 @@ export function TakeCoaching({ attemptId, sessionId }: { attemptId: string; sess
 function SaveSuggestion({ original, expression, explanation, sessionId }: { original: string; expression: string; explanation: string; sessionId?: string }) {
   const ipc = useIpc();
   const qc = useQueryClient();
-  const save = useMutation({
+  const save = useMutation({ meta: { engagement: "phrase" },
     mutationFn: () => ipc.addPhrase({ original: original.trim() || "(a new way to say it)", expression, explanation, examples: [] }, sessionId ?? null),
     onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: ["phrases"] }), qc.invalidateQueries({ queryKey: ["today"] })]),
   });

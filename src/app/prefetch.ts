@@ -12,6 +12,7 @@ export const ROUTE_MODULES: Record<PrefetchId, () => Promise<unknown>> = {
   sessions: () => import("@/features/sessions/SessionsPage"),
   phrases: () => import("@/features/phrases/PhrasesPage"),
   progress: () => import("@/features/progress/ProgressPage"),
+  journey: () => import("@/features/journey/JourneyPage"),
   settings: () => import("@/features/settings/SettingsPage"),
   studio: () => import("@/features/practice/StudioPage"),
   done: () => import("@/features/practice/CompletionPage"),

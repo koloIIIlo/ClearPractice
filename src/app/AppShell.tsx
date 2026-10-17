@@ -9,8 +9,11 @@ import { TranscriptionQueueProvider } from "@/features/transcription/queue";
 import { TourProvider } from "@/features/tour/tour";
 import { TopBar } from "./TopBar";
 import { useIpc } from "@/lib/ipc";
+import { usePreferences } from "@/lib/ipc/queries";
 import { RecoveryNotice } from "./RecoveryNotice";
 import { DailyReminder } from "./DailyReminder";
+import { EngagementProvider } from "@/features/engagement/EngagementProvider";
+import { CelebrationHost } from "@/features/engagement/CelebrationHost";
 
 const CommandPalette = lazy(() => import("./CommandPalette").then((m) => ({ default: m.CommandPalette })));
 
@@ -28,6 +31,12 @@ export function AppShell() {
   const navigate = useNavigate();
   const native = ipc.recordingMode === "native";
   const zoom = useZoomLevel();
+  const { preferences } = usePreferences();
+
+  // Your accent colour (9.12) on the whole app.
+  useEffect(() => {
+    document.documentElement.dataset.accent = preferences.accent;
+  }, [preferences.accent]);
 
   // Page zoom, remembered between runs; the browser preview leaves zoom to the browser.
   useEffect(() => {
@@ -87,6 +96,7 @@ export function AppShell() {
   }, [navigate]);
 
   return (
+    <EngagementProvider>
     <TranscriptionQueueProvider>
       <TourProvider>
         <SidebarProvider>
@@ -120,10 +130,12 @@ export function AppShell() {
             </Suspense>
           )}
           <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+          <CelebrationHost />
           <ScrollRestoration />
         </SidebarProvider>
       </TourProvider>
     </TranscriptionQueueProvider>
+    </EngagementProvider>
   );
 }
 

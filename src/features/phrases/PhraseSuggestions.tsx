@@ -58,7 +58,7 @@ export function PhraseSuggestions({ onDone }: { onDone: () => void }) {
       setKept(new Set(items.flatMap((s, i) => (isKnown(s) ? [] : [i]))));
     },
   });
-  const add = useMutation({
+  const add = useMutation({ meta: { engagement: "phrase" },
     mutationFn: async () => {
       const chosenItems = results!.items.filter((_, i) => kept.has(i));
       for (const s of chosenItems) {

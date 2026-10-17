@@ -33,7 +33,9 @@ pub mod counts;
 pub mod engagement;
 #[path = "insights.rs"]
 pub mod insights;
-const VERSION: i64 = 17;
+#[path = "game.rs"]
+pub mod game;
+const VERSION: i64 = 18;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;
 const DAY_MS: i64 = 86_400_000;
@@ -217,7 +219,10 @@ impl DatabaseOwner {
             if version < 16 {
                 migrate_rebuild(&connection, include_str!("schema-v16.sql"))?;
             }
-            migrate(&mut connection, include_str!("schema-v17.sql"))?;
+            if version < 17 {
+                migrate(&mut connection, include_str!("schema-v17.sql"))?;
+            }
+            migrate(&mut connection, include_str!("schema-v18.sql"))?;
         }
         backfill_measures(&connection)?;
         engagement::backfill_practice_events(&connection)?;
@@ -2281,7 +2286,7 @@ mod tests {
             .unwrap();
         {
             let conn = owner.connection.lock().unwrap();
-            conn.execute_batch("DROP INDEX comparisons_b; DROP INDEX comparisons_a; DROP TABLE comparisons; DROP TABLE audio_measures; DROP TABLE self_checks; DROP INDEX phrase_uses_attempt; DROP TABLE phrase_uses; DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; DROP INDEX phrase_reviews_card; DROP INDEX phrase_cards_due; DROP TABLE phrase_reviews; DROP TABLE phrase_cards; DROP INDEX reference_clips_source; DROP INDEX reference_clips_folder; ALTER TABLE reference_clips DROP COLUMN source_end_ms; ALTER TABLE reference_clips DROP COLUMN source_start_ms; ALTER TABLE reference_clips DROP COLUMN source_id; ALTER TABLE reference_clips DROP COLUMN folder_id; DROP INDEX clip_source_picks_source; DROP TABLE clip_source_picks; DROP TABLE clip_sources; DROP TABLE clip_folders; ALTER TABLE reference_clips DROP COLUMN description; ALTER TABLE reference_clips DROP COLUMN feature; DROP TABLE reference_clips; ALTER TABLE sessions DROP COLUMN ease; ALTER TABLE sessions DROP COLUMN takeaway; ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
+            conn.execute_batch("DROP TABLE weekly_quests; DROP INDEX personal_records_record; DROP TABLE personal_records; DROP TABLE achievements; DROP TABLE skill_levels; ALTER TABLE transfer_reviews DROP COLUMN tags; ALTER TABLE transfer_reviews DROP COLUMN flow; DROP INDEX comparisons_b; DROP INDEX comparisons_a; DROP TABLE comparisons; DROP TABLE audio_measures; DROP TABLE self_checks; DROP INDEX phrase_uses_attempt; DROP TABLE phrase_uses; DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; DROP INDEX phrase_reviews_card; DROP INDEX phrase_cards_due; DROP TABLE phrase_reviews; DROP TABLE phrase_cards; DROP INDEX reference_clips_source; DROP INDEX reference_clips_folder; ALTER TABLE reference_clips DROP COLUMN source_end_ms; ALTER TABLE reference_clips DROP COLUMN source_start_ms; ALTER TABLE reference_clips DROP COLUMN source_id; ALTER TABLE reference_clips DROP COLUMN folder_id; DROP INDEX clip_source_picks_source; DROP TABLE clip_source_picks; DROP TABLE clip_sources; DROP TABLE clip_folders; ALTER TABLE reference_clips DROP COLUMN description; ALTER TABLE reference_clips DROP COLUMN feature; DROP TABLE reference_clips; ALTER TABLE sessions DROP COLUMN ease; ALTER TABLE sessions DROP COLUMN takeaway; ALTER TABLE sessions DROP COLUMN curriculum_version; ALTER TABLE sessions DROP COLUMN content_id; DROP INDEX attempts_deleted; ALTER TABLE attempts DROP COLUMN deleted_at_ms; DROP INDEX analysis_runs_attempt; DROP TABLE metric_values; DROP TABLE analysis_runs; DROP INDEX api_runs_attempt; DROP TABLE api_runs; DROP TABLE prosody_tracks; DROP TABLE annotations; DROP TABLE transcript_segments; DROP TABLE transcript_revisions; DROP INDEX jobs_attempt; ALTER TABLE jobs DROP COLUMN attempt_id; ALTER TABLE jobs DROP COLUMN created_at_ms; ALTER TABLE jobs DROP COLUMN finished_at_ms; ALTER TABLE jobs DROP COLUMN error_message; DROP TABLE purged_assets; DROP TABLE app_settings; DROP INDEX sessions_deleted; PRAGMA user_version=1;").unwrap();
         }
         drop(owner);
         let upgraded = DatabaseOwner::open(&root.0).unwrap();
@@ -2291,7 +2296,7 @@ mod tests {
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v17-")));
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v18-")));
         assert!(upgraded.attempt_transcript("existing").unwrap()["revision"].is_null());
     }
     fn api_result(take: &SavedRecording, run: &str, words: Option<Vec<(&str, u64, u64)>>) -> crate::audio::transcription::TranscriptionResult {
@@ -2680,6 +2685,7 @@ mod exercise_type_tests {
                 "CREATE TABLE ed_v15 (id TEXT NOT NULL, version INTEGER NOT NULL CHECK(version > 0), type TEXT CHECK(type IN ('repeat','thought_groups','imitate','expression')), instructions TEXT, content_id TEXT, PRIMARY KEY(id,version)) STRICT;
                  INSERT INTO ed_v15 SELECT id,version,type,instructions,content_id FROM exercise_definitions;
                  DROP TABLE exercise_definitions; ALTER TABLE ed_v15 RENAME TO exercise_definitions;
+                 DROP TABLE weekly_quests; DROP INDEX personal_records_record; DROP TABLE personal_records; DROP TABLE achievements; DROP TABLE skill_levels; ALTER TABLE transfer_reviews DROP COLUMN tags; ALTER TABLE transfer_reviews DROP COLUMN flow;
                  DROP INDEX comparisons_b; DROP INDEX comparisons_a; DROP TABLE comparisons; DROP TABLE audio_measures; DROP TABLE self_checks; DROP INDEX phrase_uses_attempt; DROP TABLE phrase_uses;
                  DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot;
                  DELETE FROM app_settings WHERE key='engagement_backfill_v1'; PRAGMA user_version=15;",
@@ -2691,7 +2697,7 @@ mod exercise_type_tests {
         assert_eq!(db.list_sessions(None, None, false).unwrap().len(), 2, "every session survives the rebuild");
         assert_eq!(db.get_session("s1").unwrap()["exerciseType"], "repeat");
         let conn = db.connection.lock().unwrap();
-        assert_eq!(conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), 17);
+        assert_eq!(conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), 18);
         assert_eq!(conn.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
         assert_eq!(conn.pragma_query_value(None, "foreign_keys", |r| r.get::<_, i64>(0)).unwrap(), 1, "foreign keys are on again");
         conn.execute("INSERT INTO exercise_definitions(id,version,type) VALUES ('ex-jam',1,'jam')", []).unwrap();
@@ -2702,7 +2708,7 @@ mod exercise_type_tests {
         assert_eq!(conn.query_row("SELECT count(*) FROM practice_events WHERE kind='take_saved'", [], |r| r.get::<_, i64>(0)).unwrap(), 0, "one-second takes earn nothing");
         drop(conn);
         let snapshots: Vec<String> = fs::read_dir(root.0.join("database/snapshots")).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
-        assert!(snapshots.iter().any(|n| n.starts_with("before-v17-")), "{snapshots:?}");
+        assert!(snapshots.iter().any(|n| n.starts_with("before-v18-")), "{snapshots:?}");
     }
 
     #[test]

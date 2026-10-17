@@ -14,7 +14,7 @@ use std::collections::HashMap;
 /// app_settings key marking that history was turned into events once.
 const BACKFILL_KEY: &str = "engagement_backfill_v1";
 /// Bumped when facts gain fields, so the interface can tell what to expect.
-pub const FACTS_VERSION: u32 = 2;
+pub const FACTS_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -264,6 +264,9 @@ pub struct FactTransfer {
     pub needed_clarification: bool,
     pub has_success: bool,
     pub has_next_focus: bool,
+    /// Facts v3 (9.16): how your speaking flowed and the kinds of conversation, Your note.
+    pub flow: Option<String>,
+    pub tags: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -299,6 +302,13 @@ pub struct PracticeFacts {
     pub phrases: Vec<FactPhrase>,
     pub phrase_reviews: Vec<FactPhraseReview>,
     pub progression: Vec<super::progression::ProgressionEvent>,
+    /// Facts v3 (M9 achievements): prompts you wrote and blind A/B choices you saved.
+    pub user_prompts: u32,
+    pub blind_comparisons: u32,
+}
+
+fn count_rows(conn: &Connection, sql: &str) -> Result<u32> {
+    conn.query_row(sql, [], |r| r.get::<_, i64>(0)).map(|n| u32::try_from(n).unwrap_or(0)).map_err(db_error)
 }
 
 fn filled(text: &Option<String>) -> bool {
@@ -513,7 +523,7 @@ impl DatabaseOwner {
             .map_err(db_error)?;
 
         let mut stmt = conn
-            .prepare("SELECT id,local_date,listener_text,clarification,success,next_focus FROM transfer_reviews WHERE deleted_at_ms IS NULL ORDER BY local_date,created_at_ms")
+            .prepare("SELECT id,local_date,listener_text,clarification,success,next_focus,flow,tags FROM transfer_reviews WHERE deleted_at_ms IS NULL ORDER BY local_date,created_at_ms")
             .map_err(db_error)?;
         let transfer_reviews = stmt
             .query_map([], |r| {
@@ -524,6 +534,8 @@ impl DatabaseOwner {
                     needed_clarification: filled(&r.get(3)?),
                     has_success: filled(&r.get(4)?),
                     has_next_focus: filled(&r.get(5)?),
+                    flow: r.get(6)?,
+                    tags: serde_json::from_str(&r.get::<_, String>(7)?).unwrap_or_default(),
                 })
             })
             .map_err(db_error)?
@@ -549,6 +561,8 @@ impl DatabaseOwner {
             generated_at: iso(recording::now_ms() as i64),
             today: today.into(),
             transcription_available,
+            user_prompts: count_rows(&conn, "SELECT count(*) FROM user_prompts WHERE deleted_at_ms IS NULL")?,
+            blind_comparisons: count_rows(&conn, "SELECT count(*) FROM comparisons WHERE blind=1")?,
             sessions,
             takes,
             transfer_reviews,
@@ -705,6 +719,8 @@ pub(crate) mod tests {
                 success: String::new(),
                 self_report: String::new(),
                 next_focus: String::new(),
+                flow: None,
+                tags: Vec::new(),
             })
             .unwrap();
         assert!(db.record_sequence_completed(&["missing".into()], "2026-10-12").unwrap().is_none(), "no take, no event");
@@ -931,7 +947,7 @@ pub(crate) mod tests {
     }
 
     /// The interface parses facts with strict schemas; its fixture
-    /// (src/lib/ipc/fixtures/facts-v2.json) must have exactly these fields.
+    /// (src/lib/ipc/fixtures/facts-v3.json) must have exactly these fields.
     #[test]
     fn facts_serialize_with_the_same_fields_as_the_interface_fixture() {
         let root = TestRoot::new();
@@ -940,14 +956,14 @@ pub(crate) mod tests {
         db.commit_recording(&audio(&root.0, "t1", 1)).unwrap();
         db.add_transfer_review(&super::super::transfer::TransferInput {
             local_date: "2026-10-14".into(), situation: "Explained my job".into(), preparation: String::new(), listener_text: "Your job sounds fun".into(),
-            clarification: String::new(), success: String::new(), self_report: String::new(), next_focus: String::new(),
+            clarification: String::new(), success: String::new(), self_report: String::new(), next_focus: String::new(), flow: Some("smooth".into()), tags: vec!["story".into()],
         }).unwrap();
         let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 16).unwrap();
         let card = db.add_phrase(&phrase_text(), None, today).unwrap();
         db.review_phrase(&card.id, "good", today).unwrap();
         db.record_progression("advance", "Three sessions").unwrap();
         let actual = serde_json::to_value(db.practice_facts("2026-10-16").unwrap()).unwrap();
-        let fixture: Value = serde_json::from_str(include_str!("../../../src/lib/ipc/fixtures/facts-v2.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../../src/lib/ipc/fixtures/facts-v3.json")).unwrap();
         let keys = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<std::collections::BTreeSet<_>>();
         assert_eq!(keys(&actual), keys(&fixture));
         for list in ["sessions", "takes", "transferReviews", "phrases", "phraseReviews", "progression"] {

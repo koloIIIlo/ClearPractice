@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { requestEngagementRefresh } from "@/features/engagement/refresh";
 import { useQuery } from "@tanstack/react-query";
 import { Activity } from "lucide-react";
 import { EvidenceLabel } from "@/components/evidence";
@@ -72,6 +73,10 @@ export function IntonationTrack({ attemptId, link }: { attemptId: string; link?:
   const [open, setOpen] = useState(false);
   const positionMs = useLinkedPosition(link);
   const contour = useQuery({ queryKey: ["intonation", attemptId], queryFn: () => ipc.getTakeProsody(attemptId), enabled: open, staleTime: Infinity });
+  // A stored track counts toward Voice & delivery (9.2).
+  useEffect(() => {
+    if (contour.isSuccess) requestEngagementRefresh("review");
+  }, [contour.isSuccess]);
   if (!open)
     return (
       <Button variant="ghost" onClick={() => setOpen(true)}>

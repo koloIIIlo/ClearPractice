@@ -29,6 +29,8 @@ export const keys = {
   selfChecks: (attemptId: string) => ["engagement", "selfChecks", attemptId] as const,
   audioMeasures: (attemptId: string) => ["audio-measures", attemptId] as const,
   comparisons: (attemptId: string) => ["comparisons", attemptId] as const,
+  /** Game core (M9); under "engagement", so one invalidation refreshes everything earned. */
+  engagementState: (week: string) => ["engagement", "state", week] as const,
 };
 
 /** Saved preferences; until they load, the defaults apply. */
@@ -112,7 +114,7 @@ export function usePhrases() {
 export function useReviewPhrase() {
   const ipc = useIpc();
   const qc = useQueryClient();
-  return useMutation({
+  return useMutation({ meta: { engagement: "phrase" },
     mutationFn: ({ phraseId, rating }: { phraseId: string; rating: PhraseRating }) =>
       ipc.reviewPhrase(phraseId, rating),
     onSuccess: () => {

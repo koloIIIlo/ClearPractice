@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { requestEngagementRefresh } from "@/features/engagement/refresh";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useIpc } from "@/lib/ipc";
@@ -113,6 +114,7 @@ export function TranscriptionQueueProvider({ children }: { children: ReactNode }
         }
         void qc.invalidateQueries({ queryKey: ["sessions"] });
         if (finished?.sessionId) void qc.invalidateQueries({ queryKey: ["session", finished.sessionId] });
+        requestEngagementRefresh("transcript");
         publish();
         void pump.current();
       })

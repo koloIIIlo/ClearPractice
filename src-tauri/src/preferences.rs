@@ -58,7 +58,17 @@ pub struct Preferences {
     /// Your own words to watch (8.11), counted in every take summary next to the
     /// default list: lowercase, at most 30 characters each, at most 20.
     pub watch_words: Vec<String>,
+    /// Practice on this many days of each week (9.8); missing a day breaks nothing.
+    pub weekly_goal_days: u8,
+    /// "monday" or "sunday" (9.8).
+    pub week_starts_on: String,
+    /// Sprout, the plant that grows with your practice days (9.11).
+    pub companion: bool,
+    /// Accent colour (9.12): "green", or one you unlocked.
+    pub accent: String,
 }
+
+pub const ACCENTS: [&str; 6] = ["green", "ocean", "amber", "violet", "rose", "graphite"];
 
 impl Default for Preferences {
     fn default() -> Self {
@@ -67,7 +77,7 @@ impl Default for Preferences {
             onboarded: false, tour_done: false, goals: Vec::new(), goal_note: String::new(), difficulty_language: None,
             local_endpoint: "http://127.0.0.1:8080".into(), local_model: String::new(), budget_warning_micro_usd: 4_000_000, reminder_time: None,
             coaching_prices: Default::default(), practice_style: "playful".into(), style_chosen: false, celebrations: "full".into(), celebration_sounds: false,
-            live_pace: false, watch_words: Vec::new() }
+            live_pace: false, watch_words: Vec::new(), weekly_goal_days: 3, week_starts_on: "monday".into(), companion: true, accent: "green".into() }
     }
 }
 
@@ -126,6 +136,15 @@ fn validate(mut p: Preferences) -> Result<Preferences, String> {
         return Err("Watch up to 20 words of your own.".into());
     }
     p.watch_words = words;
+    if !(1..=7).contains(&p.weekly_goal_days) {
+        return Err("Choose a weekly goal of 1 to 7 days.".into());
+    }
+    if !matches!(p.week_starts_on.as_str(), "monday" | "sunday") {
+        return Err("A week starts on Monday or Sunday.".into());
+    }
+    if !ACCENTS.contains(&p.accent.as_str()) {
+        return Err("Unknown accent colour.".into());
+    }
     p.input_device_id = p.input_device_id.filter(|id| !id.trim().is_empty());
     if p.input_device_id.as_ref().is_some_and(|id| id.len() > 512) {
         return Err("The microphone ID is too long.".into());
@@ -178,6 +197,21 @@ mod tests {
         assert_eq!(load(&db).unwrap(), Preferences::default());
         let blank = save(&db, Preferences { input_device_id: Some("  ".into()), ..Default::default() }).unwrap();
         assert_eq!(blank.input_device_id, None);
+    }
+
+    #[test]
+    fn game_preferences_round_trip_and_reject_unknown_values() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        let defaults = load(&db).unwrap();
+        assert_eq!((defaults.weekly_goal_days, defaults.week_starts_on.as_str(), defaults.companion, defaults.accent.as_str()), (3, "monday", true, "green"));
+        let chosen = Preferences { weekly_goal_days: 5, week_starts_on: "sunday".into(), companion: false, accent: "ocean".into(), ..Default::default() };
+        assert_eq!(save(&db, chosen.clone()).unwrap(), chosen);
+        assert_eq!(load(&db).unwrap(), chosen);
+        for bad in [Preferences { weekly_goal_days: 0, ..Default::default() }, Preferences { weekly_goal_days: 8, ..Default::default() },
+            Preferences { week_starts_on: "friday".into(), ..Default::default() }, Preferences { accent: "gold".into(), ..Default::default() }] {
+            assert!(save(&db, bad).is_err());
+        }
     }
 
     #[test]

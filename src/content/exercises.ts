@@ -99,3 +99,6 @@ export const EXERCISE_TYPE_INFO: Record<ExerciseType, { label: string; icon: Luc
 
 /** The four core types, listed first in filters; other types appear once you have used them. */
 export const CORE_EXERCISE_TYPES: readonly ExerciseType[] = ["repeat", "thought_groups", "imitate", "expression"];
+
+/** The features you can choose to imitate; the choice is stored as the session focus (Listening 2 counts them). */
+export const IMITATION_FEATURES = ["Emphasis: which word carries the stress", "Phrase rhythm", "Clear endings: where the voice falls"] as const;

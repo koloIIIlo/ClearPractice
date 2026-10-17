@@ -72,3 +72,21 @@ it("opens on your speech profile, then shows four trend charts with Estimated la
   expect(within(trends).getByText("From takes where you reviewed every candidate")).toBeInTheDocument();
   expectNoScores();
 });
+
+it("saves flow and kind with the reflection (9.16)", async () => {
+  const user = userEvent.setup();
+  const base = createMockClient();
+  const client: IpcClient = { ...base, addTransferReview: vi.fn(base.addTransferReview) };
+  renderWithApp(<ProgressPage />, { client, path: "/progress?view=real" });
+  await user.type(await screen.findByLabelText("Situation"), "Told the team about my weekend");
+  await user.click(within(screen.getByRole("radiogroup", { name: "How did your speaking flow?" })).getByRole("radio", { name: "Smoothly" }));
+  const kinds = screen.getByRole("toolbar", { name: "What kind of conversation?" });
+  await user.click(within(kinds).getByRole("button", { name: "Story" }));
+  await user.click(within(kinds).getByRole("button", { name: "Small talk" }));
+  await user.click(screen.getByRole("button", { name: "Save reflection" }));
+  await waitFor(() => expect(client.addTransferReview).toHaveBeenCalledWith(expect.objectContaining({ flow: "smooth", tags: ["story", "small_talk"] })));
+  const saved = (await screen.findByText("Told the team about my weekend", { selector: "p" })).closest("li")!;
+  expect(saved).toHaveTextContent("SmoothlyKind of conversationStory, Small talk");
+  expect(within(saved).getByText("Your note")).toBeInTheDocument();
+});
+

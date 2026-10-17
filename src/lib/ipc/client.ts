@@ -6,6 +6,11 @@
 import type {
   ActivityContext,
   ActivityStep,
+  EngagementState,
+  QuestInput,
+  QuestRow,
+  UnlockInput,
+  UnlockOutcome,
   AudioMeasures,
   Comparison,
   LivePace,
@@ -352,6 +357,14 @@ export interface IpcClient {
   /** Your A/B choice between takes of two different sessions. */
   saveComparison(aAttempt: string, bAttempt: string, preferred: "a" | "b" | "same", blind: boolean): Promise<Comparison>;
   listComparisons(attemptId: string): Promise<Comparison[]>;
+  /** Game core (M9): levels, achievements, records, recent quests and goal weeks. `week` is the week's first day. */
+  getEngagementState(week: string): Promise<EngagementState>;
+  /** Records what the rules found new, once, with its XP; returns what was actually new. */
+  recordUnlocks(input: UnlockInput): Promise<UnlockOutcome>;
+  /** Stores this week's quests the first time they are shown (stored slots stay). */
+  setWeeklyQuests(week: string, quests: QuestInput[]): Promise<QuestRow[]>;
+  /** One swap a week, never for a finished quest. */
+  swapWeeklyQuest(week: string, slot: number, quest: QuestInput): Promise<QuestRow>;
 }
 
 /** A command failed in a way the UI should explain in context (§14). */

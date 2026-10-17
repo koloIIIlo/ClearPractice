@@ -8,8 +8,8 @@ import type { Preferences } from "@/lib/ipc/schemas";
  */
 export type EffectiveStyle = { playful: boolean; celebrations: "full" | "subtle" | "off"; sounds: boolean };
 
-/** The one-time Playful-or-Calm card on Today waits for the game layer (roadmap 9.1). */
-export const SHOW_STYLE_CARD = false;
+/** The one-time Playful-or-Calm card on Today, on since the game layer exists (roadmap 9.1). */
+export const SHOW_STYLE_CARD = true;
 
 /** Calm turns celebrations and their sound off; reduced motion turns "full" into "subtle". */
 export function effectiveStyle(p: Pick<Preferences, "practiceStyle" | "celebrations" | "celebrationSounds">, reducedMotion: boolean): EffectiveStyle {

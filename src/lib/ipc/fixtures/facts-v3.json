@@ -1,5 +1,5 @@
 {
-  "factsVersion": 2,
+  "factsVersion": 3,
   "generatedAt": "2026-10-16T18:00:00.000Z",
   "today": "2026-10-16",
   "transcriptionAvailable": true,
@@ -60,9 +60,11 @@
     }
   ],
   "transferReviews": [
-    { "id": "transfer-1", "localDate": "2026-10-14", "hasListenerWords": true, "neededClarification": false, "hasSuccess": true, "hasNextFocus": false }
+    { "id": "transfer-1", "localDate": "2026-10-14", "hasListenerWords": true, "neededClarification": false, "hasSuccess": true, "hasNextFocus": false, "flow": "smooth", "tags": ["story"] }
   ],
   "phrases": [{ "id": "phrase-1", "createdAt": "2026-10-10T08:00:00.000Z", "starter": false, "deleted": false }],
   "phraseReviews": [{ "cardId": "phrase-1", "localDate": "2026-10-11", "rating": "good" }],
+  "userPrompts": 1,
+  "blindComparisons": 0,
   "progression": [{ "kind": "advance", "stageFrom": 1, "stageTo": 2, "reason": "3 sessions at this stage on 2 days", "createdAt": "2026-10-12T09:00:00.000Z" }]
 }

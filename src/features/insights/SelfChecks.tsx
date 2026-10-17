@@ -61,7 +61,7 @@ export function SelfChecks({ attemptId, opener, ending, durationMs }: { attemptI
   const qc = useQueryClient();
   const key = keys.selfChecks(attemptId);
   const checks = useQuery({ queryKey: key, queryFn: () => ipc.listSelfChecks(attemptId) });
-  const save = useMutation({
+  const save = useMutation({ meta: { engagement: "review" },
     mutationFn: ({ checkId, value }: { checkId: SelfCheckId; value: boolean | null }) => ipc.setSelfCheck(attemptId, checkId, value),
     // The choice shows immediately; a failure puts the saved state back.
     onMutate: ({ checkId, value }) => {

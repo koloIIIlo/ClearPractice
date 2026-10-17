@@ -439,7 +439,7 @@ fn a07_backup_restores_every_record_and_checksum_into_an_empty_profile() {
         conditions: crate::storage::database::prompts::Conditions { familiarity: "unfamiliar".into(), preparation_seconds: 15, target_seconds: 90, audience: None, follow_up: false } }).unwrap();
     db.set_prompt_favorite("p-habit", true).unwrap();
     db.add_transfer_review(&crate::storage::database::transfer::TransferInput { local_date: "2026-10-12".into(), situation: "Explained a decision".into(), preparation: String::new(),
-        listener_text: "You want to wait.".into(), clarification: String::new(), success: "The example".into(), self_report: "The reason came late.".into(), next_focus: "Lead with it".into() }).unwrap();
+        listener_text: "You want to wait.".into(), clarification: String::new(), success: "The example".into(), self_report: "The reason came late.".into(), next_focus: "Lead with it".into(), flow: None, tags: Vec::new() }).unwrap();
     db.record_progression("advance", "3 unfamiliar sessions on 2 days").unwrap();
     let mut prefs = crate::preferences::load(&db).unwrap();
     prefs.goals = vec!["clarity".into()];
@@ -527,10 +527,10 @@ fn sha256_bytes(bytes: &[u8]) -> String {
 
 // ── A-9 Upgrading a populated older schema ──────────────────────────────────
 
-/// Turns a current (v17) profile back into a populated v14 one.
+/// Turns a current (v18) profile back into a populated v14 one.
 fn downgrade_to_v14(root: &Path) {
     let conn = Connection::open(root.join("database/app.sqlite")).unwrap();
-    conn.execute_batch("DROP INDEX comparisons_b; DROP INDEX comparisons_a; DROP TABLE comparisons; DROP TABLE audio_measures; DROP TABLE self_checks; DROP INDEX phrase_uses_attempt; DROP TABLE phrase_uses; DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DELETE FROM app_settings WHERE key='engagement_backfill_v1'; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; PRAGMA user_version=14;").unwrap();
+    conn.execute_batch("DROP TABLE weekly_quests; DROP INDEX personal_records_record; DROP TABLE personal_records; DROP TABLE achievements; DROP TABLE skill_levels; ALTER TABLE transfer_reviews DROP COLUMN tags; ALTER TABLE transfer_reviews DROP COLUMN flow; DROP INDEX comparisons_b; DROP INDEX comparisons_a; DROP TABLE comparisons; DROP TABLE audio_measures; DROP TABLE self_checks; DROP INDEX phrase_uses_attempt; DROP TABLE phrase_uses; DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DELETE FROM app_settings WHERE key='engagement_backfill_v1'; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; PRAGMA user_version=14;").unwrap();
 }
 
 /// A-9 (besides populated_v1_database_upgrades_to_v2_with_a_snapshot and
@@ -579,7 +579,7 @@ fn a09_a_populated_older_profile_upgrades_and_a_failed_upgrade_recovers() {
         assert_eq!(db.attempt_transcript("old-take").unwrap()["correction"]["text"], "Indexes help.");
         assert!(db.list_coaching_runs("old-take").unwrap().is_empty(), "new tables exist and start empty");
         assert_eq!(kept(&read_only(&root.0)), before, "no row lost or changed by the upgrade");
-        let snapshots: Vec<PathBuf> = files(&root.0.join("database/snapshots")).into_iter().filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("before-v17-")).collect();
+        let snapshots: Vec<PathBuf> = files(&root.0.join("database/snapshots")).into_iter().filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("before-v18-")).collect();
         assert_eq!(snapshots.len(), if fail_first { 2 } else { 1 }, "a snapshot before every upgrade attempt");
         for snapshot in snapshots {
             let copy = Connection::open_with_flags(&snapshot, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
@@ -607,7 +607,9 @@ fn a11_every_http_client_is_counted_and_local_modules_name_no_network_code() {
         "backup/mod.rs", "backup/export.rs", "clips.rs", "models.rs", "storage_usage.rs", "diagnostics.rs", "app_paths.rs", "data_location.rs",
         "storage/engagement.rs", "engagement.rs", "activity.rs", "exercise_types.rs", "commands/engagement.rs",
         // Insights (M8, A-32): syllables, phrase matching, self-checks and comparisons stay offline.
-        "storage/insights.rs", "audio/syllables.rs", "commands/insights.rs"];
+        "storage/insights.rs", "audio/syllables.rs", "commands/insights.rs",
+        // Game core (M9): levels, achievements, records and quests stay offline.
+        "storage/game.rs"];
     let banned = ["reqwest", "Client::", "TcpStream", "UdpSocket", "std::net", "ApiTransport", "local_llm::chat", "send_reserved", "download_tool", "whisper_setup::", "linkaudio::"];
     for file in local {
         let (_, code) = sources.iter().find(|(n, _)| n == file).unwrap_or_else(|| panic!("{file} not found"));
@@ -1194,3 +1196,47 @@ fn a25_api_failures_cancel_oversize_and_malformed_output_leave_recordings_and_hi
     assert_eq!(db.attempt_transcript("take").unwrap()["revision"]["id"], second.run_id.as_str(), "the newest is shown; the rest stay");
     assert_ne!(crate::credentials::transcription_target("deepgram").unwrap(), crate::credentials::transcription_target("assemblyai").unwrap(), "each provider keeps its own key");
 }
+
+// ── A-28 Never taken away (roadmap M9) ─────────────────────────────────────
+
+/// A-28: Trash and permanent deletion never take away earned effort. XP
+/// events, levels, achievements and personal records stay exactly as they were
+/// after the session that earned them is purged; their IDs just stop resolving.
+#[test]
+fn a28_ledgers_survive_purges() {
+    use crate::storage::database::game::{NewAchievement, NewLevel, NewRecord, UnlockInput};
+    let root = TestRoot::new();
+    let saved = take(&root.0, "take-1");
+    let db = DatabaseOwner::open(&root.0).unwrap();
+    db.commit_recording(&saved).unwrap();
+    db.set_session_reflection("take-1", Some(4), Some("Lead with it")).unwrap();
+    let unlock = |records: Vec<NewRecord>| UnlockInput {
+        levels: vec![NewLevel { area: "structure".into(), level: 1, definition_version: 1, evidence: json!({ "sessions": ["take-1"] }) }],
+        achievements: vec![NewAchievement { id: "first-take".into(), definition_version: 1, evidence: json!({ "takes": ["take-1"] }) }],
+        records,
+        quests_done: vec![],
+        weekly_goal: Some("2026-10-12".into()),
+        local_date: "2026-10-16".into(),
+    };
+    let record = |value: f64| NewRecord { record: "longest_take".into(), value, unit: "s".into(), attempt_id: Some("take-1".into()), session_id: Some("take-1".into()), definition_version: 1 };
+    db.record_unlocks(&unlock(vec![record(2.0)])).unwrap();
+    db.record_unlocks(&unlock(vec![record(2.5)])).unwrap();
+    let ledger = |_: &DatabaseOwner| -> Vec<String> {
+        let conn = read_only(&root.0);
+        let mut out = query_rows(&conn, "SELECT kind,ref_id,xp FROM practice_events ORDER BY id");
+        for table in ["skill_levels", "achievements", "personal_records"] {
+            out.extend(query_rows(&conn, &format!("SELECT * FROM {table} ORDER BY 1")));
+        }
+        out
+    };
+    let before = ledger(&db);
+    assert!(before.iter().any(|r| r.contains("reflection_saved")) && before.iter().any(|r| r.contains("personal_record")), "{before:?}");
+    db.move_to_trash("take-1", 10).unwrap();
+    assert_eq!(ledger(&db), before, "Trash keeps everything earned");
+    db.delete_permanently(&["take-1".into()]).unwrap();
+    assert!(db.get_session("take-1").is_err(), "the session is gone");
+    assert_eq!(ledger(&db), before, "permanent deletion keeps everything earned");
+    let state = db.engagement_state("2026-10-12").unwrap();
+    assert_eq!((state.levels.len(), state.achievements.len(), state.records.len(), state.goal_weeks.len()), (1, 1, 2, 1));
+}
+

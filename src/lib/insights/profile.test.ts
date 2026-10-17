@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { factsBuilder } from "@/test/fixtures/facts";
-import { buildProfile, middleHalf } from "./profile";
+import { buildProfile, middleHalf, profileReadiness } from "./profile";
 
 const row = (facts: ReturnType<ReturnType<typeof factsBuilder>["build"]>, key: string) => buildProfile(facts).rows.find((r) => r.key === key)!;
 
@@ -35,5 +35,19 @@ describe("speech profile", () => {
     expect(row(facts, "rate").unavailableReason).toMatch(/measure it from the audio/);
     const withPitch = factsBuilder().session().take({ pitchRangeSt: 5 }).take({ pitchRangeSt: 8 }).build();
     expect(row(withPitch, "pitch").value).toBe("usually 6–7 semitones");
+  });
+
+  it("counts filled rows exactly as the profile shows them", () => {
+    const filledRows = (facts: ReturnType<ReturnType<typeof factsBuilder>["build"]>) => {
+      const rows = buildProfile(facts).rows;
+      return { filled: rows.filter((r) => r.value !== null).length, total: rows.length };
+    };
+    const histories = [
+      factsBuilder().build(),
+      factsBuilder().session().take({ paceWpm: 120 }).take({ paceWpm: 130, meanRun: 6 }).build(),
+      factsBuilder().session().take({ paceWpm: 120, meanRun: 5, pitchRangeSt: 4, rateSps: 4.2, watchPer100: 1, hedgesPer100: 2 }).take({ paceWpm: 125, meanRun: 6, pitchRangeSt: 6, rateSps: 4.5, watchPer100: 0, hedgesPer100: 1 }).build(),
+    ];
+    for (const facts of histories) expect(profileReadiness(facts)).toEqual(filledRows(facts));
+    expect(profileReadiness(histories[2])).toEqual({ filled: 7, total: 7 });
   });
 });

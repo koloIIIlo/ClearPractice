@@ -4,6 +4,9 @@ import type { SessionSummary } from "@/lib/ipc/schemas";
 import { formatDuration, parseLocalDate, UI_LOCALE } from "@/lib/format";
 import { addLocalDays } from "@/lib/phrase-schedule";
 import { cn } from "@/lib/utils";
+import { usePracticeStyle } from "@/features/engagement/style";
+import { GoalRing } from "@/features/journey/WeekGoal";
+import { useWeekGoal } from "@/features/journey/useWeekGoal";
 
 type Tally = { days: number; takes: number; speakingMs: number };
 export type WeekRecap = {
@@ -64,6 +67,9 @@ const longFmt = new Intl.DateTimeFormat(UI_LOCALE, { weekday: "long", day: "nume
  */
 export function WeekRow({ today }: { today: string }) {
   const sessions = useSessions({});
+  const { playful } = usePracticeStyle();
+  // Playful style adds the weekly goal (9.8); Calm keeps the plain recap.
+  const goal = useWeekGoal(playful);
   if (!sessions.data) return null;
   const recap = weekRecap(sessions.data, today);
   if (!recap.anyHistory) return null;
@@ -90,7 +96,15 @@ export function WeekRow({ today }: { today: string }) {
           </li>
         ))}
       </ol>
-      <p className="text-meta text-muted-foreground tabular-nums">
+      <p className="flex flex-wrap items-center gap-x-1.5 text-meta text-muted-foreground tabular-nums">
+        {goal && (
+          <span className="inline-flex items-center gap-1.5">
+            <GoalRing days={goal.days} goal={goal.goal} size={18} />
+            <span className="text-foreground">{Math.min(goal.days, goal.goal)} of {goal.goal} days</span>
+            {goal.weeksInARow >= 2 && <span>· {goal.weeksInARow} weeks in a row</span>}
+            <span aria-hidden>·</span>
+          </span>
+        )}
         {recapLine(recap)} ·{" "}
         {/* Underlined: inside a line of text, colour alone is too close to the grey around it in dark mode (axe link-in-text-block). */}
         <Link to="/progress" className="text-primary underline underline-offset-2 hover:no-underline">Your year</Link>

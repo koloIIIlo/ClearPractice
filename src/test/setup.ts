@@ -1,9 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
+import { toast } from "sonner";
 
 afterEach(() => {
   cleanup();
+  // Sonner keeps its toasts in a module store and replays them to the next Toaster.
+  toast.dismiss();
   window.location.hash = "";
   try { window.localStorage.clear(); } catch { /* no storage in this environment */ }
 });

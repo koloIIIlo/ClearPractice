@@ -33,6 +33,18 @@
   --cp-marker-liked: #2f5fb3;
   /* The live pace meter's band (8.8): neutral, never red or green. */
   --cp-ring-track: #c5d0c7;
+  /* Sprout (roadmap 9.11), the companion art: leaves, flower and pots. */
+  --cp-sprout-leaf: #4f9a6b;
+  --cp-sprout-autumn: #8a8a3c;
+  --cp-sprout-seed: #8a6a45;
+  --cp-sprout-bud: #d98aa0;
+  --cp-sprout-petal: #f0b8c6;
+  --cp-sprout-centre: #f6d36b;
+  --cp-pot-clay: #b86b4b;
+  --cp-pot-white: #e9e6df;
+  --cp-pot-blue: #4f7fb8;
+  --cp-pot-wood: #9a7448;
+  --cp-pot-stone: #8d8f92;
 
   --background: var(--cp-app-bg);
   --foreground: var(--cp-text);
@@ -90,12 +102,34 @@
   --cp-marker-filler: #e0c070;
   --cp-marker-liked: #8fb3ff;
   --cp-ring-track: #4d4d57;
+  --cp-sprout-leaf: #62b884;
+  --cp-sprout-autumn: #a3a352;
+  --cp-pot-white: #cfcac0;
 
   --chart-2: #8fb8a6;
   --chart-3: #e0c070;
   --chart-4: #a3a3ab;
   --chart-5: #ff9aa2;
 }
+
+/*
+ * Accent colours you unlock (roadmap 9.12). Each set overrides the accent in
+ * both themes; text on the accent and the accent as text keep at least 4.5:1
+ * (src/app/accents.test.ts). Any element can carry data-accent (Settings'
+ * swatches); the app's choice sits on <html>.
+ */
+[data-accent="green"] { --cp-accent: #176a50; --cp-on-accent: #ffffff; }
+[data-accent="ocean"] { --cp-accent: #1f5f8b; --cp-on-accent: #ffffff; }
+[data-accent="amber"] { --cp-accent: #8a5300; --cp-on-accent: #ffffff; }
+[data-accent="violet"] { --cp-accent: #6b42b8; --cp-on-accent: #ffffff; }
+[data-accent="rose"] { --cp-accent: #a3325a; --cp-on-accent: #ffffff; }
+[data-accent="graphite"] { --cp-accent: #3f4652; --cp-on-accent: #ffffff; }
+.dark[data-accent="green"], .dark [data-accent="green"] { --cp-accent: #5fd0a2; --cp-on-accent: #0a1f16; }
+.dark[data-accent="ocean"], .dark [data-accent="ocean"] { --cp-accent: #7cc0f0; --cp-on-accent: #08192a; }
+.dark[data-accent="amber"], .dark [data-accent="amber"] { --cp-accent: #f0b45a; --cp-on-accent: #241500; }
+.dark[data-accent="violet"], .dark [data-accent="violet"] { --cp-accent: #b9a2f2; --cp-on-accent: #1a1030; }
+.dark[data-accent="rose"], .dark [data-accent="rose"] { --cp-accent: #f29bb7; --cp-on-accent: #2a0b16; }
+.dark[data-accent="graphite"], .dark [data-accent="graphite"] { --cp-accent: #c4c9d2; --cp-on-accent: #16181c; }
 
 @theme inline {
   --font-sans: "Inter Variable", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
@@ -165,6 +199,19 @@
     0% { transform: scale(0.6); opacity: 0; }
     60% { transform: scale(1.08); opacity: 1; }
     100% { transform: scale(1); opacity: 1; }
+  }
+
+  /* A celebration card's ring filling once (roadmap 9.10); reduced motion shows a toast instead. */
+  --animate-ring-fill: cp-ring-fill 500ms var(--ease-standard) both;
+  @keyframes cp-ring-fill {
+    0% { stroke-dashoffset: 100; }
+    100% { stroke-dashoffset: 0; }
+  }
+  /* Sprout's gentle sway (9.11), only while on screen and never under reduced motion. */
+  --animate-sway: cp-sway 6s ease-in-out infinite;
+  @keyframes cp-sway {
+    0%, 100% { transform: rotate(-1.5deg); }
+    50% { transform: rotate(1.5deg); }
   }
 
   /* A page's code loading (roadmap 7.1): a short bar gliding under the top bar. */

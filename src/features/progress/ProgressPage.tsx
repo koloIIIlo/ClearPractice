@@ -16,7 +16,8 @@ import { formatDay, formatRelativeDay } from "@/lib/format";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useProgress } from "@/lib/ipc/queries";
 import { useIpc } from "@/lib/ipc";
-import { ProgressView, type ProgressSummary, type TransferReview } from "@/lib/ipc/schemas";
+import { ProgressView, type ProgressSummary, type TransferFlow, type TransferReview, type TransferTag } from "@/lib/ipc/schemas";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toLocalDate } from "@/lib/phrase-schedule";
 import { SpeechProfile } from "@/features/insights/SpeechProfile";
 import { Trends } from "@/features/insights/Trends";
@@ -222,6 +223,21 @@ function Summary({ p }: { p: ProgressSummary }) {
 const RECENT_DAYS = () => Array.from({ length: 14 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return toLocalDate(d); });
 
 const EMPTY_REFLECTION = { situation: "", preparation: "", listenerText: "", clarification: "", success: "", selfReport: "", nextFocus: "" };
+/** The reflection fields used by levels (9.16): your own reading, Your note. */
+const FLOWS: { value: TransferFlow; label: string }[] = [
+  { value: "smooth", label: "Smoothly" },
+  { value: "mixed", label: "Mixed" },
+  { value: "hard", label: "With effort" },
+];
+const KINDS: { value: TransferTag; label: string }[] = [
+  { value: "story", label: "Story" },
+  { value: "meeting", label: "Meeting" },
+  { value: "presentation", label: "Presentation" },
+  { value: "interview", label: "Interview" },
+  { value: "small_talk", label: "Small talk" },
+  { value: "phone", label: "Phone call" },
+  { value: "other", label: "Other" },
+];
 
 /**
  * Real-conversation reflections (4.17, §7 Transfer). No recording of anyone
@@ -233,14 +249,18 @@ function RealConversations() {
   const qc = useQueryClient();
   const reviews = useQuery({ queryKey: ["transfer-reviews"], queryFn: () => ipc.listTransferReviews() });
   const [form, setForm] = useState(EMPTY_REFLECTION);
+  const [flow, setFlow] = useState<TransferFlow | null>(null);
+  const [kinds, setKinds] = useState<TransferTag[]>([]);
   const [days] = useState(RECENT_DAYS);
   const [date, setDate] = useState(days[0]);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
-  const save = useMutation({
-    mutationFn: () => ipc.addTransferReview({ ...form, localDate: date }),
+  const save = useMutation({ meta: { engagement: "reflection" },
+    mutationFn: () => ipc.addTransferReview({ ...form, localDate: date, flow, tags: kinds }),
     onSuccess: async () => {
       setForm(EMPTY_REFLECTION);
+      setFlow(null);
+      setKinds([]);
       toast("Reflection saved on this computer.");
       await Promise.all([qc.invalidateQueries({ queryKey: ["transfer-reviews"] }), qc.invalidateQueries({ queryKey: ["today"] })]);
     },
@@ -298,6 +318,19 @@ function RealConversations() {
             <div className="space-y-1">
               <Label htmlFor="rc-self">Your own reading of how it went</Label>
               <Textarea id="rc-self" rows={2} maxLength={2000} value={form.selfReport} onChange={set("selfReport")} />
+            </div>
+            <div className="space-y-1">
+              <span id="rc-flow" className="text-body font-medium">How did your speaking flow?</span>
+              <ToggleGroup type="single" variant="outline" aria-labelledby="rc-flow" className="flex-wrap justify-start" value={flow ?? ""} onValueChange={(v) => setFlow((v || null) as TransferFlow | null)}>
+                {FLOWS.map((f) => <ToggleGroupItem key={f.value} value={f.value} className="h-9 px-3">{f.label}</ToggleGroupItem>)}
+              </ToggleGroup>
+            </div>
+            <div className="space-y-1">
+              <span id="rc-kind" className="text-body font-medium">What kind of conversation?</span>
+              <ToggleGroup type="multiple" variant="outline" aria-labelledby="rc-kind" className="flex-wrap justify-start" value={kinds} onValueChange={(v) => setKinds(v as TransferTag[])}>
+                {KINDS.map((k) => <ToggleGroupItem key={k.value} value={k.value} size="sm" className="h-9 px-3">{k.label}</ToggleGroupItem>)}
+              </ToggleGroup>
+              <p className="text-meta text-muted-foreground">Both are optional and saved as your note.</p>
             </div>
             <div className="space-y-1">
               <Label htmlFor="rc-next">Next focus</Label>
@@ -363,7 +396,10 @@ function Reflection({ review: r }: { review: TransferReview }) {
         {field("Went well", r.success)}
         {field("Your reading", r.selfReport)}
         {field("Next focus", r.nextFocus)}
+        {field("How your speaking flowed", FLOWS.find((f) => f.value === r.flow)?.label ?? "")}
+        {field("Kind of conversation", r.tags.map((tag) => KINDS.find((k) => k.value === tag)?.label ?? tag).join(", "))}
       </dl>
+      {(r.flow || r.tags.length > 0 || r.selfReport) && <EvidenceLabel source="note" className="mt-2" />}
       {confirm && (
         <p className="mt-3 flex flex-wrap items-center gap-2 text-meta">
           Remove this reflection?

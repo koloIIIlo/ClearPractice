@@ -633,7 +633,7 @@ onLivePace(listener: (p: LivePace) => void): Promise<() => void>;
 - As built: 25 ms frames every 5 ms, the 2 dB dip unchanged, a peak is voiced when YIN finds a period at it or 10 ms either side with threshold 0.35 (`prosody::yin_with`), and nothing counts below −60 dB. Result: 220 nuclei against 246 (−10.6%), 0.04 s for 62 s of audio in a release build.
 - The live counter averages groups of samples down to about 16 kHz (48 kHz → 3), so its pitch checks stay small. Capture sends `live_pace` through the existing event sink; the desktop shell turns it into `{ attemptId, syllablesPerSecond, voicedMs, windowMs }`.
 - `prosody::prepared_samples` now serves both the intonation track and the speech rate.
-- Live pace is off by default (Settings → Practice), as D-34 proposes; D-34 itself is still to be confirmed.
+- Live pace is off by default (Settings → Practice), as D-34 says (confirmed 17 Oct).
 
 ---
 

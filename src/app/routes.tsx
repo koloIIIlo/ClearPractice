@@ -75,6 +75,14 @@ export const routes: RouteObject[] = [
             ],
           },
           { path: "compare", lazy: page(() => import("@/features/insights/CrossComparePage"), "CrossComparePage"), handle: crumb("Compare takes") },
+          {
+            path: "journey",
+            handle: crumb("Journey"),
+            children: [
+              { index: true, lazy: page(() => import("@/features/journey/JourneyPage"), "JourneyPage") },
+              { path: "achievements", lazy: page(() => import("@/features/journey/AchievementsPage"), "AchievementsPage"), handle: crumb("Achievements") },
+            ],
+          },
           { path: "phrases", lazy: page(() => import("@/features/phrases/PhrasesPage"), "PhrasesPage"), handle: crumb("Phrases") },
           { path: "progress", lazy: page(() => import("@/features/progress/ProgressPage"), "ProgressPage"), handle: crumb("Progress") },
           { path: "settings/:section?", lazy: page(() => import("@/features/settings/SettingsPage"), "SettingsPage"), handle: crumb("Settings") },

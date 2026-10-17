@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
-import { usePreferences } from "@/lib/ipc/queries";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { isComeback } from "@/lib/engagement/fresh-start";
+import { toLocalDate } from "@/lib/phrase-schedule";
+import { usePracticeEvents, usePreferences } from "@/lib/ipc/queries";
 import { Link, useNavigate } from "react-router";
 import { ArrowRight, Compass, MessagesSquare, Mic, RotateCcw } from "lucide-react";
 import { EmptyState, LoadingBlock, Page, Panel, QueryView, SectionTitle } from "@/components/page";
@@ -16,7 +18,7 @@ import { loadSequence, startSequence, stepUrl } from "@/features/practice/sequen
 import { StagePanel } from "./StagePanel";
 import { WeekRow } from "./WeekRow";
 import { EXERCISE_IDS } from "@/content/exercises";
-import { SHOW_STYLE_CARD } from "@/features/engagement/style";
+import { SHOW_STYLE_CARD, usePracticeStyle } from "@/features/engagement/style";
 import { StyleChoiceCard, shouldOfferStyleChoice } from "@/features/engagement/StyleChoiceCard";
 import { prefetchWhenIdle } from "@/app/prefetch";
 
@@ -25,11 +27,17 @@ const LENGTHS: { value: SessionLength; label: string; hint: string }[] = [
   { value: "short", label: "About 5 minutes", hint: "One prompt, two takes" },
 ];
 
+// Loaded in Playful style only, so Calm and start-up never carry the game engine.
+const JourneyStrip = lazy(() => import("@/features/journey/JourneyStrip").then((m) => ({ default: m.JourneyStrip })));
+
 export function TodayPage() {
   const { preferences } = usePreferences();
   const [chosen, setLength] = useState<SessionLength | null>(null);
   // The default length comes from Settings → Practice until you pick one here.
-  const length = chosen ?? preferences.sessionLength;
+  // After 14 days or more away, today's plan is short unless you choose otherwise (9.13).
+  const events = usePracticeEvents();
+  const comeback = !!events.data && isComeback(events.data, toLocalDate(new Date()));
+  const length = chosen ?? (comeback ? "short" : preferences.sessionLength);
   const plan = useTodayPlan(length);
   // Load the week row's sessions alongside the plan rather than after it.
   useSessions({});
@@ -60,6 +68,7 @@ function TodayContent({
 }) {
   const navigate = useNavigate();
   const { preferences, update } = usePreferences();
+  const { playful } = usePracticeStyle();
   const totalMinutes = plan.steps.reduce((n, s) => n + s.minutes, 0);
   const firstRun = !plan.lastCompleted && !plan.resumable;
   // Today's sequence (4.10): start walks the plan step by step; a sequence in progress can be resumed.
@@ -240,6 +249,11 @@ function TodayContent({
         </div>
 
         <aside className="space-y-6" aria-label="Recent">
+          {playful && (
+            <Suspense fallback={null}>
+              <JourneyStrip />
+            </Suspense>
+          )}
           <StagePanel plan={plan} />
           {plan.lastCompleted && (
             <Panel>

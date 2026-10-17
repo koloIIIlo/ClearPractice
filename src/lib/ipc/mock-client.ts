@@ -7,6 +7,7 @@ import { IpcError, type IpcClient, type PracticeContext } from "./client";
 import * as data from "./mock-data";
 import * as S from "./schemas";
 import { searchLibrary } from "../search";
+import { isWeekStart, RECORD_UNITS, validateUnlockInput } from "../engagement/validate";
 
 const LATENCY_MS = 120;
 
@@ -31,6 +32,11 @@ export const MOCK_XP: Record<string, { xp: number; dailyCap?: number }> = {
   phrase_reviewed: { xp: 2, dailyCap: 10 },
   transfer_review: { xp: 30 },
   baseline_saved: { xp: 20 },
+  level_reached: { xp: 50 },
+  achievement: { xp: 20 },
+  personal_record: { xp: 25 },
+  weekly_goal: { xp: 50 },
+  quest: { xp: 30 },
 };
 /** Takes shorter than this earn nothing; only the first six takes of a session count. */
 const MIN_TAKE_MS = 10_000;
@@ -59,14 +65,17 @@ export function createMockClient(): IpcClient {
   const sessions = structuredClone(data.sessions);
   const transferReviews: S.TransferReview[] = [];
   const events: S.PracticeEvent[] = [];
-  /** Records an event once per kind and reference; above a daily cap it is kept with 0 XP. */
-  const award = (kind: string, refId: string, localDate: string, ids: { sessionId?: string; attemptId?: string } = {}, backfilled = false) => {
-    if (events.some((e) => e.kind === kind && e.refId === refId)) return;
+  /** Records an event once per kind and reference; above a daily cap it is kept with 0 XP. Returns its XP, or null when not new. */
+  const award = (kind: string, refId: string, localDate: string, ids: { sessionId?: string; attemptId?: string } = {}, backfilled = false): number | null => {
+    if (events.some((e) => e.kind === kind && e.refId === refId)) return null;
     const rule = MOCK_XP[kind];
     const earnedToday = events.filter((e) => e.kind === kind && e.localDate === localDate && e.xp > 0).length;
     const xp = rule.dailyCap !== undefined && earnedToday >= rule.dailyCap ? 0 : rule.xp;
     events.push({ id: events.length + 1, kind, refId, localDate, sessionId: ids.sessionId ?? null, attemptId: ids.attemptId ?? null, xp, backfilled, createdAt: new Date().toISOString() });
+    return xp;
   };
+  // Game core (M9): what the rules recorded, as the native ledgers keep it.
+  const game = { levels: [] as S.LevelRow[], achievements: [] as S.AchievementRow[], records: [] as S.RecordRow[], quests: [] as S.QuestRow[] };
   const awardTake = (session: S.SessionDetail, attempt: S.Attempt, backfilled = false) => {
     if (attempt.durationMs < MIN_TAKE_MS || attempt.ordinal > MAX_COUNTED_ORDINAL) return;
     award("take_saved", attempt.id, session.localDate, { sessionId: session.id, attemptId: attempt.id }, backfilled);
@@ -151,7 +160,7 @@ export function createMockClient(): IpcClient {
     const shown = sessions.filter((s) => !trash.has(s.id) && (s.attemptCount > 0 || s.status === "completed"));
     const filled = (text: string | undefined | null) => !!text && text.trim().length > 0;
     return S.PracticeFacts.parse({
-      factsVersion: 2,
+      factsVersion: 3,
       generatedAt: new Date().toISOString(),
       today: data.today(),
       transcriptionAvailable: false,
@@ -180,10 +189,15 @@ export function createMockClient(): IpcClient {
           rateSps: audioMeasures(a.id, a.durationMs).rateSps,
         };
       })),
-      transferReviews: transferReviews.map((r) => ({ id: r.id, localDate: r.localDate, hasListenerWords: filled(r.listenerText), neededClarification: filled(r.clarification), hasSuccess: filled(r.success), hasNextFocus: filled(r.nextFocus) })),
+      transferReviews: transferReviews.map((r) => ({
+        id: r.id, localDate: r.localDate, hasListenerWords: filled(r.listenerText), neededClarification: filled(r.clarification), hasSuccess: filled(r.success), hasNextFocus: filled(r.nextFocus),
+        flow: r.flow, tags: r.tags,
+      })),
       phrases: phrases.map((p) => ({ id: p.id, createdAt: new Date().toISOString(), starter: false, deleted: false })),
       phraseReviews: [],
       progression: [],
+      userPrompts: prompts.filter((p) => p.source === "user").length,
+      blindComparisons: comparisons.filter((c) => c.blind).length,
     });
   };
 
@@ -220,6 +234,82 @@ export function createMockClient(): IpcClient {
       return S.PracticeEvent.parse(structuredClone(events.find((e) => e.kind === "sequence_completed" && e.refId === refId)));
     },
     getPracticeFacts: async () => buildFacts(),
+    getEngagementState: async (week) => {
+      if (!isWeekStart(week)) throw new IpcError("invalid", "A week starts on a Monday or a Sunday.");
+      const since = addLocalDays(week, -28);
+      return S.EngagementState.parse(structuredClone({
+        ...game,
+        quests: game.quests.filter((q) => q.week >= since && q.week <= week).sort((a, b) => a.week.localeCompare(b.week) || a.slot - b.slot),
+        goalWeeks: events.filter((e) => e.kind === "weekly_goal").map((e) => e.refId).sort(),
+      }));
+    },
+    recordUnlocks: async (input) => {
+      try {
+        validateUnlockInput(input, new Set(game.levels.map((l) => `${l.area}:${l.level}`)));
+      } catch (error) {
+        throw new IpcError("invalid", (error as Error).message);
+      }
+      const now = new Date().toISOString();
+      const outcome: S.UnlockOutcome = { levels: [], achievements: [], records: [], questsDone: [], weeklyGoal: null, xp: 0 };
+      const earn = (kind: string, refId: string) => { outcome.xp += award(kind, refId, input.localDate) ?? 0; };
+      for (const l of input.levels) {
+        if (game.levels.some((x) => x.area === l.area && x.level === l.level)) continue;
+        const row = { ...l, achievedAt: now };
+        game.levels.push(row);
+        outcome.levels.push(row);
+        earn("level_reached", `${l.area}:${l.level}`);
+      }
+      for (const a of input.achievements) {
+        if (game.achievements.some((x) => x.id === a.id)) continue;
+        const row = { ...a, unlockedAt: now };
+        game.achievements.push(row);
+        outcome.achievements.push(row);
+        earn("achievement", a.id);
+      }
+      for (const r of input.records) {
+        const lower = RECORD_UNITS[r.record].lowerIsBetter;
+        const values = game.records.filter((x) => x.record === r.record).map((x) => x.value);
+        const best = values.length ? (lower ? Math.min(...values) : Math.max(...values)) : null;
+        if (best !== null && (lower ? r.value >= best : r.value <= best)) continue;
+        const row: S.RecordRow = { ...r, id: game.records.length + 1, previous: best, achievedAt: now };
+        game.records.push(row);
+        outcome.records.push(row);
+        if (best !== null) earn("personal_record", `${r.record}:${row.id}`);
+      }
+      for (const q of input.questsDone) {
+        const quest = game.quests.find((x) => x.week === q.week && x.slot === q.slot && x.completedAt === null);
+        if (!quest) continue;
+        quest.completedAt = now;
+        outcome.questsDone.push({ ...quest });
+        earn("quest", `${q.week}:${q.slot}`);
+      }
+      if (input.weeklyGoal) {
+        const xp = award("weekly_goal", input.weeklyGoal, input.localDate);
+        if (xp !== null) {
+          outcome.xp += xp;
+          outcome.weeklyGoal = input.weeklyGoal;
+        }
+      }
+      return S.UnlockOutcome.parse(structuredClone(outcome));
+    },
+    setWeeklyQuests: async (week, quests) => {
+      if (!isWeekStart(week)) throw new IpcError("invalid", "A week starts on a Monday or a Sunday.");
+      for (const q of quests) {
+        if (q.slot < 1 || q.slot > 3 || !/^[a-z0-9-]{2,40}$/.test(q.quest)) throw new IpcError("invalid", "Unknown quest.");
+        if (!game.quests.some((x) => x.week === week && x.slot === q.slot))
+          game.quests.push({ week, slot: q.slot, quest: q.quest, params: q.params, swapped: false, createdAt: new Date().toISOString(), completedAt: null });
+      }
+      return S.QuestRow.array().parse(structuredClone(game.quests.filter((q) => q.week === week).sort((a, b) => a.slot - b.slot)));
+    },
+    swapWeeklyQuest: async (week, slot, quest) => {
+      if (game.quests.some((q) => q.week === week && q.swapped)) throw new IpcError("invalid", "You've already swapped a quest this week.");
+      const row = game.quests.find((q) => q.week === week && q.slot === slot);
+      if (!row) throw new IpcError("not_found", "This quest is no longer available.");
+      if (row.completedAt) throw new IpcError("invalid", "A finished quest stays.");
+      if (row.quest === quest.quest) throw new IpcError("invalid", "Choose a different quest.");
+      Object.assign(row, { quest: quest.quest, params: quest.params, swapped: true });
+      return S.QuestRow.parse(structuredClone(row));
+    },
     listPhraseUses: (phraseId) =>
       respond(
         S.PhraseUse.array(),
@@ -312,8 +402,9 @@ export function createMockClient(): IpcClient {
     listTransferReviews: async () => [...transferReviews].sort((a, b) => b.localDate.localeCompare(a.localDate) || b.createdAt.localeCompare(a.createdAt)),
     addTransferReview: async (input) => {
       if (input.situation.trim().length < 3) throw new IpcError("invalid", "Describe the situation in a few words.");
-      const trimmed = Object.fromEntries(Object.entries(input).map(([k, v]) => [k, v.trim()])) as S.TransferInput;
-      const review: S.TransferReview = { ...trimmed, id: `transfer-${Date.now()}-${transferReviews.length}`, createdAt: new Date().toISOString() };
+      const { flow = null, tags = [], ...text } = input;
+      const trimmed = Object.fromEntries(Object.entries(text).map(([k, v]) => [k, String(v).trim()])) as Omit<S.TransferInput, "flow" | "tags">;
+      const review: S.TransferReview = { ...trimmed, flow, tags: [...new Set(tags)], id: `transfer-${Date.now()}-${transferReviews.length}`, createdAt: new Date().toISOString() };
       transferReviews.push(review);
       award("transfer_review", review.id, review.localDate);
       return review;

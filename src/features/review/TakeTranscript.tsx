@@ -72,7 +72,7 @@ function Measures({ m }: { m: TranscriptMeasures }) {
 /** Confirm or dismiss each filler candidate (plan 3.7); decisions are stored per revision. */
 function FillerReview({ revisionId, measures, onChanged, link }: { revisionId: string; measures: TranscriptMeasures; onChanged: () => void; link?: PlayerLink }) {
   const ipc = useIpc();
-  const decide = useMutation({
+  const decide = useMutation({ meta: { engagement: "review" },
     mutationFn: ({ index, word, decision }: { index: number; word: string; decision: "confirmed" | "dismissed" | null }) =>
       ipc.setFillerDecision(revisionId, index, word, decision),
     onSuccess: onChanged,

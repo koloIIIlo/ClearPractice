@@ -27,7 +27,7 @@ export function PromptForm({ prompt, onDone }: { prompt?: PracticePrompt; onDone
   const [target, setTarget] = useState(prompt?.conditions.targetSeconds ?? 90);
   const [audience, setAudience] = useState(prompt?.conditions.audience ?? "");
   const [followUp, setFollowUp] = useState(prompt?.conditions.followUp ?? false);
-  const save = useMutation({
+  const save = useMutation({ meta: { engagement: "manual" },
     mutationFn: (input: PromptInput) => (prompt ? ipc.updatePrompt(prompt.id, input) : ipc.addPrompt(input)),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["prompts"] });

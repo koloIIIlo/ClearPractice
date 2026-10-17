@@ -51,8 +51,9 @@ describe("Ctrl+K actions (8.10)", () => {
     const built = { journey: true, justAMinute: false, conversation: false };
     expect(journey.visible(ctx({ playful: true, features: built }))).toBe(true);
     expect(journey.visible(ctx({ playful: false, features: built }))).toBe(false);
-    // Not built yet (M9): hidden in both styles.
-    expect(journey.visible(ctx({ playful: true }))).toBe(false);
+    // Built with M9: shown in Playful style by default, never in Calm.
+    expect(journey.visible(ctx({ playful: true }))).toBe(true);
+    expect(journey.visible(ctx({ playful: false }))).toBe(false);
     expect(matchingActions(ctx({ playful: false, features: built }), "journey")).toEqual([]);
   });
 });
