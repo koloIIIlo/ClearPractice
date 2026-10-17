@@ -1,7 +1,7 @@
 import { render, type RenderResult } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { createMemoryRouter, MemoryRouter, Route, RouterProvider, Routes, type RouteObject } from "react-router";
 import { Toaster } from "sonner";
 import { IpcContext, type IpcClient } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
@@ -47,4 +47,25 @@ export function renderWithApp(ui: ReactNode, opts: AppRenderOptions = {}): Rende
     </MemoryRouter>,
   );
   return { ...result, client, queryClient };
+}
+
+/**
+ * Like renderWithApp, with a data router, for pages that guard navigation
+ * (the recorder's leave guard needs one): `routes` maps paths to elements.
+ */
+export function renderWithRouter(routes: RouteObject[], opts: { client?: IpcClient; path?: string } = {}) {
+  const client = opts.client ?? createMockClient();
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const router = createMemoryRouter(routes, { initialEntries: [opts.path ?? "/"] });
+  const result = render(
+    <QueryClientProvider client={queryClient}>
+      <IpcContext.Provider value={client}>
+        <TooltipProvider>
+          <Toaster />
+          <RouterProvider router={router} />
+        </TooltipProvider>
+      </IpcContext.Provider>
+    </QueryClientProvider>,
+  );
+  return { ...result, client, queryClient, router };
 }

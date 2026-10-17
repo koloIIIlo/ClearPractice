@@ -81,6 +81,9 @@ export const routes: RouteObject[] = [
             ],
           },
           { path: "compare", lazy: page(() => import("@/features/insights/CrossComparePage"), "CrossComparePage"), handle: crumb("Compare takes") },
+          // The learning engine (M11).
+          { path: "catch-it", lazy: page(() => import("@/features/learning/CatchItPage"), "CatchItPage"), handle: crumb("Catch it") },
+          { path: "sprint", lazy: page(() => import("@/features/learning/SprintPage"), "SprintPage"), handle: crumb("Sprint") },
           {
             path: "journey",
             handle: crumb("Journey"),

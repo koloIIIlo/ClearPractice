@@ -34,6 +34,9 @@ export const keys = {
   // Drills (M10).
   activityResult: (attemptId: string) => ["drills", "result", attemptId] as const,
   takeEvents: (attemptId: string) => ["drills", "events", attemptId] as const,
+  // Learning engine (M11); under "engagement", so saved practice refreshes them too.
+  programme: ["engagement", "programme"] as const,
+  predictions: ["engagement", "predictions"] as const,
 };
 
 /** Saved preferences; until they load, the defaults apply. */
@@ -157,6 +160,18 @@ export function usePracticeEvents(from?: string) {
 export function usePracticeFacts() {
   const ipc = useIpc();
   return useQuery({ queryKey: keys.facts, queryFn: () => ipc.getPracticeFacts() });
+}
+
+/** The latest guided programme run, active or not (11.6). */
+export function useProgrammeState() {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.programme, queryFn: () => ipc.getProgrammeState() });
+}
+
+/** Your guesses before seeing takes' measures (11.5). */
+export function usePredictions() {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.predictions, queryFn: () => ipc.listPredictions() });
 }
 
 /** Where saved phrases turned up in your takes (8.2): one phrase, or all of them. */

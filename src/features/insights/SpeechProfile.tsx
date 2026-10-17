@@ -4,6 +4,7 @@ import { EmptyState, LoadingBlock, Panel, QueryView } from "@/components/page";
 import { usePracticeFacts } from "@/lib/ipc/queries";
 import { buildProfile, type ProfileRow } from "@/lib/insights/profile";
 import type { PracticeFacts } from "@/lib/ipc/schemas";
+import { SelfAwareness } from "@/features/learning/SelfAwareness";
 
 function Row({ row }: { row: ProfileRow }) {
   return (
@@ -58,6 +59,7 @@ function Profile({ facts }: { facts: PracticeFacts }) {
           <p className="text-muted-foreground">Appears once your first 30 days and your last 30 days each have five transcribed takes.</p>
         )}
       </Panel>
+      <SelfAwareness facts={facts} />
     </div>
   );
 }

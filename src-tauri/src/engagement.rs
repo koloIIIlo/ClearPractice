@@ -29,10 +29,15 @@ pub enum EventKind {
     Quest,
     // Drills (M10): the first saved take of a drill session.
     DrillRound,
+    // Learning engine (M11).
+    Prediction,
+    ProgrammeStep,
+    CatchRun,
+    ReanswerSkipped,
 }
 
 impl EventKind {
-    pub const ALL: [EventKind; 15] = [
+    pub const ALL: [EventKind; 19] = [
         EventKind::TakeSaved,
         EventKind::Retake,
         EventKind::SequenceCompleted,
@@ -48,6 +53,10 @@ impl EventKind {
         EventKind::WeeklyGoal,
         EventKind::Quest,
         EventKind::DrillRound,
+        EventKind::Prediction,
+        EventKind::ProgrammeStep,
+        EventKind::CatchRun,
+        EventKind::ReanswerSkipped,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -67,6 +76,10 @@ impl EventKind {
             EventKind::WeeklyGoal => "weekly_goal",
             EventKind::Quest => "quest",
             EventKind::DrillRound => "drill_round",
+            EventKind::Prediction => "prediction",
+            EventKind::ProgrammeStep => "programme_step",
+            EventKind::CatchRun => "catch_run",
+            EventKind::ReanswerSkipped => "reanswer_skipped",
         }
     }
 
@@ -91,6 +104,11 @@ impl EventKind {
             EventKind::WeeklyGoal => 50,
             EventKind::Quest => 30,
             EventKind::DrillRound => 15,
+            EventKind::Prediction => 5,
+            EventKind::ProgrammeStep => 10,
+            EventKind::CatchRun => 10,
+            // Skipping a re-answer is recorded so it doesn't return; it earns nothing.
+            EventKind::ReanswerSkipped => 0,
         }
     }
 
@@ -99,6 +117,7 @@ impl EventKind {
         match self {
             EventKind::PhraseReviewed => Some(10),
             EventKind::PhraseSaved => Some(5),
+            EventKind::Prediction => Some(5),
             _ => None,
         }
     }
@@ -136,7 +155,7 @@ mod tests {
         assert_eq!(EventKind::parse("mission"), None, "added with M14");
         assert_eq!(EventKind::parse("level_reached").map(|k| k.xp()), Some(50));
         let total: u32 = EventKind::ALL.iter().map(|k| k.xp()).sum();
-        assert_eq!(total, 302, "update appendix B when amounts change");
+        assert_eq!(total, 327, "update appendix B when amounts change");
     }
 
     #[test]

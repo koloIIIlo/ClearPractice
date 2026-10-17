@@ -10,6 +10,10 @@ import { sessions } from "@/lib/ipc/mock-data";
 import { CompletionPage } from "./CompletionPage";
 import { SequenceDots } from "./SequenceBar";
 import { advanceSequence, loadSequence, startSequence, stepUrl } from "./sequence";
+import { DrillsTab } from "@/features/drills/DrillsTab";
+import { DrillStudioPage } from "@/features/drills/DrillStudio";
+import { toLocalDate } from "@/lib/phrase-schedule";
+import { renderWithRouter } from "@/test/render";
 
 const steps = [
   { exerciseType: "repeat" as const, title: "Record and repeat", minutes: 6 },
@@ -69,6 +73,22 @@ it("stores the ease rating and takeaway on every session of the sequence (4.11)"
   await waitFor(() => expect(client.setSessionReflection).toHaveBeenCalledTimes(2));
   expect(client.setSessionReflection).toHaveBeenCalledWith(ids[1], 4, "Pause before the example");
   expect(await screen.findByText("Saved with today's sessions.")).toBeInTheDocument();
+});
+
+it("walks a mixed set of three drills (11.3)", async () => {
+  const user = userEvent.setup();
+  renderWithRouter([
+    { path: "/", element: <DrillsTab /> },
+    { path: "/drill/:drillId", element: <DrillStudioPage /> },
+  ]);
+  await user.click(await screen.findByRole("button", { name: /Mixed set/ }));
+  const state = loadSequence(toLocalDate(new Date()))!;
+  expect(state.title).toBe("Mixed set");
+  expect(new Set(state.steps.map((s) => s.drillId)).size).toBe(3);
+  const bar = await screen.findByRole("region", { name: "Mixed set" }, { timeout: 8_000 });
+  expect(bar).toHaveTextContent(`Mixed set · step 1 of 3 · ${state.steps[0].title}`);
+  await user.click(within(bar).getByRole("button", { name: /Next step/ }));
+  expect(await screen.findByRole("region", { name: "Mixed set" })).toHaveTextContent(`step 2 of 3 · ${state.steps[1].title}`);
 });
 
 it("marks done, current and upcoming steps", () => {

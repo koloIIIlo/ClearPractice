@@ -45,7 +45,7 @@ const sessionSeeds: SessionSeed[] = [
   {
     id: "s-01", title: "A habit I want to change", localDate: daysAgo(0), startedAt: isoAt(daysAgo(0), 8, 5),
     exerciseType: "repeat", durationMs: 0, attemptCount: 0, favorite: true, hasNote: true, tags: ["daily"],
-    status: "completed", prompt: "Describe a habit you would like to change and why.",
+    status: "completed", prompt: "Describe a habit you would like to change and why.", contentId: "p-habit",
     outline: { point: "phone in the morning", reason: "loses time", example: "late for meeting" },
     focus: "State your point before explaining it.",
     notes: "Second take opened with the point. Still restarted once in the middle.",
@@ -54,7 +54,7 @@ const sessionSeeds: SessionSeed[] = [
   {
     id: "s-02", title: "Preparing for a busy day", localDate: daysAgo(1), startedAt: isoAt(daysAgo(1), 19, 40),
     exerciseType: "repeat", durationMs: 0, attemptCount: 0, favorite: false, hasNote: false, tags: [],
-    status: "completed", prompt: "Explain how you prepare for a busy day.",
+    status: "completed", prompt: "Explain how you prepare for a busy day.", contentId: "p-process",
     outline: { point: "plan the night before", reason: "calmer morning", example: "packed bag" },
     focus: "Finish each thought before starting another.", notes: "",
     conditions: cond("familiar", 15, 60), attemptDurations: [61_200, 57_800, 55_100],
@@ -62,7 +62,7 @@ const sessionSeeds: SessionSeed[] = [
   {
     id: "s-03", title: "Explaining a work tool", localDate: daysAgo(3), startedAt: isoAt(daysAgo(3), 12, 15),
     exerciseType: "repeat", durationMs: 0, attemptCount: 0, favorite: false, hasNote: true, tags: ["unfamiliar", "work"],
-    status: "completed", prompt: "Explain a tool you use at work to someone who has never seen it.",
+    status: "completed", prompt: "Explain a tool you use at work to someone who has never seen it.", contentId: "p-tool",
     outline: { point: "", reason: "", example: "" },
     focus: "Adapt vocabulary to a beginner.", notes: "Hard without preparation, but the listener check helped.",
     conditions: cond("unfamiliar", 30, 90, "A beginner"), attemptDurations: [84_300],
@@ -84,7 +84,7 @@ const sessionSeeds: SessionSeed[] = [
   {
     id: "s-06", title: "A mistake that taught me something", localDate: daysAgo(8), startedAt: isoAt(daysAgo(8), 20, 5),
     exerciseType: "repeat", durationMs: 0, attemptCount: 0, favorite: true, hasNote: true, tags: ["story"],
-    status: "completed", prompt: "Tell a short story about a mistake that taught you something.",
+    status: "completed", prompt: "Tell a short story about a mistake that taught you something.", contentId: "p-mistake",
     outline: { point: "missed flight", reason: "didn't check", example: "" },
     focus: "Keep the story in order.", notes: "Good sequence in take 2.",
     conditions: cond("familiar", 30, 120), attemptDurations: [102_000, 96_500],
@@ -92,7 +92,7 @@ const sessionSeeds: SessionSeed[] = [
   {
     id: "s-07", title: "Baseline", localDate: daysAgo(12), startedAt: isoAt(daysAgo(12), 9, 0),
     exerciseType: "repeat", durationMs: 0, attemptCount: 0, favorite: false, hasNote: false, tags: ["baseline"],
-    status: "completed", prompt: "Describe something you would like to get better at and why.",
+    status: "completed", prompt: "Describe something you would like to get better at and why.", contentId: "baseline",
     outline: { point: "", reason: "", example: "" }, focus: null, notes: "",
     conditions: cond("unfamiliar", 0, 60), attemptDurations: [59_700],
   },

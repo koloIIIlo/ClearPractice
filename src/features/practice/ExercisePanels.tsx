@@ -29,6 +29,8 @@ export const REPEAT_FOCUSES = [
 /** Today's focus as the matching option, if Today has loaded it (the two lists share an order). */
 function todaysRepeatFocus(qc: QueryClient): string | null {
   const focus = qc.getQueriesData<TodayPlan>({ queryKey: ["today"] }).map(([, plan]) => plan?.focus).find(Boolean);
+  // A programme's week (11.6) sets one of these focuses directly.
+  if (focus && (REPEAT_FOCUSES as readonly string[]).includes(focus)) return focus;
   const i = focus ? (DAILY_FOCUSES as readonly string[]).indexOf(focus) : -1;
   return i >= 0 ? (REPEAT_FOCUSES[i] ?? null) : null;
 }

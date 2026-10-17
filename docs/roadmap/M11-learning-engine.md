@@ -75,6 +75,12 @@ PRAGMA user_version=20;
 ```
 **Purge.** `purge_take_rows` deletes `self_predictions` and `catch_runs`. Programmes are kept: they aren't tied to one take, and `ref_id` stops resolving after a purge.
 
+**As built (17 Oct)**
+- `programmes` also has `week_started_at_ms`: steps count from when the current week started (or was repeated), not from the start of the run.
+- New native code: `storage/learning.rs` and `commands/learning.rs` (ten commands). Events `prediction` (5 XP, at most 5 a day), `programme_step` (10), `catch_run` (10) and `reanswer_skipped` (0) join the ledger; facts v5 add `FactTake.predictions`, `FactTake.catchRuns` and `PracticeFacts.programme`.
+- Preferences gain `challengeBias`, `warmUp`, `measuresTiming`, `predictFirst` and `predictTipSeen`, each validated natively.
+- The rules live in `src/lib/learning/` (`reanswer.ts`, `feedback.ts`, `predict.ts`, `catch-it.ts`, `programmes.ts`, `interleave.ts`) and the screens in `src/features/learning/`. The spec's separate test files are one `src/lib/learning/learning.test.ts` (23 tests) plus a test file per screen.
+
 ---
 
 ## 11.1 Spaced re-answering
@@ -115,6 +121,12 @@ export function dueReanswers(facts: PracticeFacts, events: PracticeEvent[], toda
 `ReanswerCard.test.tsx`:
 - `it("opens the studio and offers the comparison after a take")`
 
+**As built (17 Oct)**
+- A re-answer counts only Record and repeat sessions with a prompt from the pack or your own (not drills, not the baseline, not Phrase practice). The step due is the latest one whose date has come, so after a long gap you answer once for the 30-day step rather than three times.
+- Today shows the most overdue re-answer as the last row of This week, skipping one whose prompt is already the week's new situation. Exercises → Prompts shows **Due to answer again (n)** whenever something is due; it lists the due prompts as the same rows, filtered by the other choices.
+- The Studio note reads "Answering again: no need to remember your first answer; just answer it again." **Compare with your first answer** appears once this visit has a take, next to Return to Today (and also inside a sequence).
+- The sample sessions in the browser preview now carry their prompt IDs, so the preview shows re-answers.
+
 ---
 
 ## 11.2 Challenge dial and difficulty tuning
@@ -153,6 +165,11 @@ export function tuning(facts, stage: Stage, bias: -1 | 0 | 1): Suggestion | null
 `TodayPage.test.tsx`:
 - `it("saves the challenge dial")`
 
+**As built (17 Oct)**
+- The dial is a row of three radio options under Session length, with one line saying what the choice does and that the stage only changes when you choose. Changing it asks for the plan again.
+- Harder halves the preparation of the week's task: the plan carries `weekly.newSituation.preparationSeconds`, Try it opens the Studio with `?prepSeconds=`, and the Studio can only lower a prompt's own time (`withPreparation`). The take records the time you had. The task's reason adds what the dial changed.
+- The tuning suggestion needs at least six rated sessions among your last ten and leads the plan's suggestions. Easier still lets the "keep or ease" suggestion show; it never shows "harder" while Easier is chosen.
+
 ---
 
 ## 11.3 Interleaving: warm-up drill and mixed sets
@@ -172,6 +189,11 @@ export function tuning(facts, stage: Stage, bias: -1 | 0 | 1): Suggestion | null
   - `it("prefers the least-practised area for the warm-up")`
 - `sequence.test.tsx`:
   - `it("walks a mixed set of three drills")`
+
+**As built (17 Oct)**
+- The warm-up is picked in the desktop client only when the setting is on, so Today's start-up doesn't load the game engine for everyone; the browser preview's warm-up is always Just a Minute.
+- A sequence can hold drill steps (`drillId`) and particular pages (`to`); the drill studio shows the step bar with `?seq=1`, and a sequence has its own title ("Mixed set", "Voice sprint"). Finishing one opens Practice complete like today's practice.
+- The mixed set draws three different drills from the seven short ones (Just a Minute, roulette, word bomb, emphasis, story spine, story cubes, pace ladder), the same three all day.
 
 ---
 
@@ -193,6 +215,11 @@ export function tuning(facts, stage: Stage, bias: -1 | 0 | 1): Suggestion | null
 
 `TakeSummary.test.tsx`:
 - `it("shows measures on request")`
+
+**As built (17 Oct)**
+- The setting is in Settings → Practice → **How you practise**, together with the warm-up switch and Guess before you see the measures.
+- "Takes with a new focus" counts your takes in sessions with the same focus as this take's session, up to and including it. Fluency comes from the levels you have reached, so Fewer as I improve works in Calm style too.
+- Folded measures show one line ("Measures show when you ask." or "Measures fold as you improve.") with **Show measures**.
 
 ---
 
@@ -230,6 +257,13 @@ export function tuning(facts, stage: Stage, bias: -1 | 0 | 1): Suggestion | null
 
 `profile.test.ts`:
 - `it("counts matches over the last ten predictions")`
+
+**As built (17 Oct)**
+- The card is titled "Before you look: guess first". Either question may be answered; Reveal saves what you chose (the first guess for a take stands) and earns the `prediction` event once per take. Skip is remembered for this visit only.
+- The reveal sits above What went well, one row per guess: "you guessed …" with Your note, then the take's value with Estimated, and "matched" when they agree. Never a percentage.
+- Hesitations count confirmed fillers once every candidate in the take is decided, else the candidates; "About usual" is within 7% of the median pace of your other takes.
+- The tip appears under the summary of the latest take after ten transcribed takes, with Turn it on and No thanks; either answer stops it.
+- Self-awareness is a panel under the speech profile once a guess can be compared.
 
 ---
 
@@ -305,6 +339,15 @@ Rust:
 Manual:
 1. Run week 1 with the system date moved forward 7 days. **Observe:** the week advances, and the Today card follows.
 
+**As built (17 Oct)**
+- Weeks never move on by themselves, so a week you had no time for is never skipped: once three steps are done or seven days have passed, the card says why and **Move on to week n** becomes the main button. Moving on is always allowed. The manual check is therefore: with the date moved forward 7 days, the card offers Move on with "A week has passed…", and Today's card follows.
+- Only steps done since the week started (or was repeated) count. Repeat this week restarts its clock and its steps; redoing a step updates its date and earns nothing more (`complete_programme_step` upserts).
+- Steps detected from your practice are recorded by `useProgramme` wherever the programme is shown (the tab or Today's card). Any step can be marked done by hand.
+- Step IDs follow appendix C.8 (`w1-catch-3` … `w4-reanswer`).
+- Week 1 detectors: Catch it runs on 3 takes; transcript reviews (the `transcript_reviewed` event) since the week started. Week 2: three different sessions with the pause focus and a minute or more of speech; two Just a Minute rounds; Catch it on a take from this week. Week 3: three unfamiliar-prompt sessions with the focus; one roulette round. Week 4: two reflections, one with a next focus. The other steps are marked by hand.
+- Catch it plays the take with the app's audio player (no waveform, so no markers give fillers away). F or Caught one counts only while it plays, with a soft click. The run is saved, and earns its points, only when you heard at least 80% of the take or it played to the end. The result lists each filler with Caught or Not caught this time and Listen.
+- In the browser preview Catch it says it works with your own takes in the desktop app.
+
 ---
 
 ## 11.7 Phrases: Say it
@@ -334,6 +377,11 @@ Manual:
 Rust:
 - `phrase_say_it_sessions_reuse_today`, covered by 7.3's activity snapshot tests plus a facts query.
 
+**As built (17 Oct)**
+- **Say it** appears on a card once you reveal it, above the ratings. The compact recorder hides the microphone picker (a Change microphone link goes to Settings → Audio) and stops at 20 seconds.
+- Today's Phrase practice session is found in facts, or a new ID is kept for the rest of the day in this visit, so every card of a review shares one session. Its prompt is generic ("Say a sentence of your own using a saved phrase").
+- With automatic transcription on, the take is transcribed locally right away; otherwise a Transcribe button, or the reason it can't. The phrase is spotted by the existing phrase matching (8.2), so a different form can be missed, as the card says.
+
 ---
 
 ## 11.8 Weakest-area sprint
@@ -357,3 +405,8 @@ Rust:
 
 `TodayPage.test.tsx`:
 - `it("starts the sprint as a sequence")`
+
+**As built (17 Oct)**
+- Entry points: **5-minute sprint** under the suggestion in Journey this week (for that area), in an area sheet (toward its next level), and Ctrl+K "Sprint on my weakest area", which opens `/sprint` to pick the area (`?area=` names one).
+- Steps come from the next level's practice links that open a drill or a Studio exercise, then that area's short drills; an area with neither (Courage) rehearses speaking on the spot with topic roulette and Just a Minute.
+- Ctrl+K also gained "Play Catch it".

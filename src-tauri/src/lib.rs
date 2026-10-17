@@ -2631,6 +2631,16 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::learning::set_prediction,
+            commands::learning::list_predictions,
+            commands::learning::get_programme_state,
+            commands::learning::start_programme,
+            commands::learning::complete_programme_step,
+            commands::learning::set_programme_week,
+            commands::learning::stop_programme,
+            commands::learning::save_catch_run,
+            commands::learning::list_catch_runs,
+            commands::learning::skip_reanswer,
             commands::drills::add_take_events,
             commands::drills::list_take_events,
             commands::drills::get_activity_result,

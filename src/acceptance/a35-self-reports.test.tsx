@@ -2,13 +2,15 @@
  * A-35: your self-reports (the quick self-check, 8.3) carry the Your note label
  * and never sit inside a measure's row. Every answer control and every "Your
  * note" label in the take summary belongs to the self-check section, and that
- * section is not part of the Flow or Words measures.
+ * section is not part of the Flow or Words measures. Predictions (11.5) are
+ * self-reports too: each guess is Your note, each value from the take is
+ * Estimated, and neither sits inside a measure fold.
  */
 import { screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { createMockClient } from "@/lib/ipc/mock-client";
 import type { IpcClient } from "@/lib/ipc";
-import type { AttemptTranscript } from "@/lib/ipc/schemas";
+import { DEFAULT_PREFERENCES, type AttemptTranscript } from "@/lib/ipc/schemas";
 import { TakeSummary } from "@/features/review/TakeSummary";
 import { renderWithApp } from "@/test/render";
 
@@ -46,4 +48,25 @@ it("A-35 self-check answers carry Your note and never sit inside a measure's row
     expect(fold.querySelector("[role=radiogroup]")).toBeNull();
     expect(fold).not.toHaveTextContent("Your note");
   }
+});
+
+it("A-35 predictions: the guess is Your note, the take's value Estimated, and neither judges the audio", async () => {
+  const client: IpcClient = {
+    ...createMockClient(), recordingMode: "native", listTakeCoaching: async () => [], getAttemptTranscript: async () => transcript,
+    getPreferences: async () => ({ ...DEFAULT_PREFERENCES, predictFirst: true }),
+    listPredictions: async () => [
+      { attemptId: "take-1", kind: "hesitations", predicted: "2-4", createdAt: "2026-10-16T08:01:00Z" },
+      { attemptId: "take-1", kind: "pace", predicted: "slower", createdAt: "2026-10-16T08:01:00Z" },
+    ],
+    getAudioMeasures: async (attemptId) => ({ attemptId, method: "nuclei-v1", syllables: null, spanMs: null, phonationMs: null, rateSps: null, articulationSps: null, unavailableReason: "Needs at least 5 seconds of speech." }),
+  };
+  renderWithApp(<TakeSummary attemptId="take-1" durationMs={95_000} />, { client });
+  const guesses = await screen.findByRole("list", { name: "Your guesses" });
+  for (const row of guesses.querySelectorAll("li")) {
+    const labels = [...row.querySelectorAll("[title]")].map((l) => l.textContent);
+    expect(labels).toEqual(["Your note", "Estimated"]);
+  }
+  expect(guesses.closest("details")).toBeNull();
+  // A guess is compared with the value, never turned into a verdict on your voice.
+  expect(guesses).not.toHaveTextContent(/wrong|correct|score|%/i);
 });

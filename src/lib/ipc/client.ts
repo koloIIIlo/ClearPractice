@@ -6,6 +6,10 @@
 import type {
   ActivityContext,
   ActivityResult,
+  CatchRun,
+  Prediction,
+  PredictionKind,
+  ProgrammeRun,
   DrillComparison,
   DrillComparisonKind,
   ActivityStep,
@@ -358,6 +362,19 @@ export interface IpcClient {
   /** Optional AI comparison of a drill's rounds: previews the text-only request (transcripts only). Nothing is sent. */
   previewDrillComparison(sessionId: string, kind: DrillComparisonKind, model?: CoachingModel): Promise<CoachingPreview>;
   requestDrillComparison(requestId: string, payloadSha256: string): Promise<DrillComparison>;
+  /** Learning engine (M11): your guess before seeing a take's measures; the first guess stands. Resolves with whether it was new. */
+  setPrediction(attemptId: string, kind: PredictionKind, predicted: string): Promise<boolean>;
+  listPredictions(from?: string): Promise<Prediction[]>;
+  /** The latest guided programme run, active or not. */
+  getProgrammeState(): Promise<ProgrammeRun | null>;
+  startProgramme(programme: string): Promise<ProgrammeRun>;
+  completeProgrammeStep(programmeId: string, stepId: string, refId?: string | null): Promise<boolean>;
+  setProgrammeWeek(programmeId: string, week: number, finished: boolean): Promise<ProgrammeRun>;
+  stopProgramme(programmeId: string): Promise<void>;
+  saveCatchRun(attemptId: string, presses: number[], caught: number, total: number): Promise<CatchRun>;
+  listCatchRuns(attemptId?: string): Promise<CatchRun[]>;
+  /** "Not this one" on a re-answer: it won't come back, and it earns nothing. */
+  skipReanswer(promptId: string, step: number): Promise<void>;
   /** Insights (M8): where saved phrases turned up in takes (one phrase, or all). */
   listPhraseUses(phraseId?: string): Promise<PhraseUse[]>;
   /** Your yes/no note about a take; null clears it. */

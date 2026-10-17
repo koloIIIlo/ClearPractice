@@ -38,6 +38,10 @@ export const MOCK_XP: Record<string, { xp: number; dailyCap?: number }> = {
   weekly_goal: { xp: 50 },
   quest: { xp: 30 },
   drill_round: { xp: 15 },
+  prediction: { xp: 5, dailyCap: 5 },
+  programme_step: { xp: 10 },
+  catch_run: { xp: 10 },
+  reanswer_skipped: { xp: 0 },
 };
 /** Takes shorter than this earn nothing; only the first six takes of a session count. */
 const MIN_TAKE_MS = 10_000;
@@ -182,6 +186,18 @@ export function createMockClient(): IpcClient {
           Object.entries(result).flatMap(([k, v]): [string, number][] => (typeof v === "number" ? [[k, v]] : typeof v === "boolean" ? [[k, v ? 1 : 0]] : [])),
         )
       : null;
+  // Learning engine (M11): guesses, programme runs and Catch it runs, as the native tables keep them.
+  const predictions: S.Prediction[] = [];
+  const programmes: S.ProgrammeRun[] = [];
+  const catchRuns: S.CatchRun[] = [];
+  const BUCKETS: Record<S.PredictionKind, readonly string[]> = { hesitations: S.HesitationBucket.options, pace: S.PaceBucket.options };
+  const activeProgramme = () => programmes.find((r) => !r.completedAt && !r.stoppedAt) ?? null;
+  const programmeById = (id: string) => {
+    const run = programmes.find((r) => r.id === id);
+    if (!run) throw new IpcError("not_found", "This programme doesn't exist.");
+    if (run.completedAt || run.stoppedAt) throw new IpcError("invalid", "This programme has finished. Start it again to go on.");
+    return run;
+  };
   let retentionDays: S.TrashRetentionDays = 30;
   let preferences: S.Preferences = { ...S.DEFAULT_PREFERENCES };
   let transcriptionPreference: S.TranscriptionPreference = { mode: "local", provider: "deepgram" };
@@ -230,7 +246,7 @@ export function createMockClient(): IpcClient {
     const shown = sessions.filter((s) => !trash.has(s.id) && (s.attemptCount > 0 || s.status === "completed"));
     const filled = (text: string | undefined | null) => !!text && text.trim().length > 0;
     return S.PracticeFacts.parse({
-      factsVersion: 4,
+      factsVersion: 5,
       generatedAt: new Date().toISOString(),
       today: data.today(),
       transcriptionAvailable: false,
@@ -259,6 +275,8 @@ export function createMockClient(): IpcClient {
           pitchRangeSt: null,
           rateSps: audioMeasures(a.id, a.durationMs).rateSps,
           result: resultNumbers(activityResults.get(a.id)),
+          predictions: Object.fromEntries(predictions.filter((p) => p.attemptId === a.id).map((p) => [p.kind, p.predicted])),
+          catchRuns: catchRuns.filter((r) => r.attemptId === a.id).map((r) => ({ caught: r.caught, total: r.total, localDate: toLocalDate(new Date(r.createdAt)) })),
         };
       })),
       transferReviews: transferReviews.map((r) => ({
@@ -270,6 +288,7 @@ export function createMockClient(): IpcClient {
       progression: [],
       userPrompts: prompts.filter((p) => p.source === "user").length,
       blindComparisons: comparisons.filter((c) => c.blind).length,
+      programme: activeProgramme(),
     });
   };
 
@@ -306,6 +325,64 @@ export function createMockClient(): IpcClient {
       return S.PracticeEvent.parse(structuredClone(events.find((e) => e.kind === "sequence_completed" && e.refId === refId)));
     },
     getPracticeFacts: async () => buildFacts(),
+    setPrediction: async (attemptId, kind, predicted) => {
+      const found = attemptOf(attemptId);
+      if (!found) throw new IpcError("not_found", "This take is unavailable.");
+      if (!BUCKETS[kind]?.includes(predicted)) throw new IpcError("invalid", "That guess isn't one of the choices.");
+      if (predictions.some((p) => p.attemptId === attemptId && p.kind === kind)) return false;
+      const first = !predictions.some((p) => p.attemptId === attemptId);
+      predictions.push({ attemptId, kind, predicted, createdAt: new Date().toISOString() });
+      if (first) award("prediction", attemptId, found.session.localDate, { sessionId: found.session.id, attemptId });
+      return true;
+    },
+    listPredictions: (from) => respond(S.Prediction.array(), predictions.filter((p) => !from || toLocalDate(new Date(p.createdAt)) >= from).slice().reverse()),
+    getProgrammeState: () => respond(S.ProgrammeRun.nullable(), programmes.at(-1) ?? null),
+    startProgramme: async (programme) => {
+      if (programme !== "fillers-4w") throw new IpcError("invalid", "Unknown programme.");
+      const active = activeProgramme();
+      if (active) return S.ProgrammeRun.parse(active);
+      const now = new Date().toISOString();
+      const run: S.ProgrammeRun = { id: `prog-${Date.now()}`, programme, week: 1, startedAt: now, weekStartedAt: now, weekStartedDate: toLocalDate(new Date()), completedAt: null, stoppedAt: null, steps: [] };
+      programmes.push(run);
+      return S.ProgrammeRun.parse(run);
+    },
+    completeProgrammeStep: async (programmeId, stepId, refId) => {
+      const run = programmeById(programmeId);
+      if (!/^[a-z0-9_-]{1,64}$/.test(stepId)) throw new IpcError("invalid", "This step is invalid.");
+      // Redoing a step in a repeated week moves its date on; it earns only the first time.
+      const done = run.steps.find((s) => s.stepId === stepId);
+      if (done) {
+        Object.assign(done, { doneAt: new Date().toISOString(), refId: refId ?? done.refId });
+        return false;
+      }
+      run.steps.push({ stepId, refId: refId ?? null, doneAt: new Date().toISOString() });
+      award("programme_step", `${programmeId}:${stepId}`, toLocalDate(new Date()));
+      return true;
+    },
+    setProgrammeWeek: async (programmeId, week, finished) => {
+      const run = programmeById(programmeId);
+      if (!Number.isInteger(week) || week < 1 || week > 12) throw new IpcError("invalid", "That week doesn't exist.");
+      const now = new Date();
+      Object.assign(run, { week, weekStartedAt: now.toISOString(), weekStartedDate: toLocalDate(now), completedAt: finished ? now.toISOString() : null });
+      return S.ProgrammeRun.parse(run);
+    },
+    stopProgramme: async (programmeId) => {
+      programmeById(programmeId).stoppedAt = new Date().toISOString();
+    },
+    saveCatchRun: async (attemptId, presses, caught, total) => {
+      const found = attemptOf(attemptId);
+      if (!found) throw new IpcError("not_found", "This take is unavailable.");
+      if (caught > total || total > 200 || presses.length > 500 || presses.some((p) => p < 0 || p > found.attempt.durationMs)) throw new IpcError("invalid", "This Catch it result is invalid.");
+      const run: S.CatchRun = { id: `catch-${attemptId}-${Date.now()}`, attemptId, presses: [...presses], caught, total, createdAt: new Date().toISOString() };
+      catchRuns.push(run);
+      award("catch_run", run.id, found.session.localDate, { sessionId: found.session.id, attemptId });
+      return S.CatchRun.parse(run);
+    },
+    listCatchRuns: (attemptId) => respond(S.CatchRun.array(), catchRuns.filter((r) => !attemptId || r.attemptId === attemptId).slice().reverse()),
+    skipReanswer: async (promptId, step) => {
+      if (![1, 7, 30].includes(step)) throw new IpcError("invalid", "That re-answer step doesn't exist.");
+      award("reanswer_skipped", `${promptId}:${step}`, toLocalDate(new Date()));
+    },
     addTakeEvents: async (attemptId, marks) => {
       const found = attemptOf(attemptId);
       if (!found) throw new IpcError("not_found", "This take is unavailable.");
@@ -466,7 +543,8 @@ export function createMockClient(): IpcClient {
         focus: "State your point before explaining it.",
         focusReason: "You chose clarity as a goal, and your last two sessions opened with a warm-up phrase.",
         length,
-        steps: length === "standard" ? standard : short,
+        // The preview's warm-up is always Just a Minute (the desktop app picks by your practice).
+        steps: [...(preferences.warmUp ? [{ exerciseType: "jam", drillId: "jam", title: "Warm-up: Just a Minute", minutes: 2 }] : []), ...(length === "standard" ? standard : short)],
         resumable: null,
         lastCompleted: completed[0] ?? null,
         recentReflection: completed.find((s) => s.notes)?.notes ?? null,

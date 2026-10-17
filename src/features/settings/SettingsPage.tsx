@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { NavLink, useParams } from "react-router";
 import { useTheme, type ThemePreference } from "@/app/theme";
@@ -22,6 +22,7 @@ import { weekStart } from "@/lib/engagement/weekly";
 import { toLocalDate } from "@/lib/phrase-schedule";
 import { keys as queryKeys } from "@/lib/ipc/queries";
 import { WATCH_WORDS } from "@/lib/insights/words";
+import { MEASURES_TIMING } from "@/lib/learning/feedback";
 import { useTour } from "@/features/tour/tour";
 import { setZoomLevel, stepZoom, useZoomLevel, ZOOM_STEPS } from "@/app/zoom";
 import { cn } from "@/lib/utils";
@@ -191,6 +192,7 @@ function PracticeSettings() {
         <SwitchRow id="rec-shortcuts" label="Recording keyboard shortcuts" hint="Ctrl+Enter starts or stops a take in the studio." checked={preferences.recordingShortcuts} onCheckedChange={(on) => update({ recordingShortcuts: on })} />
         <SwitchRow id="live-pace" label="Show live pace while recording" hint="An estimate from the audio. There's no right speed; it shows your range." checked={preferences.livePace} onCheckedChange={(on) => update({ livePace: on })} />
       </Section>
+      <LearningSettings />
       <WordsToWatch />
       <PracticeStyleSettings />
       <Section title="Languages">
@@ -201,6 +203,53 @@ function PracticeSettings() {
         <p className="text-meta text-muted-foreground">This version is for practising English. German practice may follow later.</p>
       </Section>
     </>
+  );
+}
+
+/**
+ * How practice is offered (roadmap M11): a warm-up game, when measures show
+ * (11.4) and guessing first (11.5). Each is optional and changes nothing you
+ * recorded.
+ */
+export function LearningSettings() {
+  const qc = useQueryClient();
+  const { preferences, update } = usePreferences();
+  return (
+    <Section title="How you practise" description="Optional ways to practise, drawn from learning research. They change how practice is offered, never your recordings.">
+      <SwitchRow
+        id="warm-up"
+        label="Start with a 2-minute warm-up game"
+        hint="Today's plan begins with a short drill for the area you've practised least."
+        checked={preferences.warmUp}
+        onCheckedChange={(on) => update({ warmUp: on }, { onSettled: () => qc.invalidateQueries({ queryKey: ["today"] }) })}
+      />
+      <fieldset>
+        <legend className="text-body font-medium">When to show measures</legend>
+        <p className="mb-2 text-meta text-muted-foreground">Flow and Words under each take. What went well and your self-check always show.</p>
+        <RadioGroup value={preferences.measuresTiming} onValueChange={(v) => update({ measuresTiming: v as Preferences["measuresTiming"] })} className="gap-2">
+          {MEASURES_TIMING.map((m) => (
+            <Label
+              key={m.value}
+              htmlFor={`timing-${m.value}`}
+              className="flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 font-normal has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-secondary"
+            >
+              <RadioGroupItem id={`timing-${m.value}`} value={m.value} className="mt-0.5" />
+              <span>
+                <span className="block font-medium">{m.label}</span>
+                <span className="block text-meta text-muted-foreground">{m.hint}</span>
+              </span>
+            </Label>
+          ))}
+        </RadioGroup>
+      </fieldset>
+      <SwitchRow
+        id="predict-first"
+        label="Guess before you see the measures"
+        hint="When a take is transcribed, guess your hesitations and pace first, then compare. Your guesses are kept as your notes."
+        checked={preferences.predictFirst}
+        onCheckedChange={(on) => update({ predictFirst: on, predictTipSeen: true })}
+      />
+    </Section>
   );
 }
 

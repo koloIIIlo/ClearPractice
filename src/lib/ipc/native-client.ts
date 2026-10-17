@@ -7,7 +7,7 @@ import { IpcError, type IpcClient } from "./client";
 import { createMockClient } from "./mock-client";
 import * as S from "./schemas";
 import { buildProgressFromFacts, buildTodayPlan, highlightSessionId } from "../today-plan";
-import { schedule } from "../scheduler";
+import { schedule, tuning } from "../scheduler";
 import { searchLibrary } from "../search";
 import { toLocalDate } from "../phrase-schedule";
 import { PROMPTS } from "@/content/prompts";
@@ -152,6 +152,16 @@ export function createNativeClient(): IpcClient {
     getActivityResult: (attemptId) => command("get_activity_result", S.ActivityResult, { attemptId }),
     previewDrillComparison: (sessionId, kind, model) => command("preview_drill_comparison", S.CoachingPreview, { sessionId, kind, model: model ?? null }),
     requestDrillComparison: (requestId, payloadSha256) => command("request_drill_comparison", S.DrillComparison, { requestId, payloadSha256 }),
+    setPrediction: (attemptId, kind, predicted) => command("set_prediction", z.boolean(), { attemptId, kind, predicted }),
+    listPredictions: (from) => command("list_predictions", S.Prediction.array(), { from: from ?? null }),
+    getProgrammeState: () => command("get_programme_state", S.ProgrammeRun.nullable()),
+    startProgramme: (programme) => command("start_programme", S.ProgrammeRun, { programme }),
+    completeProgrammeStep: (programmeId, stepId, refId) => command("complete_programme_step", z.boolean(), { programmeId, stepId, refId: refId ?? null }),
+    setProgrammeWeek: (programmeId, week, finished) => command("set_programme_week", S.ProgrammeRun, { programmeId, week, finished }),
+    stopProgramme: async (programmeId) => { await command("stop_programme", z.null(), { programmeId }); },
+    saveCatchRun: (attemptId, presses, caught, total) => command("save_catch_run", S.CatchRun, { attemptId, presses, caught, total }),
+    listCatchRuns: (attemptId) => command("list_catch_runs", S.CatchRun.array(), { attemptId: attemptId ?? null }),
+    skipReanswer: async (promptId, step) => { await command("skip_reanswer", z.null(), { promptId, step }); },
     listPhraseUses: (phraseId) => command("list_phrase_uses", S.PhraseUse.array(), { cardId: phraseId ?? null }),
     setSelfCheck: async (attemptId, checkId, value) => {
       await command("set_self_check", z.null(), { attemptId, checkId, value });
@@ -183,7 +193,25 @@ export function createNativeClient(): IpcClient {
       const recentIds = sessions.filter((s) => s.status !== "interrupted" && s.attemptCount > 0).slice(0, 12).map((s) => s.id);
       const recent = (await Promise.all(recentIds.map((id) => command("get_session", S.SessionDetail, { sessionId: id }).catch(() => null))))
         .filter((d): d is S.SessionDetail => d !== null);
-      return S.TodayPlan.parse(buildTodayPlan({ localDate: toLocalDate(new Date()), length, sessions, phrases, latest, reviews, plan: schedule({ recent, events, prompts }), prompts, goals: preferences.goals }));
+      const plan = schedule({ recent, events, prompts });
+      const localDate = toLocalDate(new Date());
+      const bias = preferences.challengeBias;
+      const programme = await command("get_programme_state", S.ProgrammeRun.nullable()).catch(() => null);
+      // The warm-up pick reads the game engine, so it loads only when the warm-up is on (11.3).
+      let warmUp: S.TodayPlan["steps"][number] | null = null;
+      if (preferences.warmUp) {
+        const facts = await command("get_practice_facts", S.PracticeFacts).catch(() => null);
+        if (facts) {
+          const [{ pickWarmUp, warmUpStep }, { areaActivity }, { evalContext }] = await Promise.all([import("../learning/interleave"), import("../engagement/quests"), import("../engagement/criteria")]);
+          warmUp = warmUpStep(pickWarmUp(facts, areaActivity(facts, localDate, evalContext(facts, localDate, prompts)), localDate));
+        }
+      }
+      return S.TodayPlan.parse(buildTodayPlan({
+        localDate, length, sessions, phrases, latest, reviews, plan, prompts, goals: preferences.goals,
+        bias, warmUp, tuned: tuning(recent, plan.stage, bias),
+        // The programme's text loads only while one runs, off the start-up path.
+        programmeFocus: programme && !programme.completedAt && !programme.stoppedAt ? (await import("@/content/programmes")).weekFocus(programme) : null,
+      }));
     },
     reviewPhrase: (phraseId, rating) => command("review_phrase", S.PhraseCard, { phraseId, rating }),
     addPhrase: (phrase, sourceSessionId) => command("add_phrase", S.PhraseCard, { phrase, sourceSessionId: sourceSessionId ?? null }),

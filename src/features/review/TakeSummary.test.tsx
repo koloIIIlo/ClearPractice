@@ -5,8 +5,9 @@ import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 import { IpcContext, type IpcClient } from "@/lib/ipc";
 import { createMockClient } from "@/lib/ipc/mock-client";
-import type { AttemptTranscript, CoachingRun, TranscriptMeasures } from "@/lib/ipc/schemas";
+import { DEFAULT_PREFERENCES, type AttemptTranscript, type CoachingRun, type TranscriptMeasures } from "@/lib/ipc/schemas";
 import { expectNoScores } from "@/test/no-scores";
+import { factsBuilder } from "@/test/fixtures/facts";
 import { createPlayerLink } from "./player-link";
 import { summarizeTake, TakeSummary } from "./TakeSummary";
 
@@ -207,5 +208,36 @@ describe("take summary v2 (8.3)", () => {
     await user.click(screen.getByRole("button", { name: "Listen" }));
     expect(seeks).toEqual([[10_000, true]]);
     expect(screen.getByRole("group", { name: "Take summary" })).toHaveTextContent("You used a saved phrase: “lose track of time”.");
+  });
+
+  it("shows measures on request (11.4)", async () => {
+    const user = userEvent.setup();
+    setup({
+      getAttemptTranscript: async () => withSegments(v2),
+      getPreferences: async () => ({ ...DEFAULT_PREFERENCES, measuresTiming: "on_request" }),
+    });
+    const region = await screen.findByRole("group", { name: "Take summary" });
+    // What went well and the self-check stay; Flow and Words wait for you.
+    expect(within(region).getByText("What went well")).toBeInTheDocument();
+    expect(within(region).getByRole("region", { name: "Quick self-check" })).toBeInTheDocument();
+    expect(within(region).queryByText("Flow")).toBeNull();
+    expect(within(region).queryByText("Words")).toBeNull();
+    await user.click(within(region).getByRole("button", { name: "Show measures" }));
+    expect(within(region).getByText("Flow")).toBeInTheDocument();
+    expect(within(region).getByText("Words")).toBeInTheDocument();
+  });
+
+  it("fades measures after five takes with the same focus once Fluency reaches 3 (11.4)", async () => {
+    const facts = factsBuilder("2026-10-16").session({ focus: "Pause between ideas instead of filling the gap" });
+    for (let i = 0; i < 6; i += 1) facts.take();
+    const built = facts.build();
+    setup({
+      getAttemptTranscript: async () => withSegments(v2),
+      getPreferences: async () => ({ ...DEFAULT_PREFERENCES, measuresTiming: "fade" }),
+      getPracticeFacts: async () => ({ ...built, takes: built.takes.map((t, i) => (i === 5 ? { ...t, id: "take-1" } : t)) }),
+      getEngagementState: async () => ({ levels: [{ area: "fluency", level: 3, definitionVersion: 1, evidence: [], achievedAt: "2026-10-10T08:00:00.000Z" }], achievements: [], records: [], quests: [], goalWeeks: [] }),
+    });
+    expect(await screen.findByRole("button", { name: "Show measures" })).toBeInTheDocument();
+    expect(screen.getByText(/Measures fold as you improve/)).toBeInTheDocument();
   });
 });

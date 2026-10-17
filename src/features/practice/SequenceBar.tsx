@@ -47,10 +47,10 @@ export function SequenceBar({ sessionId, takeCount, locked }: { sessionId: strin
     else navigate("/practice/done", { state: { sessionIds: advanced.sessionIds, length: advanced.length } });
   };
   return (
-    <div role="region" aria-label="Today's practice" className="flex flex-wrap items-center gap-3 rounded-panel border bg-secondary/40 px-4 py-3">
+    <div role="region" aria-label={state.title ?? "Today's practice"} className="flex flex-wrap items-center gap-3 rounded-panel border bg-secondary/40 px-4 py-3">
       <SequenceDots steps={state.steps} index={state.index} />
       <p className="text-meta">
-        <span className="font-medium">Today's practice · step {state.index + 1} of {state.steps.length}</span>
+        <span className="font-medium">{state.title ?? "Today's practice"} · step {state.index + 1} of {state.steps.length}</span>
         <span className="text-muted-foreground"> · {step.title} · about {step.minutes} min</span>
       </p>
       <div className="ml-auto flex gap-2">

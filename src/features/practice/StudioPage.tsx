@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { CheckCircle2, ChevronRight, Info } from "lucide-react";
+import { CheckCircle2, ChevronRight, History, Info } from "lucide-react";
 import { Page, QueryView } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -102,9 +102,10 @@ export function StudioPage() {
               // Use a better expression practises a saved phrase (4.9).
               const phrase = exercise.type === "expression" && phraseList.length > 0 ? (phraseList.find((p) => p.id === params.get("phrase")) ?? phraseList[0]) : undefined;
               const asked = params.get("prompt");
-              const prompt = passage ? passagePrompt(passage) : phrase ? expressionPrompt(phrase)
+              const chosen = passage ? passagePrompt(passage) : phrase ? expressionPrompt(phrase)
                 : exercise.type === "imitate" ? IMITATION_PROMPT
                 : asked === BASELINE_PROMPT.id ? BASELINE_PROMPT : (promptList.find((p) => p.id === asked) ?? promptList[0]);
+              const prompt = withPreparation(chosen, params.get("prepSeconds"));
               return <Studio key={`${exercise.id}-${prompt.id}`} exercise={exercise} prompt={prompt} passage={passage} phrase={phrase} phrases={phraseList} />;
             }}
             </QueryView>
@@ -114,6 +115,17 @@ export function StudioPage() {
       </QueryView>
     </Page>
   );
+}
+
+/**
+ * The challenge dial's Harder (11.2) opens a prompt with less preparation time
+ * (?prepSeconds=). It can only lower the prompt's own time, and the take records
+ * the time you actually had.
+ */
+export function withPreparation(prompt: PracticePrompt, raw: string | null): PracticePrompt {
+  const seconds = raw === null ? NaN : Number(raw);
+  if (!Number.isInteger(seconds) || seconds < 0 || seconds >= prompt.conditions.preparationSeconds) return prompt;
+  return { ...prompt, conditions: { ...prompt.conditions, preparationSeconds: seconds } };
 }
 
 function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise: ExerciseDefinition; prompt: PracticePrompt; passage?: Passage; phrase?: PhraseCard; phrases?: PhraseCard[] }) {
@@ -144,6 +156,8 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
   const allTakeCount = shownEarlier.length + rec.takes.length;
   const lastTakeId = rec.takes.at(-1)?.asset.assetId ?? shownEarlier.at(-1)?.id;
   const inSequence = params.get("seq") === "1";
+  // Answering again (11.1): the first answer's take, for the comparison afterwards.
+  const reanswer = params.get("reanswer");
   const studioRef = useRef<HTMLDivElement>(null);
   const takeOpen = (id: string) => expanded[id] ?? id === lastTakeId;
   const setTakeOpen = (id: string) => (open: boolean) => setExpanded((e) => ({ ...e, [id]: open }));
@@ -178,6 +192,11 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
         </p>
         <h1 className="text-title font-semibold tracking-tight text-balance">{prompt.text}</h1>
         <p className="text-meta text-muted-foreground">{describeDemands(prompt.conditions).join(" · ")}</p>
+        {reanswer && (
+          <p role="note" className="flex items-center gap-2 text-meta">
+            <History aria-hidden className="size-4 shrink-0 text-muted-foreground" /> Answering again: no need to remember your first answer; just answer it again.
+          </p>
+        )}
       </header>
 
       {/* The desktop app needs no notice here (user request 2026-10-10); only the preview says it is simulated. */}
@@ -317,11 +336,20 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
           </ol>
         )}
         {/* In a sequence the step bar's Leave sequence is the one way out. */}
-        {allTakeCount > 0 && !locked && !inSequence && (
+        {allTakeCount > 0 && !locked && (!inSequence || (reanswer && rec.takes.length > 0)) && (
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => navigate("/")}>
-              Return to Today
-            </Button>
+            {reanswer && rec.takes.length > 0 && (
+              <Button variant="outline" asChild>
+                <Link to={`/compare?a=${encodeURIComponent(reanswer)}&b=${encodeURIComponent(rec.takes.at(-1)!.asset.assetId)}`}>
+                  <History aria-hidden /> Compare with your first answer
+                </Link>
+              </Button>
+            )}
+            {!inSequence && (
+              <Button variant="outline" onClick={() => navigate("/")}>
+                Return to Today
+              </Button>
+            )}
           </div>
         )}
       </section>

@@ -33,7 +33,8 @@ export type ServiceStatus = z.infer<typeof ServiceStatus>;
 /** The drills of roadmap M10, each an exercise type of its own (D-30). */
 export const DRILL_TYPES = ["jam", "roulette", "word_bomb", "three_ways", "emphasis", "pace_ladder", "story_spine", "story_cubes", "pitch", "steelman", "daily", "gauntlet", "boss"] as const;
 export type DrillType = (typeof DRILL_TYPES)[number];
-export const ExerciseType = z.enum(["repeat", "thought_groups", "imitate", "expression", ...DRILL_TYPES]);
+/** Core exercises, drills, and saying a phrase aloud during review (M11). */
+export const ExerciseType = z.enum(["repeat", "thought_groups", "imitate", "expression", ...DRILL_TYPES, "phrase_say_it"]);
 export type ExerciseType = z.infer<typeof ExerciseType>;
 export const isDrillType = (type: string | null | undefined): type is DrillType => !!type && (DRILL_TYPES as readonly string[]).includes(type);
 
@@ -137,6 +138,10 @@ export const PlanStep = z.object({
   exerciseType: ExerciseType,
   title: z.string(),
   minutes: z.number().positive(),
+  /** A drill step (M11: warm-up, mixed set, sprint) opens /drill/<drillId>. */
+  drillId: z.string().optional(),
+  /** A step that opens a particular page, e.g. an imitation session on endings (11.8). */
+  to: z.string().optional(),
 });
 
 export const SessionLength = z.enum(["standard", "short"]);
@@ -661,7 +666,11 @@ export const TodayPlan = z.object({
   recentReflection: z.string().nullable(),
   duePhrase: PhraseCard.nullable(),
   weekly: z.object({
-    newSituation: z.object({ promptId: Id, text: z.string(), familiarity: Familiarity, reason: z.string() }),
+    newSituation: z.object({
+      promptId: Id, text: z.string(), familiarity: Familiarity, reason: z.string(),
+      /** Set when the challenge dial is on Harder (11.2): half the prompt's own preparation time. */
+      preparationSeconds: z.number().int().nonnegative().optional(),
+    }),
     realConversation: z.object({ task: z.string(), done: z.boolean() }),
   }),
   /** The rules-based scheduler (4.18): your stage, any offer, and suggestions, each with a reason. */
@@ -822,6 +831,15 @@ export const Preferences = z
     companion: z.boolean(),
     /** Accent colour (9.12). */
     accent: z.enum(["green", "ocean", "amber", "violet", "rose", "graphite"]),
+    /** The challenge dial (11.2): -1 easier, 0 just right, 1 harder. It never changes your stage. */
+    challengeBias: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
+    /** Start today's practice with a 2-minute warm-up game (11.3). */
+    warmUp: z.boolean(),
+    /** When to show measures (11.4). */
+    measuresTiming: z.enum(["always", "on_request", "fade"]),
+    /** Guess hesitations and pace before seeing a take's measures (11.5). */
+    predictFirst: z.boolean(),
+    predictTipSeen: z.boolean(),
   })
   .strict();
 export type Preferences = z.infer<typeof Preferences>;
@@ -833,6 +851,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   practiceStyle: "playful", styleChosen: false, celebrations: "full", celebrationSounds: false,
   livePace: false, watchWords: [],
   weeklyGoalDays: 3, weekStartsOn: "monday", companion: true, accent: "green",
+  challengeBias: 0, warmUp: false, measuresTiming: "always", predictFirst: false, predictTipSeen: false,
 };
 
 export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api", "off"]), provider: AudioProvider }).strict();
@@ -1080,6 +1099,31 @@ export const Comparison = z
   .strict();
 export type Comparison = z.infer<typeof Comparison>;
 
+// ── Learning engine (roadmap M11) ────────────────────────────────────────────
+/** Your guess before seeing a take's measures (11.5), Your note. */
+export const PredictionKind = z.enum(["hesitations", "pace"]);
+export type PredictionKind = z.infer<typeof PredictionKind>;
+export const HesitationBucket = z.enum(["0-1", "2-4", "5+"]);
+export type HesitationBucket = z.infer<typeof HesitationBucket>;
+export const PaceBucket = z.enum(["slower", "usual", "faster"]);
+export type PaceBucket = z.infer<typeof PaceBucket>;
+export const Prediction = z.object({ attemptId: Id, kind: PredictionKind, predicted: z.string(), createdAt: z.string() }).strict();
+export type Prediction = z.infer<typeof Prediction>;
+/** A guided programme run (11.6). */
+export const ProgrammeRun = z
+  .object({
+    id: Id, programme: z.string(), week: z.number().int().min(1).max(12), startedAt: z.string(), weekStartedAt: z.string(), weekStartedDate: z.string(),
+    completedAt: z.string().nullable(), stoppedAt: z.string().nullable(),
+    steps: z.array(z.object({ stepId: z.string(), refId: z.string().nullable(), doneAt: z.string() }).strict()),
+  })
+  .strict();
+export type ProgrammeRun = z.infer<typeof ProgrammeRun>;
+/** A Catch it run (11.6): your presses (ms into the take) and how many fillers they caught (Estimated). */
+export const CatchRun = z
+  .object({ id: Id, attemptId: Id, presses: z.array(z.number().int().nonnegative()), caught: z.number().int().nonnegative(), total: z.number().int().nonnegative(), createdAt: z.string() })
+  .strict();
+export type CatchRun = z.infer<typeof CatchRun>;
+
 // ── Drills (roadmap M10) ─────────────────────────────────────────────────────
 /** A mark made during a take (10.1): the time into the take, a kind, and keys or numbers. Never words you said. */
 export const TakeMarkKind = z.enum(["word_shown", "self_flag", "card_advanced", "cue_shown"]);
@@ -1164,6 +1208,10 @@ export const FactTake = z
     rateSps: z.number().nonnegative().nullable(),
     /** Facts v4 (M10): a drill take's result for its current transcript, numbers only (booleans as 1 or 0). */
     result: z.record(z.string(), z.number()).nullable(),
+    /** Facts v5 (M11): your guesses before seeing the measures, Your note. */
+    predictions: z.partialRecord(PredictionKind, z.string()),
+    /** Facts v5 (M11): Catch it runs on this take. */
+    catchRuns: z.array(z.object({ caught: z.number().int().nonnegative(), total: z.number().int().nonnegative(), localDate: z.string() }).strict()),
   })
   .strict();
 export type FactTake = z.infer<typeof FactTake>;
@@ -1197,6 +1245,8 @@ export const PracticeFacts = z
     /** Facts v3 (M9 achievements): prompts you wrote and blind A/B choices you saved. */
     userPrompts: z.number().int().nonnegative(),
     blindComparisons: z.number().int().nonnegative(),
+    /** Facts v5 (M11): the programme you are running, if any. */
+    programme: ProgrammeRun.nullable(),
   })
   .strict();
 export type PracticeFacts = z.infer<typeof PracticeFacts>;

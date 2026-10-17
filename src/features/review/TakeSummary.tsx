@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Lightbulb, Play, ThumbsUp } from "lucide-react";
@@ -14,6 +15,9 @@ import { toLocalDate } from "@/lib/phrase-schedule";
 import { useTranscriptionQueue } from "@/features/transcription/queue";
 import { SelfChecks } from "@/features/insights/SelfChecks";
 import { countWatchWords } from "@/lib/insights/words";
+import { shouldFoldMeasures } from "@/lib/learning/feedback";
+import { PREDICT_TIP_AFTER, usualPace } from "@/lib/learning/predict";
+import { PredictCard, PredictionReveal, wasSkipped } from "@/features/learning/PredictCard";
 import type { AttemptTranscript, CoachingRun, EvidenceSource, TranscriptMeasures, WordCount } from "@/lib/ipc/schemas";
 import type { PlayerLink } from "./player-link";
 
@@ -234,7 +238,7 @@ export function TakeSummary({ attemptId, reviewHref, link, durationMs, latest = 
   latest?: boolean;
 }) {
   const ipc = useIpc();
-  const { preferences } = usePreferences();
+  const { preferences, update } = usePreferences();
   const native = ipc.recordingMode === "native";
   const queue = useTranscriptionQueue();
   const coaching = preferences.coachingMode !== "off";
@@ -247,7 +251,8 @@ export function TakeSummary({ attemptId, reviewHref, link, durationMs, latest = 
   // A personal record set by this take leads in Playful style (9.7).
   const { playful } = usePracticeStyle();
   const week = weekStart(toLocalDate(new Date()), preferences.weekStartsOn);
-  const engagement = useQuery({ queryKey: keys.engagementState(week), queryFn: () => ipc.getEngagementState(week), enabled: native && playful });
+  const timing = preferences.measuresTiming;
+  const engagement = useQuery({ queryKey: keys.engagementState(week), queryFn: () => ipc.getEngagementState(week), enabled: native && (playful || timing === "fade") });
   const recordRow = playful ? engagement.data?.records.find((r) => r.attemptId === attemptId && r.previous !== null) : undefined;
   const personalRecord = recordRow ? { line: recordLine(recordRow, engagement.data?.records), source: recordDef(recordRow.record)?.source ?? "estimated" } : undefined;
   const phrasesUsed = (uses.data ?? [])
@@ -256,6 +261,26 @@ export function TakeSummary({ attemptId, reviewHref, link, durationMs, latest = 
       const card = phrases.data?.find((p) => p.id === u.phraseId);
       return card ? [{ phraseId: u.phraseId, expression: card.expression, startMs: revision?.segments[u.segment]?.startMs ?? null }] : [];
     });
+  // Feedback timing (11.4) and predict, then check (11.5) read the facts snapshot.
+  const predictFirst = preferences.predictFirst;
+  const facts = useQuery({ queryKey: keys.facts, queryFn: () => ipc.getPracticeFacts(), enabled: native && !!revision && (timing === "fade" || predictFirst || !preferences.predictTipSeen) });
+  const predictions = useQuery({ queryKey: keys.predictions, queryFn: () => ipc.listPredictions(), enabled: native && predictFirst });
+  const [skippedGuess, setSkippedGuess] = useState(() => wasSkipped(attemptId));
+  const [measuresOpen, setMeasuresOpen] = useState(false);
+  const guesses = (predictions.data ?? []).filter((p) => p.attemptId === attemptId);
+  const asking = native && predictFirst && !!revision && guesses.length === 0 && !skippedGuess;
+  const fade = (() => {
+    const take = facts.data?.takes.find((t) => t.id === attemptId);
+    if (timing !== "fade" || !facts.data || !take) return { takesWithFocus: 0, fluencyLevel: 0 };
+    const focusOf = new Map(facts.data.sessions.map((s) => [s.id, s.focus ?? null]));
+    const focus = focusOf.get(take.sessionId) ?? null;
+    return {
+      takesWithFocus: facts.data.takes.filter((t) => t.createdAt <= take.createdAt && (focusOf.get(t.sessionId) ?? null) === focus).length,
+      fluencyLevel: Math.max(0, ...(engagement.data?.levels ?? []).filter((l) => l.area === "fluency").map((l) => l.level)),
+    };
+  })();
+  const folded = shouldFoldMeasures(timing, fade) && !measuresOpen;
+  const showTip = native && latest && !predictFirst && !preferences.predictTipSeen && (facts.data?.takes.filter((t) => t.transcribed).length ?? 0) >= PREDICT_TIP_AFTER;
   // Your own words to watch are counted here, with the default list (8.11).
   const watchWords = revision && preferences.watchWords.length > 0 ? countWatchWords(revision.segments.length ? revision.segments.map((s) => s.text) : revision.text, preferences.watchWords) : revision?.measures.watchWords;
 
@@ -266,6 +291,9 @@ export function TakeSummary({ attemptId, reviewHref, link, durationMs, latest = 
   else if (transcript.data?.job?.state === "running" && !transcript.data.revision) result = { kind: "none", reason: "The summary appears here when the transcript is ready." };
   // Wait for saved AI feedback too, so the summary doesn't switch source once it arrives.
   else if (transcript.data && !(coaching && runs.isPending)) result = summarizeTake(transcript.data, runs.data ?? [], { phrasesUsed: phrasesUsed.map((p) => p.expression), watchWords, personalRecord });
+  // Guessing first: wait for your earlier guesses so measures never flash before the question.
+  if (result?.kind === "ready" && asking && predictions.isPending) result = null;
+  if (result?.kind === "ready" && asking && predictions.isSuccess) return <PredictCard attemptId={attemptId} onSkip={() => setSkippedGuess(true)} />;
 
   if (result?.kind !== "ready") {
     // Without a transcript, say plainly what happens next (user request 2026-10-10).
@@ -300,6 +328,9 @@ export function TakeSummary({ attemptId, reviewHref, link, durationMs, latest = 
   return (
     // Two columns only when the summary itself is wide enough (it lives in narrow take rows too).
     <section role="group" aria-label="Take summary" className="@container rounded-lg border p-3">
+      {revision && guesses.length > 0 && (
+        <PredictionReveal predictions={guesses} measures={revision.measures} usualPace={facts.data ? usualPace(facts.data, attemptId) : null} />
+      )}
       <div className="grid gap-x-6 gap-y-4 @xl:grid-cols-2">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -336,22 +367,43 @@ export function TakeSummary({ attemptId, reviewHref, link, durationMs, latest = 
       </div>
       {revision && (
         <div className="mt-3 space-y-2">
-          <FlowSection
-            measures={revision.measures}
-            open={latest}
-            rate={audio.data ? { value: audio.data.rateSps, reason: audio.data.unavailableReason } : audio.error ? { value: null, reason: "the audio couldn't be read" } : null}
-          />
-          <WordsSection
-            measures={revision.measures}
-            open={latest}
-            watchWords={watchWords}
-            countsLike={preferences.watchWords.includes("like")}
-            phrasesUsed={phrasesUsed}
-            onListen={link ? (ms) => link.seek(ms, true) : undefined}
-          />
+          {folded ? (
+            // "When I ask" and "Fewer as I improve" fold Flow and Words; what went well and the self-check stay (11.4).
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2">
+              <span className="text-meta text-muted-foreground">
+                {timing === "fade" ? "Measures fold as you improve." : "Measures show when you ask."} You can change this in Settings → Practice.
+              </span>
+              <Button variant="outline" size="sm" onClick={() => setMeasuresOpen(true)}>Show measures</Button>
+            </div>
+          ) : (
+            <>
+              <FlowSection
+                measures={revision.measures}
+                open={latest || measuresOpen}
+                rate={audio.data ? { value: audio.data.rateSps, reason: audio.data.unavailableReason } : audio.error ? { value: null, reason: "the audio couldn't be read" } : null}
+              />
+              <WordsSection
+                measures={revision.measures}
+                open={latest || measuresOpen}
+                watchWords={watchWords}
+                countsLike={preferences.watchWords.includes("like")}
+                phrasesUsed={phrasesUsed}
+                onListen={link ? (ms) => link.seek(ms, true) : undefined}
+              />
+            </>
+          )}
           <div className="border-t pt-2">
             <SelfChecks attemptId={attemptId} opener={revision.measures.opener ?? null} ending={revision.measures.ending ?? null} durationMs={durationMs ?? revision.measures.speechSpanMs} />
           </div>
+        </div>
+      )}
+      {showTip && (
+        // Offered once, after ten transcribed takes (11.5).
+        <div role="note" className="mt-3 flex flex-wrap items-center gap-2 border-t pt-3 text-meta">
+          <Lightbulb aria-hidden className="size-4 text-muted-foreground" />
+          <span className="min-w-0 flex-1">Try guessing first: before the measures show, guess your hesitations and pace, then compare.</span>
+          <Button variant="outline" size="sm" onClick={() => update({ predictFirst: true, predictTipSeen: true })}>Turn it on</Button>
+          <Button variant="ghost" size="sm" onClick={() => update({ predictTipSeen: true })}>No thanks</Button>
         </div>
       )}
     </section>

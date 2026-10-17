@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Heart, Mic, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { BookOpen, Heart, History, Mic, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { EmptyState, Page, PageHeader, QueryView } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,8 +15,10 @@ import { useIpc } from "@/lib/ipc";
 import { TAG_LABELS, describeDemands } from "./describe";
 import { PromptForm } from "./PromptForm";
 import { DrillsTab } from "@/features/drills/DrillsTab";
+import { ProgrammesTab } from "@/features/learning/ProgrammesTab";
+import { ReanswerRow, useDueReanswers } from "@/features/learning/ReanswerCard";
 
-type Tab = "exercises" | "drills" | "prompts" | "guides";
+type Tab = "exercises" | "drills" | "programmes" | "prompts" | "guides";
 
 export function ExercisesPage() {
   const [params, setParams] = useSearchParams();
@@ -34,12 +36,13 @@ export function ExercisesPage() {
     <Page>
       <PageHeader
         title="Exercises"
-        description="Four core exercises, short drills, a collection of prompts and guides. Everything here works offline."
+        description="Four core exercises, short drills, guided programmes, a collection of prompts and guides. Everything here works offline."
       />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="mb-6">
           <TabsTrigger value="exercises">Exercises</TabsTrigger>
           <TabsTrigger value="drills">Drills</TabsTrigger>
+          <TabsTrigger value="programmes">Programmes</TabsTrigger>
           <TabsTrigger value="prompts">Prompts</TabsTrigger>
           <TabsTrigger value="guides">Guides</TabsTrigger>
         </TabsList>
@@ -48,6 +51,9 @@ export function ExercisesPage() {
         </TabsContent>
         <TabsContent value="drills">
           <DrillsTab />
+        </TabsContent>
+        <TabsContent value="programmes">
+          <ProgrammesTab />
         </TabsContent>
         <TabsContent value="prompts">
           <PromptCollection />
@@ -135,6 +141,8 @@ function PromptCollection() {
   const prep = params.get("prep") ?? "";
   const demands = params.getAll("demand");
   const highlight = params.get("prompt");
+  const dueOnly = params.get("due") === "1";
+  const { due, today } = useDueReanswers();
   const [adding, setAdding] = useState(false);
 
   const update = (fn: (p: URLSearchParams) => void) =>
@@ -189,6 +197,15 @@ function PromptCollection() {
         >
           <Heart aria-hidden className={cn(favoritesOnly && "fill-current")} /> Favorites
         </Button>
+        {(dueOnly || (due?.length ?? 0) > 0) && (
+          <Button
+            variant={dueOnly ? "secondary" : "outline"}
+            aria-pressed={dueOnly}
+            onClick={() => update((p) => (dueOnly ? p.delete("due") : p.set("due", "1")))}
+          >
+            <History aria-hidden /> Due to answer again ({due?.length ?? 0})
+          </Button>
+        )}
         <Button className="ml-auto" variant="outline" disabled={adding} onClick={() => setAdding(true)}>
           <Plus aria-hidden /> Add your own prompt
         </Button>
@@ -253,6 +270,18 @@ function PromptCollection() {
 
       <QueryView query={prompts}>
         {(list) => {
+          if (dueOnly) {
+            // Prompts you answered 1, 7 or 30 days ago (11.1), most overdue first.
+            const ids = new Set(list.filter(matches).map((p) => p.id));
+            const items = (due ?? []).filter((r) => ids.has(r.promptId));
+            return items.length === 0 ? (
+              <EmptyState title="Nothing is due to answer again">Prompts you answered come back after 1, 7 and 30 days.</EmptyState>
+            ) : (
+              <ul className="divide-y rounded-panel border bg-card" aria-label="Due to answer again">
+                {items.map((r) => <ReanswerRow key={r.promptId} item={r} today={today} section="exercises" />)}
+              </ul>
+            );
+          }
           const shown = list.filter(matches);
           if (shown.length === 0)
             return (

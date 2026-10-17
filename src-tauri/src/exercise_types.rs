@@ -7,11 +7,13 @@
 pub const KNOWN: &[&str] = &[
     "repeat", "thought_groups", "imitate", "expression",
     "jam", "roulette", "word_bomb", "three_ways", "emphasis", "pace_ladder", "story_spine", "story_cubes", "pitch", "steelman", "daily", "gauntlet", "boss",
+    // The learning engine (M11): saying a phrase aloud during review.
+    "phrase_say_it",
 ];
 
 /// Drill types (M10): their first saved take of a session earns `drill_round`.
 pub fn is_drill(kind: &str) -> bool {
-    is_known(kind) && !matches!(kind, "repeat" | "thought_groups" | "imitate" | "expression")
+    is_known(kind) && !matches!(kind, "repeat" | "thought_groups" | "imitate" | "expression" | "phrase_say_it")
 }
 
 pub fn is_known(kind: &str) -> bool {
@@ -28,7 +30,7 @@ mod tests {
             assert!(is_known(kind));
         }
         assert!(is_known("jam") && is_drill("jam") && is_drill("boss"));
-        assert!(!is_drill("repeat") && !is_drill("upgrade"));
+        assert!(!is_drill("repeat") && !is_drill("upgrade") && !is_drill("phrase_say_it") && is_known("phrase_say_it"));
         assert!(!is_known("upgrade"), "later formats are added with their milestones");
         assert!(!is_known(""));
         assert!(!is_known("Repeat"));

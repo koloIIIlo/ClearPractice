@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { BookOpenText, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
+import { BookOpenText, Mic, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
+import { PhraseSayIt } from "@/features/learning/PhraseSayIt";
 import { PhraseSuggestions } from "./PhraseSuggestions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -237,6 +238,7 @@ function PhraseReview({ due, onDone }: { due: PhraseCard[]; onDone: () => void }
   const [queue] = useState(due);
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
+  const [saying, setSaying] = useState(false);
   const review = useReviewPhrase();
   const card = queue[index];
 
@@ -254,6 +256,7 @@ function PhraseReview({ due, onDone }: { due: PhraseCard[]; onDone: () => void }
   const rate = async (rating: PhraseRating) => {
     await review.mutateAsync({ phraseId: card.id, rating });
     setRevealed(false);
+    setSaying(false);
     setIndex((i) => i + 1);
   };
 
@@ -276,6 +279,14 @@ function PhraseReview({ due, onDone }: { due: PhraseCard[]; onDone: () => void }
                 <li key={e}>{e}</li>
               ))}
             </ul>
+          )}
+          {/* Say it (11.7): the phrase aloud in your own sentence, before you rate. */}
+          {saying ? (
+            <PhraseSayIt card={card} />
+          ) : (
+            <Button variant="outline" onClick={() => setSaying(true)}>
+              <Mic aria-hidden /> Say it
+            </Button>
           )}
           <fieldset className="pt-2">
             <legend className="mb-2 text-meta font-medium">How easily did it come to you?</legend>

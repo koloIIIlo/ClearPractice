@@ -20,6 +20,14 @@ type Result<T> = std::result::Result<T, String>;
 /// Prices checked on each model's official page on this date.
 const PRICE_DATE: &str = "2026-10-08";
 
+/// A preview's request ID: unique in this run even for two previews made in
+/// the same millisecond (each would otherwise replace the other).
+fn new_request_id(prefix: &str) -> String {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let seq = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{prefix}-{}-{}-{seq}", std::process::id(), recording::now_ms())
+}
+
 /// OpenAI models offered for coaching. IDs and standard-tier text prices are
 /// from developers.openai.com/api/docs/models (checked 2026-10-08).
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -393,14 +401,7 @@ impl PreviewOwner {
             return Err("Choose between 1 and 8192 bytes of sample text before previewing.".into());
         }
         let now = recording::now_ms();
-        let request_id = format!(
-            "coaching-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|_| "System clock unavailable.")?
-                .as_nanos()
-        );
+        let request_id = new_request_id("coaching");
         let prompt = "Explain an idea clearly to a listener unfamiliar with it.";
         let focus = "Clear structure and natural phrasing";
         let payload = json!({"model":model.id(),"store":false,"stream":false,"max_output_tokens":model.max_output_tokens(),
@@ -476,7 +477,7 @@ impl PreviewOwner {
         }
         let numbered = texts.iter().enumerate().map(|(i, t)| format!("{}. {}", i + 1, t.trim())).collect::<Vec<_>>().join("\n");
         let now = recording::now_ms();
-        let request_id = format!("naming-{}-{now}", std::process::id());
+        let request_id = new_request_id("naming");
         let payload = json!({"model":model.id(),"store":false,"stream":false,"max_output_tokens":model.max_output_tokens().max(2048),
             "reasoning":{"effort":model.effort()},"instructions":NAMING_INSTRUCTIONS,"input":numbered,
             "text":{"format":{"type":"json_schema","name":"clearpractice_clip_names_v1","strict":true,"schema":names_schema()}}});
@@ -516,7 +517,7 @@ impl PreviewOwner {
             return Err("These sessions are too long for one request. Choose fewer sessions.".into());
         }
         let now = recording::now_ms();
-        let request_id = format!("phrases-{}-{now}", std::process::id());
+        let request_id = new_request_id("phrases");
         let output_cap = model.max_output_tokens().max(3072);
         let payload = json!({"model":model.id(),"store":false,"stream":false,"max_output_tokens":output_cap,
             "reasoning":{"effort":model.effort()},"instructions":PHRASE_INSTRUCTIONS,"input":input,
@@ -562,7 +563,7 @@ impl PreviewOwner {
             DrillComparisonKind::Pitch => (PITCH_INSTRUCTIONS, "Which words carried your point?", "The words that carried the point in each round, one tip"),
         };
         let now = recording::now_ms();
-        let request_id = format!("drill-{}-{now}", std::process::id());
+        let request_id = new_request_id("drill");
         let output_cap = model.max_output_tokens().max(2048);
         let payload = json!({"model":model.id(),"store":false,"stream":false,"max_output_tokens":output_cap,
             "reasoning":{"effort":model.effort()},"instructions":instructions,"input":input,
@@ -600,7 +601,7 @@ impl PreviewOwner {
         let instructions = format!("{PICK_INSTRUCTIONS}{}", if tone_hint { TONE_HINT } else { "" });
         let input = format!("Choose up to {wanted} passages from these {sentences} sentences.\n{annotated}");
         let now = recording::now_ms();
-        let request_id = format!("picks-{}-{now}", std::process::id());
+        let request_id = new_request_id("picks");
         let output_cap = model.max_output_tokens().max(3072);
         let payload = json!({"model":model.id(),"store":false,"stream":false,"max_output_tokens":output_cap,
             "reasoning":{"effort":model.effort()},"instructions":instructions,"input":input,
@@ -644,7 +645,7 @@ impl PreviewOwner {
         }
         let instructions = format!("{TAKE_INSTRUCTIONS}{}", if delivery { DELIVERY_IMPRESSIONS } else { NO_DELIVERY_IMPRESSIONS });
         let now = recording::now_ms();
-        let request_id = format!("take-coaching-{}-{now}", std::process::id());
+        let request_id = new_request_id("take-coaching");
         let output_cap = model.max_output_tokens().max(2048);
         if let Some(target) = &local {
             // A local model on this computer: no key, no cost, nothing leaves the computer.
@@ -747,7 +748,7 @@ impl PreviewOwner {
             return Err("This take has no transcript text to send, or it is too long.".into());
         }
         let now = recording::now_ms();
-        let request_id = format!("follow-up-{}-{now}", std::process::id());
+        let request_id = new_request_id("follow-up");
         let output_cap = model.max_output_tokens();
         if let Some(target) = &local {
             let payload = super::local_llm::chat_body(&target.model, FOLLOW_UP_INSTRUCTIONS, &take.text, "clearpractice_follow_up_v1", follow_up_schema(), output_cap);
@@ -1390,6 +1391,12 @@ mod tests {
         assert!(pitch.selected_text.starts_with("Round 1 (A 10-year-old):"));
         let pending = owner.consume(&p.request_id, &p.payload_sha256).unwrap();
         assert!(pending.kind == Kind::DrillComparison, "not usable as another kind of approval");
+    }
+
+    #[test]
+    fn previews_made_in_the_same_millisecond_keep_their_own_ids() {
+        let ids: std::collections::HashSet<_> = (0..50).map(|_| new_request_id("drill")).collect();
+        assert_eq!(ids.len(), 50);
     }
 
     #[test]

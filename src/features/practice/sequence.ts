@@ -17,6 +17,8 @@ export type SequenceState = {
   index: number;
   /** Sessions that got at least one take, in order. */
   sessionIds: string[];
+  /** "Today's practice" unless it is a mixed set or a sprint (M11). */
+  title?: string;
 };
 
 const KEY = "clearpractice.sequence.v1";
@@ -50,6 +52,9 @@ function pick<T>(items: T[], localDate: string, salt: number): T {
 
 /** Where a step opens in the Studio, with the day's content. */
 export function stepUrl(step: PlanStep, localDate: string, firstPromptId?: string): string {
+  // Drills and particular pages (M11: warm-up, mixed set, sprint).
+  if (step.drillId) return `/drill/${step.drillId}?seq=1`;
+  if (step.to) return `${step.to}${step.to.includes("?") ? "&" : "?"}seq=1`;
   switch (step.exerciseType) {
     case "repeat":
       return `/practice/${EXERCISE_IDS.repeat}?prompt=${firstPromptId ?? pick(PROMPTS, localDate, 0).id}&seq=1`;
@@ -65,8 +70,8 @@ export function stepUrl(step: PlanStep, localDate: string, firstPromptId?: strin
   }
 }
 
-export function startSequence(localDate: string, length: SessionLength, steps: PlanStep[]): SequenceState {
-  const state = { localDate, length, steps, index: 0, sessionIds: [] };
+export function startSequence(localDate: string, length: SessionLength, steps: PlanStep[], title?: string): SequenceState {
+  const state: SequenceState = { localDate, length, steps, index: 0, sessionIds: [], ...(title ? { title } : {}) };
   saveSequence(state);
   return state;
 }

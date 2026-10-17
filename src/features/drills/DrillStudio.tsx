@@ -13,6 +13,7 @@ import { useAutoTranscribe } from "@/features/practice/auto-transcribe";
 import { useRecorder } from "@/features/practice/recorder";
 import { RecorderPanel, useRecorderGuard } from "@/features/practice/RecorderPanel";
 import { RecordingLibrary } from "@/features/practice/RecordingLibrary";
+import { SequenceBar } from "@/features/practice/SequenceBar";
 import { CountdownRing, lightAt } from "./CountdownRing";
 import { DRILL_MODULES, type DrillModule, type DrillParams, type DrillPlan } from "./drill-module";
 import { newSeed } from "./plan-helpers";
@@ -122,8 +123,11 @@ function DrillRun({ drill, module, prompts, seed }: { drill: DrillDef; module: D
   const { Setup, Live, Result } = module;
   const speaking = clock.phase === "speak";
 
+  const locked = rec.isCapturing || rec.phase === "countdown";
   return (
     <div className="space-y-6">
+      {/* In a sequence (a warm-up, a mixed set, a sprint) the step bar leads on to the next step. */}
+      {search.get("seq") === "1" && <SequenceBar sessionId={sessionId} takeCount={clock.takes.length} locked={locked} />}
       <div aria-live="polite" className="sr-only">
         {clock.announcement}
       </div>

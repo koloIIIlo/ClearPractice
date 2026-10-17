@@ -1,4 +1,5 @@
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
+import { startSprint } from "@/features/learning/sprint";
 import { Panel } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { usePreferences } from "@/lib/ipc/queries";
@@ -18,6 +19,7 @@ import { WeekGoal } from "./WeekGoal";
  * quests and the level closest to done, with a way into Journey.
  */
 export function JourneyStrip() {
+  const navigate = useNavigate();
   const { playful } = usePracticeStyle();
   const { preferences } = usePreferences();
   const { journey } = useJourney();
@@ -45,10 +47,16 @@ export function JourneyStrip() {
         </p>
       )}
       {suggestion && (
-        <p className="text-meta">
-          <Link className="text-primary underline underline-offset-2 hover:no-underline" to={suggestion.to}>{suggestion.text}</Link>
-          <span className="block text-muted-foreground">{suggestion.reason}</span>
-        </p>
+        <div className="space-y-2 text-meta">
+          <p>
+            <Link className="text-primary underline underline-offset-2 hover:no-underline" to={suggestion.to}>{suggestion.text}</Link>
+            <span className="block text-muted-foreground">{suggestion.reason}</span>
+          </p>
+          {/* A five-minute set aimed at that area (11.8). */}
+          <Button variant="outline" size="sm" onClick={() => startSprint(navigate, suggestion.area, journey.areas.find((a) => a.area === suggestion.area)?.current ?? 0)}>
+            5-minute sprint
+          </Button>
+        </div>
       )}
       <Button variant="outline" size="sm" asChild><Link to="/journey">Open Journey</Link></Button>
     </Panel>

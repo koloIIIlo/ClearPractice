@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { useBlocker } from "react-router";
+import { Link, useBlocker } from "react-router";
 import { Check, Loader2, Mic, RefreshCw, Square } from "lucide-react";
 import { toast } from "sonner";
 import { Panel } from "@/components/page";
@@ -64,6 +64,8 @@ export interface RecorderPanelProps {
   livePace?: boolean;
   /** A countdown before every take (a drill round's think time); replaces the 3-second switch. */
   countdownSeconds?: number;
+  /** Inline under a card (Phrases → Say it): a smaller clock, and a link to change the microphone instead of the picker. */
+  compact?: boolean;
 }
 
 /**
@@ -72,7 +74,7 @@ export interface RecorderPanelProps {
  * state changes. Shared by the Studio and every later activity, so each gets
  * the same audio safety.
  */
-export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBeforeStart, footer, deemphasize, tourId, livePace, countdownSeconds }: RecorderPanelProps) {
+export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBeforeStart, footer, deemphasize, tourId, livePace, countdownSeconds, compact }: RecorderPanelProps) {
   const ipc = useIpc();
   const native = ipc.recordingMode === "native";
   const { preferences } = usePreferences();
@@ -153,10 +155,10 @@ export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBef
       <div aria-live="polite" className="sr-only">
         {announcement}
       </div>
-      <Panel className="flex flex-col items-center gap-4 py-8">
+      <Panel className={cn("flex flex-col items-center", compact ? "gap-3 py-5" : "gap-4 py-8")}>
         <RecorderStatus rec={rec} />
         {clock ?? (
-          <div className="text-5xl font-semibold tracking-tight tabular-nums" aria-label="Elapsed time">
+          <div className={cn("font-semibold tracking-tight tabular-nums", compact ? "text-3xl" : "text-5xl")} aria-label="Elapsed time">
             {rec.phase === "countdown" ? rec.countdown : formatClock(rec.elapsedMs)}
           </div>
         )}
@@ -196,7 +198,10 @@ export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBef
           )}
         </Button>
         <div className="flex max-w-full flex-wrap items-center justify-center gap-x-4 gap-y-2 text-meta text-muted-foreground">
-          {/* The microphone lives in the recorder, so the page fits on one screen. */}
+          {compact ? (
+            <Link className="text-primary underline underline-offset-2 hover:no-underline" to="/settings/audio">Change microphone</Link>
+          ) : (
+          /* The microphone lives in the recorder, so the page fits on one screen. */
           <div className="flex min-w-0 items-center gap-1">
             <Label htmlFor="studio-microphone" className="sr-only">Microphone</Label>
             <Select value={selectedDevice} onValueChange={setDeviceId} disabled={locked || devices.isPending}>
@@ -212,6 +217,7 @@ export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBef
               <RefreshCw aria-hidden className={devices.isFetching ? "animate-spin" : undefined} />
             </Button>
           </div>
+          )}
           {!hideCountdown && countdownSeconds === undefined && (
             <div className="flex items-center gap-2">
               <Switch id="countdown" checked={useCountdown} onCheckedChange={setUseCountdown} disabled={locked} />

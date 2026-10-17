@@ -1,5 +1,5 @@
 import type { NavigateFunction } from "react-router";
-import { BookOpenText, Compass, MessageSquareHeart, Mic, Monitor, Moon, Play, Sun, ZoomIn, ZoomOut, Search, type LucideIcon } from "lucide-react";
+import { BookOpenText, Compass, Ear, MessageSquareHeart, Mic, Monitor, Moon, Play, Sun, Zap, ZoomIn, ZoomOut, Search, type LucideIcon } from "lucide-react";
 import { EXERCISE_IDS } from "@/content/exercises";
 import { loadSequence, startSequence, stepUrl } from "@/features/practice/sequence";
 import { PLAN_STEPS } from "@/lib/today-plan";
@@ -60,6 +60,9 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "just-a-minute", label: "Play Just a Minute", keywords: ["drill", "game", "minute"], icon: Play, group: "Actions", visible: (ctx) => features(ctx).justAMinute, run: (ctx) => ctx.navigate("/drill/jam") },
   { id: "daily-prompt", label: "Play today's daily prompt", keywords: ["drill", "daily", "prompt", "game"], icon: Play, group: "Actions", visible: (ctx) => features(ctx).justAMinute, run: (ctx) => ctx.navigate("/drill/daily") },
   { id: "drills", label: "Show all drills", keywords: ["drill", "games", "exercises"], icon: Play, group: "Actions", visible: (ctx) => features(ctx).justAMinute, run: (ctx) => ctx.navigate("/exercises?tab=drills") },
+  // The learning engine (M11).
+  { id: "sprint", label: "Sprint on my weakest area", keywords: ["sprint", "weakest", "five minutes", "level"], icon: Zap, group: "Actions", visible: always, run: (ctx) => ctx.navigate("/sprint") },
+  { id: "catch-it", label: "Play Catch it", keywords: ["fillers", "um", "listen", "awareness"], icon: Ear, group: "Actions", visible: always, run: (ctx) => ctx.navigate("/catch-it") },
   { id: "conversation", label: "Start a conversation", keywords: ["ai", "partner", "talk"], icon: MessageSquareHeart, group: "Actions", visible: (ctx) => features(ctx).conversation, run: (ctx) => ctx.navigate("/conversation") },
 ];
 

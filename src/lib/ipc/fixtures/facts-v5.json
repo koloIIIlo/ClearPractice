@@ -1,5 +1,5 @@
 {
-  "factsVersion": 4,
+  "factsVersion": 5,
   "generatedAt": "2026-10-16T18:00:00.000Z",
   "today": "2026-10-16",
   "transcriptionAvailable": true,
@@ -101,7 +101,18 @@
       },
       "pitchRangeSt": 6.5,
       "rateSps": 4.2,
-      "result": null
+      "result": null,
+      "predictions": {
+        "hesitations": "2-4",
+        "pace": "usual"
+      },
+      "catchRuns": [
+        {
+          "caught": 2,
+          "total": 3,
+          "localDate": "2026-10-15"
+        }
+      ]
     },
     {
       "id": "take-2",
@@ -141,7 +152,9 @@
         "longPauseMs": 2100,
         "repeats": 2,
         "flags": 1
-      }
+      },
+      "predictions": {},
+      "catchRuns": []
     }
   ],
   "transferReviews": [
@@ -183,5 +196,22 @@
       "reason": "3 sessions at this stage on 2 days",
       "createdAt": "2026-10-12T09:00:00.000Z"
     }
-  ]
+  ],
+  "programme": {
+    "id": "prog-1",
+    "programme": "fillers-4w",
+    "week": 1,
+    "startedAt": "2026-10-12T08:00:00.000Z",
+    "weekStartedAt": "2026-10-12T08:00:00.000Z",
+    "weekStartedDate": "2026-10-12",
+    "completedAt": null,
+    "stoppedAt": null,
+    "steps": [
+      {
+        "stepId": "w1-catch",
+        "refId": null,
+        "doneAt": "2026-10-13T08:00:00.000Z"
+      }
+    ]
+  }
 }

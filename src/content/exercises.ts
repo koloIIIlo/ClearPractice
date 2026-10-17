@@ -1,5 +1,5 @@
 import {
-  BookOpen, Bomb, CalendarDays, Crown, Dice5, Dices, Gauge, Headphones, Highlighter, MessageSquareQuote, Presentation, Repeat2, Scale, Swords, TextQuote, Timer, Users,
+  BookOpen, Bomb, CalendarDays, Crown, Dice5, Dices, Gauge, Headphones, Highlighter, MessageSquareQuote, Presentation, Repeat2, Scale, Speech, Swords, TextQuote, Timer, Users,
   type LucideIcon,
 } from "lucide-react";
 import type { ExerciseDefinition, ExerciseType } from "@/lib/ipc/schemas";
@@ -74,6 +74,9 @@ export const EXERCISES: ExerciseDefinition[] = [
   },
 ];
 
+/** Phrases → Say it (roadmap 11.7): an exercise of its own, one Phrase practice session a day. Never change it. */
+export const PHRASE_SAY_IT = { id: "ex-phrase-say-it", version: 1, type: "phrase_say_it" } as const;
+
 /** Stored in sessions; never change them. */
 export const EXERCISE_IDS = {
   repeat: "ex-repeat",
@@ -112,6 +115,8 @@ export const EXERCISE_TYPE_INFO: Record<ExerciseType, { label: string; icon: Luc
   daily: { label: "Daily prompt", icon: CalendarDays },
   gauntlet: { label: "Gauntlet", icon: Swords },
   boss: { label: "Boss level", icon: Crown },
+  // The learning engine (M11): a phrase said aloud during review.
+  phrase_say_it: { label: "Phrase practice", icon: Speech },
 };
 
 /** The four core types, listed first in filters; other types appear once you have used them. */

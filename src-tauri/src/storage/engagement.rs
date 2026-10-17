@@ -14,7 +14,7 @@ use std::collections::HashMap;
 /// app_settings key marking that history was turned into events once.
 const BACKFILL_KEY: &str = "engagement_backfill_v1";
 /// Bumped when facts gain fields, so the interface can tell what to expect.
-pub const FACTS_VERSION: u32 = 4;
+pub const FACTS_VERSION: u32 = 5;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -275,6 +275,18 @@ pub struct FactTake {
     pub rate_sps: Option<f64>,
     /// Facts v4 (M10): a drill take's cached result for its current transcript, numbers only.
     pub result: Option<std::collections::BTreeMap<String, f64>>,
+    /// Facts v5 (M11): your guesses before seeing the measures (kind → bucket), Your note.
+    pub predictions: std::collections::BTreeMap<String, String>,
+    /// Facts v5 (M11): Catch it runs on this take.
+    pub catch_runs: Vec<FactCatchRun>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FactCatchRun {
+    pub caught: u32,
+    pub total: u32,
+    pub local_date: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -327,6 +339,8 @@ pub struct PracticeFacts {
     /// Facts v3 (M9 achievements): prompts you wrote and blind A/B choices you saved.
     pub user_prompts: u32,
     pub blind_comparisons: u32,
+    /// Facts v5 (M11): the programme you are running, if any.
+    pub programme: Option<super::learning::ProgrammeRun>,
 }
 
 fn count_rows(conn: &Connection, sql: &str) -> Result<u32> {
@@ -390,6 +404,7 @@ impl DatabaseOwner {
     /// The facts snapshot (7.6). About six single-pass queries.
     pub fn practice_facts(&self, today: &str) -> Result<PracticeFacts> {
         let progression = self.list_progression_events()?;
+        let programme = self.programme_state()?.filter(|r| r.completed_at.is_none() && r.stopped_at.is_none());
         let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
         let transcription_available: bool = conn
             .query_row("SELECT EXISTS(SELECT 1 FROM app_settings WHERE key=?1)", [crate::transcribe::CONFIG_KEY], |r| r.get(0))
@@ -490,6 +505,22 @@ impl DatabaseOwner {
                 checks.entry(attempt).or_default().insert(check, value);
             }
         }
+        let mut predictions: HashMap<String, std::collections::BTreeMap<String, String>> = HashMap::new();
+        {
+            let mut stmt = conn.prepare("SELECT attempt_id,kind,predicted FROM self_predictions").map_err(db_error)?;
+            for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))).map_err(db_error)? {
+                let (attempt, kind, predicted) = row.map_err(db_error)?;
+                predictions.entry(attempt).or_default().insert(kind, predicted);
+            }
+        }
+        let mut catch_runs: HashMap<String, Vec<FactCatchRun>> = HashMap::new();
+        {
+            let mut stmt = conn.prepare("SELECT attempt_id,caught,total,created_at_ms FROM catch_runs ORDER BY created_at_ms,id").map_err(db_error)?;
+            for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?, r.get::<_, u32>(2)?, r.get::<_, i64>(3)?))).map_err(db_error)? {
+                let (attempt, caught, total, created) = row.map_err(db_error)?;
+                catch_runs.entry(attempt).or_default().push(FactCatchRun { caught, total, local_date: local_date(created) });
+            }
+        }
         let mut stmt = conn.prepare(&format!(
             "SELECT a.id,st.session_id,a.ordinal,s.local_date,a.created_at_ms,aa.duration_ms,tc.challenge,\
              (SELECT r.id FROM transcript_revisions r WHERE r.attempt_id=a.id AND r.source<>'user' ORDER BY r.created_at_ms DESC,r.id DESC LIMIT 1),\
@@ -524,6 +555,8 @@ impl DatabaseOwner {
                     pitch_range_st: r.get(10)?,
                     rate_sps: r.get(11)?,
                     result: r.get::<_, Option<String>>(12)?.and_then(|s| serde_json::from_str::<Value>(&s).ok()).map(|v| crate::activity_results::numbers(&v)),
+                    predictions: predictions.get(&id).cloned().unwrap_or_default(),
+                    catch_runs: catch_runs.get(&id).cloned().unwrap_or_default(),
                     id,
                     session_id: r.get(1)?,
                     ordinal: r.get(2)?,
@@ -595,6 +628,7 @@ impl DatabaseOwner {
             phrases,
             phrase_reviews,
             progression,
+            programme,
         })
     }
 }
@@ -973,7 +1007,7 @@ pub(crate) mod tests {
     }
 
     /// The interface parses facts with strict schemas; its fixture
-    /// (src/lib/ipc/fixtures/facts-v4.json) must have exactly these fields.
+    /// (src/lib/ipc/fixtures/facts-v5.json) must have exactly these fields.
     #[test]
     fn facts_serialize_with_the_same_fields_as_the_interface_fixture() {
         let root = TestRoot::new();
@@ -989,7 +1023,7 @@ pub(crate) mod tests {
         db.review_phrase(&card.id, "good", today).unwrap();
         db.record_progression("advance", "Three sessions").unwrap();
         let actual = serde_json::to_value(db.practice_facts("2026-10-16").unwrap()).unwrap();
-        let fixture: Value = serde_json::from_str(include_str!("../../../src/lib/ipc/fixtures/facts-v4.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../../src/lib/ipc/fixtures/facts-v5.json")).unwrap();
         let keys = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<std::collections::BTreeSet<_>>();
         assert_eq!(keys(&actual), keys(&fixture));
         for list in ["sessions", "takes", "transferReviews", "phrases", "phraseReviews", "progression"] {

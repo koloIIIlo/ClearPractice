@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { isComeback } from "@/lib/engagement/fresh-start";
 import { toLocalDate } from "@/lib/phrase-schedule";
 import { usePracticeEvents, usePreferences } from "@/lib/ipc/queries";
@@ -12,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { formatLongDay, formatRelativeDay } from "@/lib/format";
 import { useSessions, useTodayPlan } from "@/lib/ipc/queries";
-import type { SessionLength, TodayPlan } from "@/lib/ipc/schemas";
+import type { Preferences, SessionLength, TodayPlan } from "@/lib/ipc/schemas";
 import { RecordingLibrary } from "@/features/practice/RecordingLibrary";
 import { loadSequence, startSequence, stepUrl } from "@/features/practice/sequence";
 import { StagePanel } from "./StagePanel";
@@ -29,6 +30,44 @@ const LENGTHS: { value: SessionLength; label: string; hint: string }[] = [
 
 // Loaded in Playful style only, so Calm and start-up never carry the game engine.
 const JourneyStrip = lazy(() => import("@/features/journey/JourneyStrip").then((m) => ({ default: m.JourneyStrip })));
+// The learning engine (M11) loads after the plan, off the start-up path.
+const TodayReanswer = lazy(() => import("@/features/learning/ReanswerCard").then((m) => ({ default: m.TodayReanswer })));
+const ProgrammeCard = lazy(() => import("@/features/learning/ProgrammeCard").then((m) => ({ default: m.ProgrammeCard })));
+
+/** The challenge dial (11.2): changes which prompt the plan picks, never your stage. */
+const CHALLENGES: { value: Preferences["challengeBias"]; label: string; hint: string }[] = [
+  { value: -1, label: "Easier", hint: "Familiar topics with time to prepare." },
+  { value: 0, label: "Just right", hint: "The plan as the scheduler chose it." },
+  { value: 1, label: "Harder", hint: "Unfamiliar topics first, with half the preparation time." },
+];
+
+function ChallengeDial() {
+  const qc = useQueryClient();
+  const { preferences, update } = usePreferences();
+  const current = CHALLENGES.find((c) => c.value === preferences.challengeBias) ?? CHALLENGES[1];
+  return (
+    <fieldset className="mt-4">
+      <legend className="mb-2 text-meta font-medium">Challenge</legend>
+      <RadioGroup
+        value={String(preferences.challengeBias)}
+        onValueChange={(v) => update({ challengeBias: Number(v) as Preferences["challengeBias"] }, { onSettled: () => qc.invalidateQueries({ queryKey: ["today"] }) })}
+        className="flex flex-wrap gap-2"
+      >
+        {CHALLENGES.map((c) => (
+          <Label
+            key={c.value}
+            htmlFor={`challenge-${c.value}`}
+            className="flex h-10 cursor-pointer items-center gap-2 rounded-lg border px-3 font-normal has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-secondary"
+          >
+            <RadioGroupItem id={`challenge-${c.value}`} value={String(c.value)} />
+            {c.label}
+          </Label>
+        ))}
+      </RadioGroup>
+      <p className="mt-2 text-meta text-muted-foreground">{current.hint} Your stage only changes when you choose.</p>
+    </fieldset>
+  );
+}
 
 export function TodayPage() {
   const { preferences } = usePreferences();
@@ -152,6 +191,7 @@ function TodayContent({
                   ))}
                 </RadioGroup>
               </fieldset>
+              <ChallengeDial />
 
               <div data-tour="start" className="mt-6 flex flex-wrap items-center gap-3">
                 {active ? (
@@ -192,7 +232,7 @@ function TodayContent({
             </SectionTitle>
             <ol className="divide-y rounded-panel border bg-card">
               {plan.steps.map((s, i) => (
-                <li key={s.exerciseType} className="flex items-center gap-4 px-4 py-3">
+                <li key={`${i}-${s.exerciseType}`} className="flex items-center gap-4 px-4 py-3">
                   <span
                     aria-hidden
                     className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-meta font-medium tabular-nums"
@@ -223,7 +263,7 @@ function TodayContent({
                 </div>
                 <Button variant="outline" size="sm" asChild>
                   <Link
-                    to={`/practice/${EXERCISE_IDS.repeat}?prompt=${plan.weekly.newSituation.promptId}`}
+                    to={`/practice/${EXERCISE_IDS.repeat}?prompt=${plan.weekly.newSituation.promptId}${plan.weekly.newSituation.preparationSeconds !== undefined ? `&prepSeconds=${plan.weekly.newSituation.preparationSeconds}` : ""}`}
                     state={{ section: "today" }}
                   >
                     Try it <ArrowRight aria-hidden />
@@ -244,6 +284,11 @@ function TodayContent({
                   <Link to="/progress?view=real">{plan.weekly.realConversation.done ? "Add another" : "Add reflection"}</Link>
                 </Button>
               </li>
+              {!firstRun && (
+                <Suspense fallback={null}>
+                  <TodayReanswer except={plan.weekly.newSituation.promptId} />
+                </Suspense>
+              )}
             </ul>
           </section>
         </div>
@@ -254,6 +299,9 @@ function TodayContent({
               <JourneyStrip />
             </Suspense>
           )}
+          <Suspense fallback={null}>
+            <ProgrammeCard />
+          </Suspense>
           <StagePanel plan={plan} />
           {plan.lastCompleted && (
             <Panel>

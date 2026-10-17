@@ -110,8 +110,63 @@ export function schedule({ recent, events, prompts }: { recent: SessionDetail[];
   return { stage, offer, evidence, focus, suggestions };
 }
 
-/** This week's new-situation prompt at the current stage, rotating weekly. */
-export function stagePrompt(stage: Stage, prompts: PracticePrompt[], week: number): PracticePrompt | null {
-  const fitting = prompts.filter((p) => p.source === "bundled" && stage.matches(p));
-  return fitting.length ? fitting[week % fitting.length] : null;
+/**
+ * This week's new-situation prompt at the current stage, rotating weekly. The
+ * challenge dial (11.2) changes the choice, never the stage: Easier picks a
+ * familiar prompt with 30 seconds or more to prepare; Harder puts unfamiliar
+ * prompts first and halves the preparation time.
+ */
+export function stagePrompt(stage: Stage, prompts: PracticePrompt[], week: number, bias: ChallengeBias = 0): PracticePrompt | null {
+  const bundled = prompts.filter((p) => p.source === "bundled");
+  if (bias === -1) {
+    const easy = bundled.filter((p) => p.conditions.familiarity === "familiar" && p.conditions.preparationSeconds >= 30);
+    if (easy.length) return easy[week % easy.length];
+  }
+  const fitting = bundled.filter((p) => stage.matches(p));
+  if (!fitting.length) return null;
+  if (bias === 1) {
+    const ordered = [...fitting.filter((p) => p.conditions.familiarity === "unfamiliar"), ...fitting.filter((p) => p.conditions.familiarity !== "unfamiliar")];
+    const chosen = ordered[week % ordered.length];
+    return { ...chosen, conditions: { ...chosen.conditions, preparationSeconds: harderPreparation(chosen.conditions.preparationSeconds) } };
+  }
+  return fitting[week % fitting.length];
+}
+
+// ── The challenge dial (roadmap 11.2) ────────────────────────────────────────
+/** Easier, Just right or Harder. You always choose; it never changes your stage. */
+export type ChallengeBias = -1 | 0 | 1;
+/** Practice where you succeed most of the time but not always (Wilson et al. 2019); shown as counts, never percentages. */
+export const RECENT_RATED = 10;
+/** Demands are raised one at a time in this order (§7 "Change one demand at a time"). Never "speak faster". */
+export const HARDER_DEMANDS = ["less preparation time", "a topic you haven't practised", "a named listener", "a longer answer", "a follow-up question"] as const;
+/** The first demand each stage doesn't already include. */
+const NEXT_DEMAND: Record<number, number> = { 1: 0, 2: 2, 3: 3, 4: 4, 5: 0 };
+
+export const harderPreparation = (seconds: number) => Math.max(0, Math.floor(seconds / 2));
+
+/** Your last ten sessions with an ease rating: how many felt manageable (3 or more). */
+export function recentSuccess(sessions: readonly { ease?: number | null; startedAt: string }[]): { manageable: number; rated: number } {
+  const rated = sessions.filter((s) => s.ease != null).sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, RECENT_RATED);
+  return { manageable: rated.filter((s) => s.ease! >= 3).length, rated: rated.length };
+}
+
+/** The next harder demand for a stage. */
+export const nextDemand = (stage: Pick<Stage, "stage">) => HARDER_DEMANDS[NEXT_DEMAND[stage.stage] ?? 0];
+
+/**
+ * A suggestion from how recent sessions felt: one harder demand when nearly
+ * all felt manageable (at least 9 in 10, from at least 6 rated), or keeping
+ * or easing the demand when several felt hard. Null otherwise.
+ */
+export function tuning(sessions: readonly { ease?: number | null; startedAt: string }[], stage: Pick<Stage, "stage">, bias: ChallengeBias): Suggestion | null {
+  const { manageable, rated } = recentSuccess(sessions);
+  if (rated < 6) return null;
+  if (manageable * 10 >= rated * 9 && bias !== -1) {
+    return { text: `Try one harder demand today: ${nextDemand(stage)}.`, reason: `Things have felt manageable lately (${manageable} of ${rated}). One demand at a time keeps it within reach.` };
+  }
+  const hard = rated - manageable;
+  if (manageable * 10 <= rated * 7) {
+    return { text: "Keep the same demand, or choose Easier.", reason: `Several recent sessions felt hard (${hard} of ${rated}). A harder demand can wait; choosing Easier is part of practising well.` };
+  }
+  return null;
 }

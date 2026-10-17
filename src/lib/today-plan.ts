@@ -5,7 +5,7 @@
  * from your sessions, and the phrase to review is your next due phrase.
  */
 import { PROMPTS } from "@/content/prompts";
-import { stagePrompt, type Schedule } from "./scheduler";
+import { stagePrompt, type Schedule, type ChallengeBias, type Suggestion } from "./scheduler";
 import type { PhraseCard, PracticeFacts, PracticePrompt, ProgressSummary, ProgressView, SessionDetail, SessionLength, SessionSummary, TodayPlan, TransferReview } from "./ipc/schemas";
 
 export const PLAN_STEPS: Record<SessionLength, TodayPlan["steps"]> = {
@@ -45,7 +45,14 @@ export function dayNumber(localDate: string): number {
 const GOAL_FOCUSES: Record<string, number[]> = { clarity: [0, 2], hesitation: [1, 4], phrasing: [2, 3], confidence: [3, 0] };
 const GOAL_NAMES: Record<string, string> = { clarity: "clarity", hesitation: "less hesitation", phrasing: "English phrasing", confidence: "confidence" };
 
-export function buildTodayPlan({ localDate, length, sessions, phrases, latest, reviews = [], plan, prompts = PROMPTS, goals = [] }: {
+/** What the challenge dial changed in this week's task (11.2). */
+const DIAL_NOTES: Record<ChallengeBias, string> = {
+  [-1]: " You chose Easier: a familiar topic with time to prepare.",
+  0: "",
+  1: " You chose Harder: half the preparation time.",
+};
+
+export function buildTodayPlan({ localDate, length, sessions, phrases, latest, reviews = [], plan, prompts = PROMPTS, goals = [], bias = 0, warmUp = null, tuned = null, programmeFocus = null }: {
   localDate: string;
   length: SessionLength;
   sessions: SessionSummary[];
@@ -59,12 +66,20 @@ export function buildTodayPlan({ localDate, length, sessions, phrases, latest, r
   prompts?: PracticePrompt[];
   /** Your setup goals; the daily rotation then cycles through their focuses. */
   goals?: string[];
+  /** The challenge dial (11.2): changes the prompt chosen, never the stage. */
+  bias?: ChallengeBias;
+  /** A two-minute warm-up drill before the plan (11.3), when you turned it on. */
+  warmUp?: TodayPlan["steps"][number] | null;
+  /** A suggestion from how recent sessions felt (11.2). */
+  tuned?: Suggestion | null;
+  /** A running programme's focus for the week (11.6). */
+  programmeFocus?: { text: string; reason: string } | null;
 }): TodayPlan {
   const day = dayNumber(localDate);
   const unfamiliar = PROMPTS.filter((p) => p.conditions.familiarity === "unfamiliar");
   // Monday-based weeks: 1970-01-01 was a Thursday.
   const week = Math.floor((day + 3) / 7);
-  const staged = plan ? stagePrompt(plan.stage, prompts, week) : null;
+  const staged = plan ? stagePrompt(plan.stage, prompts, week, bias) : null;
   const goalFocuses = [...new Set(goals.flatMap((g) => GOAL_FOCUSES[g] ?? []))].sort((a, b) => a - b);
   const rotation = goalFocuses.length ? goalFocuses : DAILY_FOCUSES.map((_, i) => i);
   const rotated = rotation[day % rotation.length];
@@ -80,10 +95,10 @@ export function buildTodayPlan({ localDate, length, sessions, phrases, latest, r
   const due = phrases.filter((p) => p.dueDate <= localDate).sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0] ?? null;
   return {
     localDate,
-    focus: plan?.focus?.text ?? DAILY_FOCUSES[rotated],
-    focusReason: plan?.focus?.reason ?? goalReason,
+    focus: plan?.focus?.text ?? programmeFocus?.text ?? DAILY_FOCUSES[rotated],
+    focusReason: plan?.focus?.reason ?? programmeFocus?.reason ?? goalReason,
     length,
-    steps: PLAN_STEPS[length],
+    steps: warmUp ? [warmUp, ...PLAN_STEPS[length]] : PLAN_STEPS[length],
     resumable: null,
     lastCompleted,
     recentReflection: reflection,
@@ -93,9 +108,10 @@ export function buildTodayPlan({ localDate, length, sessions, phrases, latest, r
         promptId: topic.id,
         text: topic.text,
         familiarity: topic.conditions.familiarity,
-        reason: staged && plan
+        reason: (staged && plan
           ? `This week's task at your stage, ${plan.stage.title.toLowerCase()}: ${plan.stage.demand.toLowerCase()}.`
-          : "This week's new topic from the curriculum, so you also practise speaking without rehearsal.",
+          : "This week's new topic from the curriculum, so you also practise speaking without rehearsal.") + (staged ? DIAL_NOTES[bias] : ""),
+        ...(staged && bias === 1 ? { preparationSeconds: staged.conditions.preparationSeconds } : {}),
       },
       realConversation: { task: TRANSFER_TASKS[week % TRANSFER_TASKS.length], done: reflectedThisWeek },
     },
@@ -104,7 +120,7 @@ export function buildTodayPlan({ localDate, length, sessions, phrases, latest, r
         stage: plan.stage.stage, title: plan.stage.title, demand: plan.stage.demand, evidence: plan.evidence,
         offer: plan.offer && { stage: plan.offer.to.stage, title: plan.offer.to.title, reason: plan.offer.reason },
       },
-      suggestions: plan.suggestions,
+      suggestions: tuned ? [tuned, ...plan.suggestions] : plan.suggestions,
     }),
   };
 }

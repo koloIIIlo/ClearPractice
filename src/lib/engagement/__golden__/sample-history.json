@@ -1,5 +1,5 @@
 {
- "factsVersion": 4,
+ "factsVersion": 5,
  "generatedAt": "2026-10-12T12:00:00.000Z",
  "today": "2026-10-12",
  "transcriptionAvailable": true,
@@ -558,7 +558,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-3",
@@ -590,7 +592,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-6",
@@ -622,7 +626,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-8",
@@ -657,7 +663,9 @@
    },
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-9",
@@ -689,7 +697,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-12",
@@ -721,7 +731,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-14",
@@ -753,7 +765,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-15",
@@ -785,7 +799,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-18",
@@ -822,7 +838,9 @@
    },
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-21",
@@ -854,7 +872,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-22",
@@ -886,7 +906,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-24",
@@ -918,7 +940,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-26",
@@ -953,7 +977,9 @@
    },
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-27",
@@ -985,7 +1011,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-31",
@@ -1017,7 +1045,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-33",
@@ -1051,7 +1081,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-34",
@@ -1083,7 +1115,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-36",
@@ -1118,7 +1152,9 @@
    },
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-39",
@@ -1150,7 +1186,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-40",
@@ -1182,7 +1220,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-43",
@@ -1214,7 +1254,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-45",
@@ -1249,7 +1291,9 @@
    },
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-46",
@@ -1281,7 +1325,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-49",
@@ -1315,7 +1361,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-51",
@@ -1347,7 +1395,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-52",
@@ -1379,7 +1429,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-55",
@@ -1414,7 +1466,9 @@
    },
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-58",
@@ -1446,7 +1500,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-59",
@@ -1478,7 +1534,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   },
   {
    "id": "take-61",
@@ -1510,7 +1568,9 @@
    "checks": {},
    "pitchRangeSt": null,
    "rateSps": null,
-   "result": null
+   "result": null,
+   "predictions": {},
+   "catchRuns": []
   }
  ],
  "transferReviews": [
@@ -1647,5 +1707,6 @@
  ],
  "progression": [],
  "userPrompts": 0,
- "blindComparisons": 0
+ "blindComparisons": 0,
+ "programme": null
 }

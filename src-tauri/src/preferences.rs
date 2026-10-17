@@ -66,6 +66,16 @@ pub struct Preferences {
     pub companion: bool,
     /// Accent colour (9.12): "green", or one you unlocked.
     pub accent: String,
+    /// The challenge dial (11.2): -1 easier, 0 just right, 1 harder. It never changes your stage.
+    pub challenge_bias: i8,
+    /// Start today's practice with a 2-minute warm-up game (11.3).
+    pub warm_up: bool,
+    /// When to show measures (11.4): "always", "on_request" or "fade".
+    pub measures_timing: String,
+    /// Guess hesitations and pace before seeing a take's measures (11.5).
+    pub predict_first: bool,
+    /// The one-time tip offering predict-first has been shown.
+    pub predict_tip_seen: bool,
 }
 
 pub const ACCENTS: [&str; 6] = ["green", "ocean", "amber", "violet", "rose", "graphite"];
@@ -77,7 +87,8 @@ impl Default for Preferences {
             onboarded: false, tour_done: false, goals: Vec::new(), goal_note: String::new(), difficulty_language: None,
             local_endpoint: "http://127.0.0.1:8080".into(), local_model: String::new(), budget_warning_micro_usd: 4_000_000, reminder_time: None,
             coaching_prices: Default::default(), practice_style: "playful".into(), style_chosen: false, celebrations: "full".into(), celebration_sounds: false,
-            live_pace: false, watch_words: Vec::new(), weekly_goal_days: 3, week_starts_on: "monday".into(), companion: true, accent: "green".into() }
+            live_pace: false, watch_words: Vec::new(), weekly_goal_days: 3, week_starts_on: "monday".into(), companion: true, accent: "green".into(),
+            challenge_bias: 0, warm_up: false, measures_timing: "always".into(), predict_first: false, predict_tip_seen: false }
     }
 }
 
@@ -145,6 +156,12 @@ fn validate(mut p: Preferences) -> Result<Preferences, String> {
     if !ACCENTS.contains(&p.accent.as_str()) {
         return Err("Unknown accent colour.".into());
     }
+    if !(-1..=1).contains(&p.challenge_bias) {
+        return Err("Choose Easier, Just right or Harder.".into());
+    }
+    if !matches!(p.measures_timing.as_str(), "always" | "on_request" | "fade") {
+        return Err("Choose when to show measures from the list.".into());
+    }
     p.input_device_id = p.input_device_id.filter(|id| !id.trim().is_empty());
     if p.input_device_id.as_ref().is_some_and(|id| id.len() > 512) {
         return Err("The microphone ID is too long.".into());
@@ -197,6 +214,19 @@ mod tests {
         assert_eq!(load(&db).unwrap(), Preferences::default());
         let blank = save(&db, Preferences { input_device_id: Some("  ".into()), ..Default::default() }).unwrap();
         assert_eq!(blank.input_device_id, None);
+    }
+
+    #[test]
+    fn learning_preferences_round_trip_and_reject_unknown_values() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        let defaults = load(&db).unwrap();
+        assert_eq!((defaults.challenge_bias, defaults.warm_up, defaults.measures_timing.as_str(), defaults.predict_first), (0, false, "always", false));
+        let chosen = Preferences { challenge_bias: 1, warm_up: true, measures_timing: "fade".into(), predict_first: true, predict_tip_seen: true, ..defaults.clone() };
+        assert_eq!(save(&db, chosen.clone()).unwrap(), chosen);
+        assert_eq!(load(&db).unwrap(), chosen);
+        assert!(save(&db, Preferences { challenge_bias: 2, ..defaults.clone() }).is_err());
+        assert!(save(&db, Preferences { measures_timing: "never".into(), ..defaults }).is_err());
     }
 
     #[test]

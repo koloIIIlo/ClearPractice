@@ -1,4 +1,5 @@
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
+import { startSprint } from "@/features/learning/sprint";
 import { CheckCircle2, CircleDashed, CircleDot, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -95,6 +96,7 @@ function Level({ level, area, journey }: { level: LevelStatus; area: AreaId; jou
  * evidence, the next level's criteria with progress and places to practise.
  */
 export function AreaSheet({ area, journey, onClose }: { area: AreaId | null; journey: Journey; onClose: () => void }) {
+  const navigate = useNavigate();
   const status = area ? journey.areas.find((a) => a.area === area) : null;
   const def = area ? areaDef(area) : null;
   return (
@@ -108,6 +110,14 @@ export function AreaSheet({ area, journey, onClose }: { area: AreaId | null; jou
               </SheetTitle>
               <SheetDescription>{def.why}</SheetDescription>
             </SheetHeader>
+            {status.current < 5 && (
+              <div className="flex flex-wrap items-center gap-3 px-4">
+                <Button variant="outline" size="sm" onClick={() => startSprint(navigate, status.area, status.current)}>
+                  5-minute sprint
+                </Button>
+                <span className="text-meta text-muted-foreground">Two or three short steps toward level {status.current + 1}.</span>
+              </div>
+            )}
             <ol className="divide-y px-4">
               {status.levels.map((l) => <Level key={l.level} level={l} area={status.area} journey={journey} />)}
             </ol>

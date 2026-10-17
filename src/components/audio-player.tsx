@@ -26,7 +26,7 @@ let active: HTMLAudioElement | null = null;
  * the take player (play, 5-second skips, time, a seek bar in the accent colour,
  * pitch-preserving speed), instead of the browser's built-in controls.
  */
-export function AudioPlayer({ src, label, speeds, className, ref, volume = 1, onPositionChange }: {
+export function AudioPlayer({ src, label, speeds, className, ref, volume = 1, onPositionChange, onPlayingChange, onEnded }: {
   src: string;
   /** Names what is played, for screen readers: "Play <label>". */
   label: string;
@@ -37,6 +37,10 @@ export function AudioPlayer({ src, label, speeds, className, ref, volume = 1, on
   /** Playback gain from 0 to 1 (level matching only ever turns a take down). */
   volume?: number;
   onPositionChange?: (ms: number) => void;
+  /** Called when playback starts or stops (Catch it counts presses only while playing). */
+  onPlayingChange?: (playing: boolean) => void;
+  /** Called when playback reaches the end. */
+  onEnded?: () => void;
 }) {
   const audio = useRef<HTMLAudioElement>(null);
   const stopAt = useRef<number | null>(null);
@@ -115,9 +119,9 @@ export function AudioPlayer({ src, label, speeds, className, ref, volume = 1, on
             setPosition(el.currentTime * 1000);
             onPositionChange?.(el.currentTime * 1000);
           }}
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onEnded={() => setPlaying(false)}
+          onPlay={() => { setPlaying(true); onPlayingChange?.(true); }}
+          onPause={() => { setPlaying(false); onPlayingChange?.(false); }}
+          onEnded={() => { setPlaying(false); onPlayingChange?.(false); onEnded?.(); }}
           onError={() => setError("This audio could not be loaded.")}
         />
         <Button size="icon" onClick={toggle} aria-label={playing ? `Pause ${label}` : `Play ${label}`}>

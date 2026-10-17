@@ -5,7 +5,7 @@
  */
 let context: AudioContext | null = null;
 
-export function playCue(kind: "start" | "stop" | "celebrate"): void {
+export function playCue(kind: "start" | "stop" | "celebrate" | "tick"): void {
   try {
     const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;
@@ -14,7 +14,9 @@ export function playCue(kind: "start" | "stop" | "celebrate"): void {
     const now = context.currentTime;
     // Rising pair to start, falling pair to stop.
     // A soft two-note chime for a celebration (9.10), quieter than the recording cues.
-    const notes = kind === "start" ? [660, 880] : kind === "stop" ? [880, 660] : [784, 1047];
+    // A single soft click confirms a Catch it press (11.6).
+    const notes = kind === "start" ? [660, 880] : kind === "stop" ? [880, 660] : kind === "tick" ? [1320] : [784, 1047];
+    const peak = kind === "tick" ? 0.05 : 0.12;
     notes.forEach((frequency, i) => {
       const osc = context!.createOscillator();
       const gain = context!.createGain();
@@ -22,7 +24,7 @@ export function playCue(kind: "start" | "stop" | "celebrate"): void {
       osc.frequency.value = frequency;
       const t = now + i * 0.09;
       gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(0.12, t + 0.01);
+      gain.gain.exponentialRampToValueAtTime(peak, t + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
       osc.connect(gain).connect(context!.destination);
       osc.start(t);

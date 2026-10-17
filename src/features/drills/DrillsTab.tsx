@@ -1,7 +1,8 @@
 import { useId, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Check, Play, Shuffle } from "lucide-react";
+import { Check, Layers, Play, Shuffle } from "lucide-react";
+import { startMixedSet } from "@/features/learning/sprint";
 import { Panel } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -183,9 +184,14 @@ export function DrillsTab() {
             ))}
           </ToggleGroup>
         </div>
-        <Button variant="outline" onClick={() => navigate(`/drill/${randomDrill(facts.data, today, new Date().toISOString()).id}`)}>
-          <Shuffle aria-hidden /> Random drill
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" title="Three different short drills in a row" onClick={() => startMixedSet(navigate)}>
+            <Layers aria-hidden /> Mixed set
+          </Button>
+          <Button variant="outline" onClick={() => navigate(`/drill/${randomDrill(facts.data, today, new Date().toISOString()).id}`)}>
+            <Shuffle aria-hidden /> Random drill
+          </Button>
+        </div>
       </div>
       <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Drills">
         {shown.map((d) => (
