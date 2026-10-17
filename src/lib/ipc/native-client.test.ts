@@ -56,7 +56,7 @@ it("parses sessions with and without activity settings", async () => {
 it("reads effort and facts from the native commands", async () => {
   vi.resetModules();
   const { createNativeClient } = await import("./native-client");
-  const { default: fixture } = await import("./fixtures/facts-v3.json");
+  const { default: fixture } = await import("./fixtures/facts-v4.json");
   const client = createNativeClient();
   native.invoke.mockResolvedValueOnce(fixture);
   const facts = await client.getPracticeFacts();

@@ -5,7 +5,12 @@
  */
 import type {
   ActivityContext,
+  ActivityResult,
+  DrillComparison,
+  DrillComparisonKind,
   ActivityStep,
+  TakeEvent,
+  TakeMark,
   EngagementState,
   QuestInput,
   QuestRow,
@@ -345,6 +350,14 @@ export interface IpcClient {
   recordSequenceCompleted(sessionIds: string[], localDate: string): Promise<PracticeEvent | null>;
   /** One snapshot of your practice for the rule engines (7.6). */
   getPracticeFacts(): Promise<PracticeFacts>;
+  /** Drills (M10): stores a saved take's marks; at most 200 per take, keys and numbers only. */
+  addTakeEvents(attemptId: string, marks: TakeMark[]): Promise<number>;
+  listTakeEvents(attemptId: string): Promise<TakeEvent[]>;
+  /** A drill take's result, computed once and kept until its transcript changes. */
+  getActivityResult(attemptId: string): Promise<ActivityResult>;
+  /** Optional AI comparison of a drill's rounds: previews the text-only request (transcripts only). Nothing is sent. */
+  previewDrillComparison(sessionId: string, kind: DrillComparisonKind, model?: CoachingModel): Promise<CoachingPreview>;
+  requestDrillComparison(requestId: string, payloadSha256: string): Promise<DrillComparison>;
   /** Insights (M8): where saved phrases turned up in takes (one phrase, or all). */
   listPhraseUses(phraseId?: string): Promise<PhraseUse[]>;
   /** Your yes/no note about a take; null clears it. */

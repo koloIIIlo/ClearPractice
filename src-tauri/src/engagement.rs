@@ -27,10 +27,12 @@ pub enum EventKind {
     PersonalRecord,
     WeeklyGoal,
     Quest,
+    // Drills (M10): the first saved take of a drill session.
+    DrillRound,
 }
 
 impl EventKind {
-    pub const ALL: [EventKind; 14] = [
+    pub const ALL: [EventKind; 15] = [
         EventKind::TakeSaved,
         EventKind::Retake,
         EventKind::SequenceCompleted,
@@ -45,6 +47,7 @@ impl EventKind {
         EventKind::PersonalRecord,
         EventKind::WeeklyGoal,
         EventKind::Quest,
+        EventKind::DrillRound,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -63,6 +66,7 @@ impl EventKind {
             EventKind::PersonalRecord => "personal_record",
             EventKind::WeeklyGoal => "weekly_goal",
             EventKind::Quest => "quest",
+            EventKind::DrillRound => "drill_round",
         }
     }
 
@@ -86,6 +90,7 @@ impl EventKind {
             EventKind::PersonalRecord => 25,
             EventKind::WeeklyGoal => 50,
             EventKind::Quest => 30,
+            EventKind::DrillRound => 15,
         }
     }
 
@@ -127,10 +132,11 @@ mod tests {
             assert_eq!(EventKind::parse(kind.as_str()), Some(kind));
             assert!(kind.xp() <= 1000);
         }
-        assert_eq!(EventKind::parse("drill_round"), None, "added with M10");
+        assert_eq!(EventKind::parse("drill_round").map(|k| k.xp()), Some(15));
+        assert_eq!(EventKind::parse("mission"), None, "added with M14");
         assert_eq!(EventKind::parse("level_reached").map(|k| k.xp()), Some(50));
         let total: u32 = EventKind::ALL.iter().map(|k| k.xp()).sum();
-        assert_eq!(total, 287, "update appendix B when amounts change");
+        assert_eq!(total, 302, "update appendix B when amounts change");
     }
 
     #[test]

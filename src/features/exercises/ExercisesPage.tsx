@@ -14,8 +14,9 @@ import { cn } from "@/lib/utils";
 import { useIpc } from "@/lib/ipc";
 import { TAG_LABELS, describeDemands } from "./describe";
 import { PromptForm } from "./PromptForm";
+import { DrillsTab } from "@/features/drills/DrillsTab";
 
-type Tab = "exercises" | "prompts" | "guides";
+type Tab = "exercises" | "drills" | "prompts" | "guides";
 
 export function ExercisesPage() {
   const [params, setParams] = useSearchParams();
@@ -33,16 +34,20 @@ export function ExercisesPage() {
     <Page>
       <PageHeader
         title="Exercises"
-        description="Four core exercises, a collection of prompts, and short guides. Everything here works offline."
+        description="Four core exercises, short drills, a collection of prompts and guides. Everything here works offline."
       />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="mb-6">
           <TabsTrigger value="exercises">Exercises</TabsTrigger>
+          <TabsTrigger value="drills">Drills</TabsTrigger>
           <TabsTrigger value="prompts">Prompts</TabsTrigger>
           <TabsTrigger value="guides">Guides</TabsTrigger>
         </TabsList>
         <TabsContent value="exercises">
           <ExerciseList />
+        </TabsContent>
+        <TabsContent value="drills">
+          <DrillsTab />
         </TabsContent>
         <TabsContent value="prompts">
           <PromptCollection />

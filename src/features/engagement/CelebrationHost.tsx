@@ -7,6 +7,7 @@ import { useIpc } from "@/lib/ipc";
 import { playCue } from "@/lib/tone";
 import { celebrationQueue, type Celebration } from "./queue";
 import { usePracticeStyle } from "./style";
+import { useDrillBusy } from "@/features/drills/busy";
 
 /** The gap between two celebrations, and how long a card stays without hover or focus. */
 const GAP_MS = 1200;
@@ -25,7 +26,10 @@ export function CelebrationHost() {
   const style = usePracticeStyle();
   const [pending, setPending] = useState<Celebration[]>(() => celebrationQueue.take());
   const [current, setCurrent] = useState<Celebration | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [recording, setBusy] = useState(false);
+  // A drill's think time records nothing, so the drill says when it is busy (10.1).
+  const drillBusy = useDrillBusy();
+  const busy = recording || drillBusy;
   const [retry, setRetry] = useState(0);
   const held = useRef(false);
 

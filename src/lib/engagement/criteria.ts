@@ -1,5 +1,6 @@
 import { addLocalDays } from "@/lib/phrase-schedule";
-import type { ExerciseType, FactSession, FactTake, PracticeFacts, PromptTag, SelfCheckId, TransferFlow } from "@/lib/ipc/schemas";
+import { isDrillType, type DrillType, type ExerciseType, type FactSession, type FactTake, type PracticeFacts, type PromptTag, type SelfCheckId, type TransferFlow } from "@/lib/ipc/schemas";
+import { DRILL_UNITS, drillPlays } from "./drills";
 import type { CriterionProgress, EvidenceRef, Fix } from "./types";
 import { weekStart } from "./weekly";
 
@@ -228,8 +229,21 @@ export function progressOf(c: Criterion, facts: PracticeFacts, ctx: EvalContext)
       if (c.distinctPhrases !== undefined) return progress(c.label, new Set(takes.flatMap((t) => t.phraseIds)).size, c.distinctPhrases, evidence);
       return progress(c.label, takes.length, c.takes ?? 1, evidence);
     }
-    case "activity":
-      return unavailable(c.label, c.atLeast, "Arrives with Drills", "drills");
+    case "activity": {
+      if (!isDrillType(c.type)) {
+        return c.type === "upgrade"
+          ? unavailable(c.label, c.atLeast, "Arrives with the learning engine", "learning")
+          : unavailable(c.label, c.atLeast, "Arrives with talks and events", "events");
+      }
+      const result = c.result;
+      const plays = drillPlays(facts, c.type).filter((p) => {
+        if (!result) return true;
+        const value = p.result[result.key];
+        return value !== undefined && (result.op === ">=" ? value >= result.value : value <= result.value);
+      });
+      const evidence = plays.slice(0, MAX_EVIDENCE).map((p): EvidenceRef => ({ kind: p.takes.length === 1 && DRILL_UNITS[c.type as DrillType] === "take" ? "take" : "session", id: p.takes.length === 1 && DRILL_UNITS[c.type as DrillType] === "take" ? p.takes[0].id : p.session.id, date: p.session.localDate }));
+      return progress(c.label, plays.length, c.atLeast, evidence, c.distinctDays ? { done: distinctCount(plays.map((p) => p.session.localDate)), needed: c.distinctDays, unit: "days" } : null);
+    }
     case "exposure":
       return unavailable(c.label, c.steps, "Arrives with the confidence pack", "confidence");
     case "conversation":
@@ -243,8 +257,9 @@ export function progressOf(c: Criterion, facts: PracticeFacts, ctx: EvalContext)
       if (met) return { ...met, label: c.label };
       const available = options.filter((o) => !o.unavailable);
       if (available.length === 0) return { ...options[0], label: c.label };
-      // The first available option shows; any option meets it.
-      return { ...available[0], label: c.label };
+      // The available option you are furthest along shows (the first on a tie); any option meets it.
+      const along = (o: CriterionProgress) => Math.min(1, o.done / Math.max(1, o.needed)) + (o.days ? Math.min(1, o.days.done / Math.max(1, o.days.needed)) : 1);
+      return { ...available.reduce((best, o) => (along(o) > along(best) ? o : best)), label: c.label };
     }
     case "allOf": {
       const parts = c.parts.map((p) => progressOf(p, facts, ctx));

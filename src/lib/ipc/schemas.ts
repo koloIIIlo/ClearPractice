@@ -30,8 +30,12 @@ export const ServiceStatus = z.object({
 export type ServiceStatus = z.infer<typeof ServiceStatus>;
 
 // ── Curriculum (§7) ──────────────────────────────────────────────────────────
-export const ExerciseType = z.enum(["repeat", "thought_groups", "imitate", "expression"]);
+/** The drills of roadmap M10, each an exercise type of its own (D-30). */
+export const DRILL_TYPES = ["jam", "roulette", "word_bomb", "three_ways", "emphasis", "pace_ladder", "story_spine", "story_cubes", "pitch", "steelman", "daily", "gauntlet", "boss"] as const;
+export type DrillType = (typeof DRILL_TYPES)[number];
+export const ExerciseType = z.enum(["repeat", "thought_groups", "imitate", "expression", ...DRILL_TYPES]);
 export type ExerciseType = z.infer<typeof ExerciseType>;
+export const isDrillType = (type: string | null | undefined): type is DrillType => !!type && (DRILL_TYPES as readonly string[]).includes(type);
 
 export const ExerciseDefinition = z.object({
   id: Id,
@@ -1030,13 +1034,15 @@ export const FactSession = z
     takeCount: z.number().int().nonnegative(),
     durationMs: z.number().int().nonnegative(),
     preferredTake: z.string().nullable(),
+    /** Facts v4 (M10): a run's settings (7.3), as stored with the session. */
+    activity: ActivityContext.nullable(),
   })
   .strict();
 export type FactSession = z.infer<typeof FactSession>;
 
 /** A saved take in history with the measures of its newest machine revision (Estimated). */
 /** Your quick yes/no notes about a take (8.3); drills add the later ones (M10). */
-export const SelfCheckId = z.enum(["point_first", "clear_ending", "varied_voice", "concrete_detail", "fair_other_side", "kept_main_point", "used_all_icons", "fit_child", "fit_colleague", "fit_expert"]);
+export const SelfCheckId = z.enum(["point_first", "clear_ending", "varied_voice", "concrete_detail", "fair_other_side", "kept_main_point", "used_all_icons", "fit_child", "fit_colleague", "fit_expert", "stressed_target", "final_check"]);
 export type SelfCheckId = z.infer<typeof SelfCheckId>;
 export const SelfCheck = z.object({ attemptId: Id, checkId: SelfCheckId, value: z.boolean(), createdAt: z.string() }).strict();
 export type SelfCheck = z.infer<typeof SelfCheck>;
@@ -1074,6 +1080,55 @@ export const Comparison = z
   .strict();
 export type Comparison = z.infer<typeof Comparison>;
 
+// ── Drills (roadmap M10) ─────────────────────────────────────────────────────
+/** A mark made during a take (10.1): the time into the take, a kind, and keys or numbers. Never words you said. */
+export const TakeMarkKind = z.enum(["word_shown", "self_flag", "card_advanced", "cue_shown"]);
+export type TakeMarkKind = z.infer<typeof TakeMarkKind>;
+const MarkData = z.record(z.string().regex(/^[A-Za-z0-9_]{1,40}$/), z.union([z.number(), z.string().regex(/^[a-z0-9_-]{1,40}$/), z.boolean()]));
+export const TakeMark = z.object({ atMs: z.number().int().nonnegative(), kind: TakeMarkKind, data: MarkData.default({}) }).strict();
+export type TakeMark = z.infer<typeof TakeMark>;
+export const TakeEvent = z.object({ id: z.number().int(), attemptId: Id, atMs: z.number().int().nonnegative(), kind: z.string(), data: MarkData, createdAt: z.string() }).strict();
+export type TakeEvent = z.infer<typeof TakeEvent>;
+
+/** A drill take's result (10.1), computed natively from what is stored; all Estimated. Missing values are null with a reason. */
+const resultBase = { attemptId: Id, definitionVersion: z.number().int().positive() };
+const count = z.number().int().nonnegative();
+const reason = z.string().nullable();
+export const JamResult = z
+  .object({ ...resultBase, kind: z.literal("jam"), speakingMs: count, cleanSeconds: count.nullable(), hesitations: count.nullable(), longPauses: count, longPauseMs: count, repeats: count.nullable(), flags: count, unavailableReason: reason })
+  .strict();
+export const WordBombResult = z
+  .object({ ...resultBase, kind: z.literal("word_bomb"), shown: count, woven: count.nullable(), spokenAtMs: z.array(z.number().int()).nullable(), unavailableReason: reason })
+  .strict();
+export const EmphasisResult = z
+  .object({ ...resultBase, kind: z.literal("emphasis"), round: count, target: count.nullable(), peakWord: count.nullable(), hit: z.boolean().nullable(), aligned: z.boolean(), nuclei: count, expected: count, unavailableReason: reason })
+  .strict();
+export const PaceLadderResult = z.object({ ...resultBase, kind: z.literal("pace_ladder"), rateSps: z.number().nonnegative().nullable(), unavailableReason: reason }).strict();
+export const StoryCubesResult = z
+  .object({ ...resultBase, kind: z.literal("story_cubes"), icons: count, used: count.nullable(), usedIcons: z.array(z.number().int().min(0).max(1)).nullable(), unavailableReason: reason })
+  .strict();
+export const StorySpineResult = z.object({ ...resultBase, kind: z.literal("story_spine"), steps: count, advanced: count, words: count.nullable() }).strict();
+/** Six 10-second windows: 0 flowing, 1 hesitation, 2 pause, 3 silent. */
+export const DailyResult = z
+  .object({
+    ...resultBase, kind: z.literal("daily"), windows: z.array(z.number().int().min(0).max(3)).nullable(),
+    flowing: count.nullable(), hesitation: count.nullable(), pause: count.nullable(), silent: count.nullable(), transcribed: z.boolean(), unavailableReason: reason,
+  })
+  .strict();
+export const BasicResult = z
+  .object({ ...resultBase, kind: z.literal("basic"), durationMs: count, words: count.nullable(), speechMs: count.nullable(), hesitations: count.nullable(), differentPer50: z.number().nonnegative().nullable() })
+  .strict();
+/** An optional AI comparison of a drill's rounds (10.5, 10.9): one note per version or round, quoting your own words. AI suggestion. */
+export const DrillComparisonKind = z.enum(["three_ways", "pitch"]);
+export type DrillComparisonKind = z.infer<typeof DrillComparisonKind>;
+export const DrillComparison = z
+  .object({ notes: z.array(z.object({ part: z.number().int().positive(), note: z.string().min(1), quote: z.string().min(1) }).strict()).min(1), oneTip: z.string() })
+  .strict();
+export type DrillComparison = z.infer<typeof DrillComparison>;
+
+export const ActivityResult = z.discriminatedUnion("kind", [JamResult, WordBombResult, EmphasisResult, PaceLadderResult, StoryCubesResult, StorySpineResult, DailyResult, BasicResult]);
+export type ActivityResult = z.infer<typeof ActivityResult>;
+
 export const FactTake = z
   .object({
     id: Id,
@@ -1107,6 +1162,8 @@ export const FactTake = z
     checks: z.partialRecord(SelfCheckId, z.boolean()),
     pitchRangeSt: z.number().nonnegative().nullable(),
     rateSps: z.number().nonnegative().nullable(),
+    /** Facts v4 (M10): a drill take's result for its current transcript, numbers only (booleans as 1 or 0). */
+    result: z.record(z.string(), z.number()).nullable(),
   })
   .strict();
 export type FactTake = z.infer<typeof FactTake>;

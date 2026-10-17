@@ -225,6 +225,15 @@ export function CountdownRing({ totalMs, remainingMs, lights }: { totalMs: numbe
   2. Kill the app with Task Manager at 0:30.
   3. Reopen. **Observe:** "Your recordings on this computer" offers the interrupted take, and Recover saves it in the drill's session.
 
+**As built (17 Oct)**
+- A round's think time is the recorder's own countdown (`RecorderPanel` takes `countdownSeconds`), so nothing records before Start round, and leaving during it cancels it with no take (`useRecorderGuard(rec, { leaveDuringCountdown: true })`). Leaving while speaking still asks first.
+- Each drill stores in its activity snapshot what its result needs (the bomb words, the cube words, the emphasis sentences and targets), so `get_activity_result` can always recompute from stored data. The emphasis analysis runs inside `get_activity_result`; there is no separate `analyze_emphasis` command.
+- Results are cached per take and definition version with the current transcript revision (your correction counts), recomputed when it changes, and dropped when marks are added. A result without a transcript still shows what the audio and marks give, with the rest null and a reason.
+- Session drills (emphasis, pace ladder, gauntlet, three ways, pitch, steelman, bosses, daily) combine their rounds in TypeScript (`src/lib/engagement/drills.ts`, `sessionResult`) from the latest take of each step; facts v4 carry each session's `activity` and each take's `result`.
+- The transcription queue works out a drill take's result right after its transcript, before the game layer refreshes, so records see it without the result screen being open.
+- `drill_round` (15 XP) goes to the first saved take of a drill session of any length (an emphasis round lasts about three seconds).
+- Celebrations wait on a drill busy flag (`src/features/drills/busy.ts`) as well as on recording, because think time records nothing.
+
 ---
 
 ## 10.2 Just a Minute
@@ -274,6 +283,10 @@ export function CountdownRing({ totalMs, remainingMs, lights }: { totalMs: numbe
 - Vitest:
   - `jam/plan.test.ts`: `it("picks the same topic for the same seed")`;
   - `JamResult.test.tsx`: `it("shows clean seconds with Estimated and the previous best")`, plus `expectNoScores`.
+
+**As built (17 Oct)**
+- Long pauses come from the waveform when it found speech, else from the transcript's gaps; the minute is counted from the first detected speech.
+- The result shows clean seconds, every penalty and, in Playful style, your best before (from the facts).
 
 ---
 
@@ -341,6 +354,9 @@ export function CountdownRing({ totalMs, remainingMs, lights }: { totalMs: numbe
 - `word-bomb/plan.test.ts`: `it("spaces bombs at least 15 seconds apart")`.
 - `WordBombLive.test.tsx`: `it("shows each word at its time and records a mark")`.
 
+**As built (17 Oct)**
+- Without a transcript the result lists the words that appeared and says that weaving needs a transcript; the "Did you use it?" toggles were not built.
+
 ---
 
 ## 10.5 Explain it three ways
@@ -368,6 +384,9 @@ export function CountdownRing({ totalMs, remainingMs, lights }: { totalMs: numbe
 - `three-ways/plan.test.ts`: `it("creates three rounds with fixed keys")`.
 - `ThreeWaysResult.test.tsx`: `it("shows three columns and saves which fit best")`.
 - Rust: `three_ways_preview_contains_only_the_three_transcripts` and `quotes_must_exist_in_their_transcript`.
+
+**As built (17 Oct)**
+- The AI comparison uses your OpenAI account only, like phrase suggestions: with Coaching set to the local model it explains and sends nothing. It is one `DrillComparison` kind shared with the elevator pitch (10.9); notes whose quote isn't in that version's own transcript are dropped, and the answer is shown, not saved.
 
 ---
 
@@ -413,6 +432,10 @@ pub fn syllable_estimate(word: &str) -> u32   // vowel groups, silent final e, m
   - `unaligned_when_nuclei_differ_by_more_than_a_quarter`.
 - Vitest: `EmphasisResult.test.tsx`: `it("keeps estimated hits and your judgements apart")`.
 - Manual: read 7 sentences with deliberate stress. **Observe:** most targets are found, and misses are plausible. Note the hit rate in Notes as a sanity check, not a release criterion.
+
+**As built (17 Oct)**
+- Prominence is z(loudness) + z(pitch in semitones) + 0.5·z(the time within 6 dB of the peak), from `audio::syllables::nuclei_detail` with no minimum length. Rounds are 8 seconds with 2 seconds to think.
+- Your own judgement is the self-check `stressed_target` (a new check ID), asked only when the beats couldn't be lined up, and counted apart from the estimate.
 
 ---
 
@@ -464,6 +487,9 @@ pub fn syllable_estimate(word: &str) -> u32   // vowel groups, silent final e, m
 - Vitest:
   - `StorySpineLive.test.tsx`: `it("advances cards with the arrow key and records marks")`;
   - `story/plan.test.ts`: `it("rolls distinct icons per seed")`.
+
+**As built (17 Oct)**
+- Story cubes accept "cafe" and "café". Auto-advance of the spine cards was not built (it was optional and off by default).
 
 ---
 
@@ -539,6 +565,9 @@ ClearPractice Daily #123 · 1:00
     - `it("marks only the first take as official")`.
 - Rust: `daily_grid_classifies_windows`.
 
+**As built (17 Oct)**
+- `DAILY_EPOCH` is 2026-10-17. Every take of the day joins the session `daily-<date>`; the first is the official one. Silent windows share as ⬛.
+
 ---
 
 ## 10.12 Gauntlet
@@ -586,6 +615,9 @@ ClearPractice Daily #123 · 1:00
   - `bosses.test.ts`: `it("every boss has rounds with prompts and a recommended level")`;
   - `BossStudio.test.tsx`: `it("stops at the interruption and starts the answer round")`.
 
+**As built (17 Oct)**
+- The closing question is the self-check `final_check` (a new check ID). The meeting's update round stops at the interruption (40 s); the next round shows the interruption and answers it.
+
 ---
 
 ## 10.14 Drills tab and cards
@@ -620,6 +652,9 @@ Filter: (All) (Fluency) (Spontaneity) (Voice) (Stories) …     [Random drill]
   - `it("explains when a drill needs transcription")`;
   - `it("Random drill prefers one not played lately")`.
 
+**As built (17 Oct)**
+- Ctrl+K also offers "Play today's daily prompt" and "Show all drills". Cards show your best (Playful) or how often you played, a soft lock in Playful style when you haven't reached the level, and the transcription note.
+
 ---
 
 ## 10.15 Drill content and tests
@@ -649,3 +684,6 @@ Filter: (All) (Fluency) (Spontaneity) (Voice) (Stories) …     [Random drill]
 Daily prompts additionally:
 - no prompt repeats within 365 days;
 - a balance of tags (no tag above 30%).
+
+**As built (17 Oct)**
+- All lists were written for M10 and await your review (appendix C rule). One combined test file, `src/content/drill-content.test.ts`, checks every list. IDs come from each item's position, so lists are appended to, never reordered.

@@ -1,13 +1,17 @@
 import {
   Award, BookOpenText, Calendar, CalendarCheck, CalendarHeart, Ear, EyeOff, FileText, Flag, Footprints, Gem, Hourglass, ListOrdered, MessageSquareQuote,
-  Mic, Milestone, NotebookPen, PenLine, Repeat, Search, Sparkles, Sprout, Sunrise, Target, Trophy, Waves, Zap, type LucideIcon,
+  Mic, Milestone, NotebookPen, PenLine, Repeat, Search, Sparkles, Sprout, Sunrise, Target, Trophy, Waves, Zap, Bomb, CalendarDays, Crown, Dices, Gauge, Highlighter,
+  Shapes, Swords, Timer, type LucideIcon,
 } from "lucide-react";
+import { BOSSES, type BossId } from "@/content/bosses";
+import { DRILL_TYPES } from "@/lib/ipc/schemas";
 import { profileReadiness } from "@/lib/insights/profile";
 import type { EngagementState, NewAchievement, PracticeEvent, PracticeFacts, Preferences } from "@/lib/ipc/schemas";
 import { progressOf, type Criterion, type EvalContext } from "./criteria";
 import { LEVELS } from "./skills";
 import type { AreaStatus, CriterionProgress } from "./types";
 import { allPracticeDays, goalProgress, weekStart, weeksInARow } from "./weekly";
+import { drillPlays, drillTypesPlayed } from "./drills";
 import { addLocalDays } from "@/lib/phrase-schedule";
 
 /**
@@ -43,6 +47,13 @@ export const CATEGORY_TITLES: Record<AchievementCategory, string> = {
 const custom = (label: string, test: Custom["test"]): Custom => ({ kind: "custom", label, test });
 const count = (n: number, needed: number) => ({ done: n, needed });
 const events = (kind: string) => ({ events }: AchievementInput) => events.filter((e) => e.kind === kind).length;
+const CORE = new Set<string>(["repeat", "thought_groups", "imitate", "expression"]);
+/** A boss level finished: every round recorded (10.13). */
+const boss = (id: string, title: string, description: string, bossId: BossId): AchievementDef => ({
+  id, title, description, category: "courage", icon: Crown,
+  criterion: custom(`Finish ${BOSSES.find((b) => b.id === bossId)!.title}`, ({ facts }) =>
+    count(drillPlays(facts, "boss").some((p) => p.result.finished === 1 && p.session.activity?.params.boss === bossId) ? 1 : 0, 1)),
+});
 
 /** Weeks in a row as of now, this week counting once met. */
 function streak({ state, events, ctx, prefs }: AchievementInput): number {
@@ -114,11 +125,37 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
     criterion: { kind: "sessions", label: "3 unfamiliar questions with 10 seconds or less", filter: { familiarity: "unfamiliar", maxPrepSeconds: 10 }, atLeast: 3 } },
   { id: "follow-up-3", title: "And then?", description: "Answer follow-up questions in 3 sessions.", category: "courage", icon: MessageSquareQuote,
     criterion: { kind: "sessions", label: "Follow-up questions in 3 sessions", filter: { followUp: true, minTakes: 2 }, atLeast: 3 } },
+  { id: "gauntlet-done", title: "Ran the gauntlet", description: "Complete a gauntlet.", category: "courage", icon: Swords,
+    criterion: { kind: "activity", label: "A gauntlet with 5 rounds", type: "gauntlet", result: { key: "roundsCompleted", op: ">=", value: 5 }, atLeast: 1 } },
+  boss("boss-interview", "Interview ready", "Finish the job interview boss.", "job-interview"),
+  boss("boss-qa", "Held the floor", "Finish the sceptical Q&A boss.", "skeptical-qa"),
+  boss("boss-toast", "Raise a glass", "Finish the wedding toast boss.", "toast"),
+  boss("boss-meeting", "Back on track", "Finish the interrupted meeting boss.", "meeting"),
   // Explore
   { id: "all-exercises", title: "Well rounded", description: "Try all four exercises.", category: "explore", icon: Award,
-    criterion: custom("All four exercises", ({ facts }) => count(new Set(facts.sessions.filter((s) => s.takeCount > 0 && s.exerciseType).map((s) => s.exerciseType)).size, 4)) },
+    criterion: custom("All four exercises", ({ facts }) => count(new Set(facts.sessions.filter((s) => s.takeCount > 0 && CORE.has(s.exerciseType ?? "")).map((s) => s.exerciseType)).size, 4)) },
   { id: "own-prompt", title: "Your own question", description: "Add a prompt of your own.", category: "explore", icon: NotebookPen,
     criterion: custom("A prompt of your own", ({ facts }) => count(facts.userPrompts, 1)) },
+  { id: "jam-first", title: "Just a Minute", description: "Play Just a Minute.", category: "explore", icon: Timer,
+    criterion: { kind: "activity", label: "A round of Just a Minute", type: "jam", atLeast: 1 } },
+  { id: "jam-45", title: "Clean minute", description: "Reach 45 clean seconds in Just a Minute.", category: "explore", icon: Timer,
+    criterion: { kind: "activity", label: "45 clean seconds (Estimated)", type: "jam", result: { key: "cleanSeconds", op: ">=", value: 45 }, atLeast: 1 } },
+  { id: "jam-10-rounds", title: "Regular panellist", description: "Play 10 rounds of Just a Minute.", category: "explore", icon: Timer,
+    criterion: { kind: "activity", label: "10 rounds of Just a Minute", type: "jam", atLeast: 10 } },
+  { id: "word-bomb-all", title: "Defused", description: "Weave in every word in a word bomb round.", category: "explore", icon: Bomb,
+    criterion: custom("All three words in one round", ({ facts }) => count(drillPlays(facts, "word_bomb").some((p) => (p.result.shown ?? 0) >= 3 && p.result.woven === p.result.shown) ? 1 : 0, 1)) },
+  { id: "pace-three-speeds", title: "Three gears", description: "Find three clearly different speeds in the pace ladder.", category: "explore", icon: Gauge,
+    criterion: { kind: "activity", label: "Three clearly different speeds", type: "pace_ladder", result: { key: "distinctSpeeds", op: ">=", value: 3 }, atLeast: 1 } },
+  { id: "emphasis-5", title: "Right on the beat", description: "Reach 5 estimated hits in an emphasis game.", category: "explore", icon: Highlighter,
+    criterion: { kind: "activity", label: "5 estimated hits in one game", type: "emphasis", result: { key: "estimatedHits", op: ">=", value: 5 }, atLeast: 1 } },
+  { id: "daily-7", title: "Seven dailies", description: "Play 7 daily prompts.", category: "explore", icon: CalendarDays,
+    criterion: { kind: "activity", label: "7 daily prompts", type: "daily", atLeast: 7 } },
+  { id: "daily-30", title: "Thirty dailies", description: "Play 30 daily prompts.", category: "explore", icon: CalendarDays,
+    criterion: { kind: "activity", label: "30 daily prompts", type: "daily", atLeast: 30 } },
+  { id: "drill-sampler", title: "Sampler", description: "Play 5 different drills.", category: "explore", icon: Dices, unlocksPot: "white",
+    criterion: custom("5 different drills", ({ facts }) => count(drillTypesPlayed(facts).size, 5)) },
+  { id: "all-drills", title: "Full deck", description: "Play every drill.", category: "explore", icon: Shapes,
+    criterion: custom("Every drill", ({ facts }) => count(drillTypesPlayed(facts).size, DRILL_TYPES.length)) },
   // Phrases
   { id: "phrase-in-take", title: "Used it", description: "A saved phrase was spotted in one of your takes.", category: "phrases", icon: BookOpenText,
     criterion: { kind: "phraseUses", label: "A saved phrase in a take", takes: 1 } },

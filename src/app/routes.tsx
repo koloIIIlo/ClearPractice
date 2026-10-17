@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { createHashRouter, type RouteObject } from "react-router";
 import { useExercises, useSession } from "@/lib/ipc/queries";
 import { TodayPage } from "@/features/today/TodayPage";
+import { drillById } from "@/content/drills";
 import { AppShell } from "./AppShell";
 import { RouteError } from "./RouteError";
 import type { RouteHandle } from "./TopBar";
@@ -53,6 +54,11 @@ export const routes: RouteObject[] = [
           },
           { path: "practice/done", lazy: page(() => import("@/features/practice/CompletionPage"), "CompletionPage"), handle: crumb("Practice complete") },
           { path: "practice/:exerciseId", lazy: page(() => import("@/features/practice/StudioPage"), "StudioPage"), handle: crumb("Practice studio") },
+          {
+            path: "drill/:drillId",
+            lazy: page(() => import("@/features/drills/DrillStudio"), "DrillStudioPage"),
+            handle: { crumb: (p) => drillById(p.drillId ?? "")?.title ?? "Drill" } satisfies RouteHandle,
+          },
           {
             path: "sessions",
             handle: crumb("Sessions"),

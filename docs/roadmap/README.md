@@ -1,6 +1,6 @@
 # ClearPractice roadmap: M7 to M16
 
-> **Status:** proposed on 16 Oct 2026. Built so far: M7 foundations (16 Oct), M8 insights and M9 game core (17 Oct); progress is tracked in [DEVELOPMENT_PLAN.md](../../DEVELOPMENT_PLAN.md).
+> **Status:** proposed on 16 Oct 2026. Built so far: M7 foundations (16 Oct), M8 insights, M9 game core and M10 drills (17 Oct); progress is tracked in [DEVELOPMENT_PLAN.md](../../DEVELOPMENT_PLAN.md).
 > **Decisions:** entries marked **Proposed** need your OK before the work that depends on them starts (§9).
 > **Entry gate:** M6 (release hardening) is still open. Either finish its manual acceptance items first, or decide explicitly to start M7 alongside it. M7 changes no behaviour that M6 checks, except the lazy routes in 7.1.
 

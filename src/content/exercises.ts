@@ -1,4 +1,7 @@
-import { Headphones, MessageSquareQuote, Repeat2, TextQuote, type LucideIcon } from "lucide-react";
+import {
+  BookOpen, Bomb, CalendarDays, Crown, Dice5, Dices, Gauge, Headphones, Highlighter, MessageSquareQuote, Presentation, Repeat2, Scale, Swords, TextQuote, Timer, Users,
+  type LucideIcon,
+} from "lucide-react";
 import type { ExerciseDefinition, ExerciseType } from "@/lib/ipc/schemas";
 
 /**
@@ -95,6 +98,20 @@ export const EXERCISE_TYPE_INFO: Record<ExerciseType, { label: string; icon: Luc
   thought_groups: { label: "Thought groups", icon: TextQuote },
   imitate: { label: "Listen and imitate", icon: Headphones },
   expression: { label: "Better expression", icon: MessageSquareQuote },
+  // Drills (M10), in the order of appendix C.1.
+  jam: { label: "Just a Minute", icon: Timer },
+  roulette: { label: "Topic roulette", icon: Dices },
+  word_bomb: { label: "Word bomb", icon: Bomb },
+  three_ways: { label: "Explain it three ways", icon: Users },
+  emphasis: { label: "Emphasis game", icon: Highlighter },
+  pace_ladder: { label: "Pace ladder", icon: Gauge },
+  story_spine: { label: "Story spine", icon: BookOpen },
+  story_cubes: { label: "Story cubes", icon: Dice5 },
+  pitch: { label: "Elevator pitch", icon: Presentation },
+  steelman: { label: "Steelman", icon: Scale },
+  daily: { label: "Daily prompt", icon: CalendarDays },
+  gauntlet: { label: "Gauntlet", icon: Swords },
+  boss: { label: "Boss level", icon: Crown },
 };
 
 /** The four core types, listed first in filters; other types appear once you have used them. */

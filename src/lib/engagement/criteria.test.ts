@@ -73,9 +73,9 @@ describe("criteria DSL (9.2)", () => {
     expect(run(fluency2, zero.build()).done).toBe(3);
   });
 
-  it("anyOf shows the first available option and is met by any", () => {
+  it("anyOf shows the available option you are furthest along and is met by any", () => {
     const any: Criterion = { kind: "anyOf", label: "either", options: [
-      { kind: "activity", label: "a drill", type: "jam", atLeast: 1 },
+      { kind: "activity", label: "a later format", type: "upgrade", atLeast: 1 },
       { kind: "sessions", label: "3 sessions", filter: {}, atLeast: 3 },
       { kind: "transfers", label: "1 reflection", atLeast: 1 },
     ] };
@@ -87,7 +87,9 @@ describe("criteria DSL (9.2)", () => {
 
   it("reports unavailable criteria with the feature that brings them", () => {
     const facts = factsBuilder().build();
-    expect(run({ kind: "activity", label: "jam", type: "jam", atLeast: 1 }, facts).unavailable).toEqual({ reason: "Arrives with Drills", fix: "drills" });
+    expect(run({ kind: "activity", label: "upgrade", type: "upgrade", atLeast: 1 }, facts).unavailable).toEqual({ reason: "Arrives with the learning engine", fix: "learning" });
+    expect(run({ kind: "activity", label: "talk", type: "rehearsal", atLeast: 1 }, facts).unavailable?.fix).toBe("events");
+    expect(run({ kind: "activity", label: "jam", type: "jam", atLeast: 1 }, facts).unavailable).toBeNull();
     expect(run({ kind: "exposure", label: "ladder", steps: 3 }, facts).unavailable?.fix).toBe("confidence");
     expect(run({ kind: "conversation", label: "talk", minTurns: 5, atLeast: 1 }, facts).unavailable?.fix).toBe("partner");
     expect(run({ kind: "debrief", label: "event", atLeast: 1 }, facts).unavailable?.fix).toBe("events");

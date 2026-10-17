@@ -27,6 +27,7 @@ ROUTES = [
     "/phrases", "/phrases?review=1", "/progress", "/progress?view=rehearsed", "/progress?view=unfamiliar", "/progress?view=real",
     "/compare?a=s-07-a1&b=s-01-a2",
     "/journey", "/journey?area=fluency", "/journey/achievements",
+    "/exercises?tab=drills", "/drill/jam", "/drill/roulette", "/drill/emphasis", "/drill/three-ways", "/drill/story-cubes", "/drill/boss", "/drill/daily",
     "/settings/audio", "/settings/practice", "/settings/appearance", "/settings/transcription",
     "/settings/coaching", "/settings/data", "/settings/about", "/nope",
 ]

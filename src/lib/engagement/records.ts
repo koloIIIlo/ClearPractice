@@ -1,5 +1,6 @@
-import type { FactSession, FactTake, NewRecord, PracticeFacts, RecordRow } from "@/lib/ipc/schemas";
+import type { DrillType, FactSession, FactTake, NewRecord, PracticeFacts, RecordRow } from "@/lib/ipc/schemas";
 import { metricOf, speechMs } from "./criteria";
+import { drillPlays } from "./drills";
 
 /**
  * Personal bests against your own past (roadmap 9.7, appendix B.4). The first
@@ -19,10 +20,16 @@ export type RecordDef = {
   eligible: (t: FactTake, s: FactSession) => boolean;
   value: (t: FactTake, s: FactSession) => number | null;
   celebrate: "card" | "toast";
+  /** Drill records (M10) read a round's result instead: a take's, or a whole session's. */
+  play?: { type: DrillType; key: string };
 };
 
 const firstUnfamiliar = (t: FactTake, s: FactSession) => s.familiarity === "unfamiliar" && t.ordinal === 1;
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, "0")}`;
+
+function drillRecord(id: string, title: string, unit: string, format: (v: number) => string, type: DrillType, key: string, celebrate: "card" | "toast"): RecordDef {
+  return { id, title, unit, better: "higher", source: "estimated", format, eligible: () => false, value: () => null, celebrate, play: { type, key } };
+}
 
 export const RECORDS: readonly RecordDef[] = [
   { id: "longest_take", title: "Longest take", unit: "s", better: "higher", source: "measured", format: clock,
@@ -38,6 +45,12 @@ export const RECORDS: readonly RecordDef[] = [
     value: (t) => { const v = metricOf(t, "confirmedPer100"); return v == null ? null : Math.round(v * 10) / 10; }, celebrate: "toast" },
   { id: "phrases_in_one_take", title: "Most saved phrases in one take", unit: "phrases", better: "higher", source: "estimated", format: (v) => `${v} phrases`,
     eligible: (t) => t.transcribed && t.phraseIds.length > 0, value: (t) => t.phraseIds.length, celebrate: "toast" },
+  // Drills (M10): from each round's result.
+  drillRecord("jam_clean_seconds", "Just a Minute", "s", (v) => `${v} clean seconds`, "jam", "cleanSeconds", "card"),
+  drillRecord("word_bomb_woven", "Word bomb", "words", (v) => `${v} words woven in`, "word_bomb", "woven", "toast"),
+  drillRecord("pace_range", "Pace range", "syll/s", (v) => `${v.toFixed(1)} syllables a second`, "pace_ladder", "range", "toast"),
+  drillRecord("emphasis_hits", "Emphasis", "sentences", (v) => `${v} sentences on the beat`, "emphasis", "estimatedHits", "toast"),
+  drillRecord("gauntlet_rounds", "Gauntlet rounds in one go", "rounds", (v) => `${v} rounds`, "gauntlet", "roundsCompleted", "toast"),
 ];
 
 export const recordDef = (id: string) => RECORDS.find((r) => r.id === id);
@@ -59,7 +72,15 @@ export function newRecords(facts: PracticeFacts, stored: readonly RecordRow[]): 
   const out: NewRecord[] = [];
   for (const def of RECORDS) {
     let best: { value: number; take: FactTake } | null = null;
-    for (const take of facts.takes) {
+    if (def.play) {
+      for (const play of drillPlays(facts, def.play.type)) {
+        const value = play.result[def.play.key];
+        const take = play.takes.at(-1);
+        if (value === undefined || !Number.isFinite(value) || value < 0 || !take) continue;
+        if (!best || value > best.value) best = { value, take };
+      }
+    }
+    for (const take of def.play ? [] : facts.takes) {
       const session = sessions.get(take.sessionId);
       if (!session || !def.eligible(take, session)) continue;
       const value = def.value(take, session);

@@ -14,7 +14,7 @@ use std::collections::HashMap;
 /// app_settings key marking that history was turned into events once.
 const BACKFILL_KEY: &str = "engagement_backfill_v1";
 /// Bumped when facts gain fields, so the interface can tell what to expect.
-pub const FACTS_VERSION: u32 = 3;
+pub const FACTS_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,6 +75,24 @@ pub(crate) fn award_take(conn: &Connection, attempt_id: &str, ordinal: u32, dura
         if earned {
             award(conn, &NewEvent { kind, ref_id: attempt_id, local_date, session_id: Some(session_id), attempt_id: Some(attempt_id), created_at_ms, backfilled })?;
         }
+    }
+    Ok(())
+}
+
+/// `drill_round` once per drill session (M10), on its first saved take of any
+/// length (an emphasis round lasts about three seconds).
+pub(crate) fn award_drill_round(conn: &Connection, attempt_id: &str, session_id: &str, local_date: &str, created_at_ms: i64, backfilled: bool) -> Result<()> {
+    let kind: Option<String> = conn
+        .query_row(
+            "SELECT e.type FROM session_steps st JOIN exercise_definitions e ON e.id=st.exercise_id AND e.version=st.exercise_version WHERE st.session_id=?1 LIMIT 1",
+            [session_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(db_error)?
+        .flatten();
+    if kind.as_deref().is_some_and(crate::exercise_types::is_drill) {
+        award(conn, &NewEvent { kind: EventKind::DrillRound, ref_id: session_id, local_date, session_id: Some(session_id), attempt_id: Some(attempt_id), created_at_ms, backfilled })?;
     }
     Ok(())
 }
@@ -215,6 +233,8 @@ pub struct FactSession {
     pub take_count: u32,
     pub duration_ms: u64,
     pub preferred_take: Option<String>,
+    /// Facts v4 (M10): a run's settings (7.3), as stored with the session.
+    pub activity: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -253,6 +273,8 @@ pub struct FactTake {
     pub checks: std::collections::BTreeMap<String, bool>,
     pub pitch_range_st: Option<f64>,
     pub rate_sps: Option<f64>,
+    /// Facts v4 (M10): a drill take's cached result for its current transcript, numbers only.
+    pub result: Option<std::collections::BTreeMap<String, f64>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -377,7 +399,7 @@ impl DatabaseOwner {
             "SELECT s.id,s.local_date,s.started_at_ms,e.type,s.content_id,s.tags,s.ease,s.focus,s.takeaway,s.status,s.outline_snapshot,s.preferred_take,\
              (SELECT COUNT(*) FROM attempts a WHERE a.step_id=st.id AND a.capture_state='saved' AND a.deleted_at_ms IS NULL),\
              (SELECT COALESCE(SUM(aa.duration_ms),0) FROM attempts a JOIN audio_assets aa ON aa.id=a.asset_id WHERE a.step_id=st.id AND a.capture_state='saved' AND a.deleted_at_ms IS NULL),\
-             tc.familiarity,tc.preparation_seconds,tc.target_seconds,tc.audience,tc.follow_up \
+             tc.familiarity,tc.preparation_seconds,tc.target_seconds,tc.audience,tc.follow_up,s.activity_snapshot \
              FROM sessions s JOIN session_steps st ON st.session_id=s.id JOIN exercise_definitions e ON e.id=st.exercise_id AND e.version=st.exercise_version \
              LEFT JOIN task_conditions tc ON tc.attempt_id=(SELECT a.id FROM attempts a WHERE a.step_id=st.id ORDER BY a.ordinal LIMIT 1) \
              WHERE s.deleted_at_ms IS NULL ORDER BY s.started_at_ms,s.id",
@@ -409,6 +431,7 @@ impl DatabaseOwner {
                     target_seconds: r.get(16)?,
                     audience: audience.is_some_and(|a| !a.trim().is_empty()),
                     follow_up: r.get::<_, Option<bool>>(18)?.unwrap_or(false),
+                    activity: r.get::<_, Option<String>>(19)?.and_then(|s| serde_json::from_str(&s).ok()),
                 })
             })
             .map_err(db_error)?
@@ -467,18 +490,20 @@ impl DatabaseOwner {
                 checks.entry(attempt).or_default().insert(check, value);
             }
         }
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare(&format!(
             "SELECT a.id,st.session_id,a.ordinal,s.local_date,a.created_at_ms,aa.duration_ms,tc.challenge,\
              (SELECT r.id FROM transcript_revisions r WHERE r.attempt_id=a.id AND r.source<>'user' ORDER BY r.created_at_ms DESC,r.id DESC LIMIT 1),\
              EXISTS(SELECT 1 FROM prosody_tracks p WHERE p.attempt_id=a.id),EXISTS(SELECT 1 FROM coaching_runs c WHERE c.attempt_id=a.id),\
              (SELECT p.range_semitones FROM prosody_tracks p WHERE p.attempt_id=a.id AND p.algorithm=?1 AND p.definition_version=?2),\
-             (SELECT m.rate_sps FROM audio_measures m WHERE m.attempt_id=a.id AND m.method=?3 AND m.definition_version=?4) \
+             (SELECT m.rate_sps FROM audio_measures m WHERE m.attempt_id=a.id AND m.method=?3 AND m.definition_version=?4),\
+             (SELECT ar.result FROM activity_results ar WHERE ar.attempt_id=a.id AND ar.definition_version=?5 AND ar.revision_id IS {}) \
              FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id JOIN audio_assets aa ON aa.id=a.asset_id \
              LEFT JOIN task_conditions tc ON tc.attempt_id=a.id \
              WHERE a.capture_state='saved' AND a.deleted_at_ms IS NULL AND s.deleted_at_ms IS NULL ORDER BY a.created_at_ms,a.id",
-        ).map_err(db_error)?;
+            super::insights::CURRENT_REVISION
+        )).map_err(db_error)?;
         let takes = stmt
-            .query_map(params![crate::prosody::ALGORITHM, crate::prosody::DEFINITION_VERSION, crate::audio::syllables::METHOD, crate::audio::syllables::DEFINITION_VERSION], |r| {
+            .query_map(params![crate::prosody::ALGORITHM, crate::prosody::DEFINITION_VERSION, crate::audio::syllables::METHOD, crate::audio::syllables::DEFINITION_VERSION, crate::activity_results::DEFINITION_VERSION], |r| {
                 let id: String = r.get(0)?;
                 let challenge: Option<String> = r.get(6)?;
                 let revision: Option<String> = r.get(7)?;
@@ -498,6 +523,7 @@ impl DatabaseOwner {
                     checks: checks.get(&id).cloned().unwrap_or_default(),
                     pitch_range_st: r.get(10)?,
                     rate_sps: r.get(11)?,
+                    result: r.get::<_, Option<String>>(12)?.and_then(|s| serde_json::from_str::<Value>(&s).ok()).map(|v| crate::activity_results::numbers(&v)),
                     id,
                     session_id: r.get(1)?,
                     ordinal: r.get(2)?,
@@ -947,7 +973,7 @@ pub(crate) mod tests {
     }
 
     /// The interface parses facts with strict schemas; its fixture
-    /// (src/lib/ipc/fixtures/facts-v3.json) must have exactly these fields.
+    /// (src/lib/ipc/fixtures/facts-v4.json) must have exactly these fields.
     #[test]
     fn facts_serialize_with_the_same_fields_as_the_interface_fixture() {
         let root = TestRoot::new();
@@ -963,7 +989,7 @@ pub(crate) mod tests {
         db.review_phrase(&card.id, "good", today).unwrap();
         db.record_progression("advance", "Three sessions").unwrap();
         let actual = serde_json::to_value(db.practice_facts("2026-10-16").unwrap()).unwrap();
-        let fixture: Value = serde_json::from_str(include_str!("../../../src/lib/ipc/fixtures/facts-v3.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../../src/lib/ipc/fixtures/facts-v4.json")).unwrap();
         let keys = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<std::collections::BTreeSet<_>>();
         assert_eq!(keys(&actual), keys(&fixture));
         for list in ["sessions", "takes", "transferReviews", "phrases", "phraseReviews", "progression"] {

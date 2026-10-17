@@ -33,6 +33,10 @@
   --cp-marker-liked: #2f5fb3;
   /* The live pace meter's band (8.8): neutral, never red or green. */
   --cp-ring-track: #c5d0c7;
+  /* Timing lights (roadmap 10.3): at least 3:1 against the page; a text label always says which is on. */
+  --cp-light-green: #1f7a3f;
+  --cp-light-amber: #8a5a00;
+  --cp-light-red: #b3261e;
   /* Sprout (roadmap 9.11), the companion art: leaves, flower and pots. */
   --cp-sprout-leaf: #4f9a6b;
   --cp-sprout-autumn: #8a8a3c;
@@ -102,6 +106,9 @@
   --cp-marker-filler: #e0c070;
   --cp-marker-liked: #8fb3ff;
   --cp-ring-track: #4d4d57;
+  --cp-light-green: #6fd38f;
+  --cp-light-amber: #f0b45a;
+  --cp-light-red: #ff8a80;
   --cp-sprout-leaf: #62b884;
   --cp-sprout-autumn: #a3a352;
   --cp-pot-white: #cfcac0;

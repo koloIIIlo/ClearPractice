@@ -147,6 +147,11 @@ export function createNativeClient(): IpcClient {
     listPracticeEvents: (from) => command("list_practice_events", S.PracticeEvent.array(), { from: from ?? null }),
     recordSequenceCompleted: (sessionIds, localDate) => command("record_sequence_completed", S.PracticeEvent.nullable(), { sessionIds, localDate }),
     getPracticeFacts: () => command("get_practice_facts", S.PracticeFacts),
+    addTakeEvents: (attemptId, marks) => command("add_take_events", z.number().int().nonnegative(), { attemptId, events: marks.map((m) => S.TakeMark.parse(m)) }),
+    listTakeEvents: (attemptId) => command("list_take_events", S.TakeEvent.array(), { attemptId }),
+    getActivityResult: (attemptId) => command("get_activity_result", S.ActivityResult, { attemptId }),
+    previewDrillComparison: (sessionId, kind, model) => command("preview_drill_comparison", S.CoachingPreview, { sessionId, kind, model: model ?? null }),
+    requestDrillComparison: (requestId, payloadSha256) => command("request_drill_comparison", S.DrillComparison, { requestId, payloadSha256 }),
     listPhraseUses: (phraseId) => command("list_phrase_uses", S.PhraseUse.array(), { cardId: phraseId ?? null }),
     setSelfCheck: async (attemptId, checkId, value) => {
       await command("set_self_check", z.null(), { attemptId, checkId, value });

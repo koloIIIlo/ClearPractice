@@ -9,7 +9,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
 /// Self-check IDs (8.3); the drills of M10 use the later ones.
-pub const CHECK_IDS: [&str; 10] = ["point_first", "clear_ending", "varied_voice", "concrete_detail", "fair_other_side", "kept_main_point", "used_all_icons", "fit_child", "fit_colleague", "fit_expert"];
+/// `stressed_target` is your own judgement in the emphasis game, kept apart from the estimate (A-35);
+/// `final_check` answers a boss level's closing question.
+pub const CHECK_IDS: [&str; 12] = ["point_first", "clear_ending", "varied_voice", "concrete_detail", "fair_other_side", "kept_main_point", "used_all_icons", "fit_child", "fit_colleague", "fit_expert", "stressed_target", "final_check"];
 /// How far back adding or changing a phrase looks for earlier uses.
 const RESCAN_DAYS: i64 = 365;
 const RESCAN_MAX_TAKES: i64 = 2_000;

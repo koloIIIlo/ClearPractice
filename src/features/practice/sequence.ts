@@ -59,6 +59,9 @@ export function stepUrl(step: PlanStep, localDate: string, firstPromptId?: strin
       return `/practice/${EXERCISE_IDS.imitate}?seq=1`;
     case "expression":
       return `/practice/${EXERCISE_IDS.expression}?seq=1`;
+    default:
+      // Drills (M10) open in the drill studio.
+      return `/drill/${step.exerciseType.replace(/_/g, "-")}?seq=1`;
   }
 }
 

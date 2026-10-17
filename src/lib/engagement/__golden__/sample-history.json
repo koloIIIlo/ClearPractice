@@ -1,5 +1,5 @@
 {
- "factsVersion": 3,
+ "factsVersion": 4,
  "generatedAt": "2026-10-12T12:00:00.000Z",
  "today": "2026-10-12",
  "transcriptionAvailable": true,
@@ -27,7 +27,8 @@
    "status": "completed",
    "takeCount": 2,
    "durationMs": 120000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-5",
@@ -52,7 +53,8 @@
    "status": "completed",
    "takeCount": 1,
    "durationMs": 60000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-7",
@@ -77,7 +79,8 @@
    "status": "completed",
    "takeCount": 2,
    "durationMs": 120000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-11",
@@ -102,7 +105,8 @@
    "status": "completed",
    "takeCount": 1,
    "durationMs": 60000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-13",
@@ -127,7 +131,8 @@
    "status": "completed",
    "takeCount": 2,
    "durationMs": 120000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-17",
@@ -152,7 +157,8 @@
    "status": "completed",
    "takeCount": 1,
    "durationMs": 60000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-20",
@@ -177,7 +183,8 @@
    "status": "completed",
    "takeCount": 2,
    "durationMs": 120000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-23",
@@ -202,7 +209,8 @@
    "status": "completed",
    "takeCount": 1,
    "durationMs": 60000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-25",
@@ -227,7 +235,8 @@
    "status": "completed",
    "takeCount": 2,
    "durationMs": 120000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-30",
@@ -252,7 +261,8 @@
    "status": "completed",
    "takeCount": 1,
    "durationMs": 60000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-32",
@@ -277,7 +287,8 @@
    "status": "completed",
    "takeCount": 2,
    "durationMs": 120000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-35",
@@ -302,7 +313,8 @@
    "status": "completed",
    "takeCount": 1,
    "durationMs": 60000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-38",
@@ -327,7 +339,8 @@
    "status": "completed",
    "takeCount": 2,
    "durationMs": 120000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-42",
@@ -352,7 +365,8 @@
    "status": "completed",
    "takeCount": 1,
    "durationMs": 60000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-44",
@@ -377,7 +391,8 @@
    "status": "completed",
    "takeCount": 2,
    "durationMs": 120000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-48",
@@ -402,7 +417,8 @@
    "status": "completed",
    "takeCount": 1,
    "durationMs": 60000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-50",
@@ -427,7 +443,8 @@
    "status": "completed",
    "takeCount": 2,
    "durationMs": 120000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-54",
@@ -452,7 +469,8 @@
    "status": "completed",
    "takeCount": 1,
    "durationMs": 60000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-57",
@@ -477,7 +495,8 @@
    "status": "completed",
    "takeCount": 2,
    "durationMs": 120000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   },
   {
    "id": "session-60",
@@ -502,7 +521,8 @@
    "status": "completed",
    "takeCount": 1,
    "durationMs": 60000,
-   "preferredTake": null
+   "preferredTake": null,
+   "activity": null
   }
  ],
  "takes": [
@@ -537,7 +557,8 @@
    ],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-3",
@@ -568,7 +589,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-6",
@@ -599,7 +621,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-8",
@@ -633,7 +656,8 @@
     "clear_ending": true
    },
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-9",
@@ -664,7 +688,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-12",
@@ -695,7 +720,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-14",
@@ -726,7 +752,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-15",
@@ -757,7 +784,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-18",
@@ -793,7 +821,8 @@
     "clear_ending": true
    },
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-21",
@@ -824,7 +853,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-22",
@@ -855,7 +885,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-24",
@@ -886,7 +917,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-26",
@@ -920,7 +952,8 @@
     "clear_ending": true
    },
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-27",
@@ -951,7 +984,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-31",
@@ -982,7 +1016,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-33",
@@ -1015,7 +1050,8 @@
    ],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-34",
@@ -1046,7 +1082,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-36",
@@ -1080,7 +1117,8 @@
     "clear_ending": true
    },
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-39",
@@ -1111,7 +1149,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-40",
@@ -1142,7 +1181,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-43",
@@ -1173,7 +1213,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-45",
@@ -1207,7 +1248,8 @@
     "clear_ending": true
    },
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-46",
@@ -1238,7 +1280,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-49",
@@ -1271,7 +1314,8 @@
    ],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-51",
@@ -1302,7 +1346,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-52",
@@ -1333,7 +1378,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-55",
@@ -1367,7 +1413,8 @@
     "clear_ending": true
    },
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-58",
@@ -1398,7 +1445,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-59",
@@ -1429,7 +1477,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   },
   {
    "id": "take-61",
@@ -1460,7 +1509,8 @@
    "phraseIds": [],
    "checks": {},
    "pitchRangeSt": null,
-   "rateSps": null
+   "rateSps": null,
+   "result": null
   }
  ],
  "transferReviews": [

@@ -1,0 +1,187 @@
+{
+  "factsVersion": 4,
+  "generatedAt": "2026-10-16T18:00:00.000Z",
+  "today": "2026-10-16",
+  "transcriptionAvailable": true,
+  "sessions": [
+    {
+      "id": "session-1",
+      "localDate": "2026-10-15",
+      "startedAt": "2026-10-15T07:30:00.000Z",
+      "exerciseType": "repeat",
+      "contentId": "p-habit",
+      "tags": [
+        "baseline"
+      ],
+      "familiarity": "unfamiliar",
+      "preparationSeconds": 15,
+      "targetSeconds": 60,
+      "audience": false,
+      "followUp": false,
+      "outline": [
+        true,
+        false,
+        true
+      ],
+      "ease": 4,
+      "focus": "Pause before the example",
+      "takeaway": true,
+      "status": "completed",
+      "takeCount": 2,
+      "durationMs": 124000,
+      "preferredTake": null,
+      "activity": null
+    },
+    {
+      "id": "session-2",
+      "localDate": "2026-10-15",
+      "startedAt": "2026-10-15T07:30:00.000Z",
+      "exerciseType": "jam",
+      "contentId": null,
+      "tags": [],
+      "familiarity": "familiar",
+      "preparationSeconds": 15,
+      "targetSeconds": 60,
+      "audience": false,
+      "followUp": false,
+      "outline": [
+        false,
+        false,
+        false
+      ],
+      "ease": null,
+      "focus": null,
+      "takeaway": false,
+      "status": "completed",
+      "takeCount": 1,
+      "durationMs": 61000,
+      "preferredTake": null,
+      "activity": {
+        "version": 1,
+        "seed": "seed-1",
+        "params": {
+          "topic": "jam-001"
+        }
+      }
+    }
+  ],
+  "takes": [
+    {
+      "id": "take-1",
+      "sessionId": "session-1",
+      "ordinal": 1,
+      "localDate": "2026-10-15",
+      "createdAt": "2026-10-15T07:31:00.000Z",
+      "durationMs": 62000,
+      "stepKey": null,
+      "transcribed": true,
+      "revisionId": "take-1--1",
+      "words": 131,
+      "paceWpm": 127.5,
+      "speechSpanMs": 61600,
+      "fillerCandidates": 3,
+      "fillersConfirmed": 2,
+      "fillersReviewed": true,
+      "pausesOverThreshold": 2,
+      "prosodyViewed": false,
+      "hasAiFeedback": false,
+      "meanRun": 7.4,
+      "longestRun": 14,
+      "midClausePauses": 1,
+      "boundaryPauses": 1,
+      "watchPer100": 2.3,
+      "hedgesPer100": 1.5,
+      "differentPer50": 37.2,
+      "phraseIds": [
+        "phrase-1"
+      ],
+      "checks": {
+        "point_first": true,
+        "clear_ending": false
+      },
+      "pitchRangeSt": 6.5,
+      "rateSps": 4.2,
+      "result": null
+    },
+    {
+      "id": "take-2",
+      "sessionId": "session-2",
+      "ordinal": 1,
+      "localDate": "2026-10-15",
+      "createdAt": "2026-10-15T07:31:00.000Z",
+      "durationMs": 62000,
+      "stepKey": "round",
+      "transcribed": true,
+      "revisionId": "take-1--1",
+      "words": 131,
+      "paceWpm": 127.5,
+      "speechSpanMs": 61600,
+      "fillerCandidates": 3,
+      "fillersConfirmed": 2,
+      "fillersReviewed": true,
+      "pausesOverThreshold": 2,
+      "prosodyViewed": false,
+      "hasAiFeedback": false,
+      "meanRun": 7.4,
+      "longestRun": 14,
+      "midClausePauses": 1,
+      "boundaryPauses": 1,
+      "watchPer100": 2.3,
+      "hedgesPer100": 1.5,
+      "differentPer50": 37.2,
+      "phraseIds": [],
+      "checks": {},
+      "pitchRangeSt": 6.5,
+      "rateSps": 4.2,
+      "result": {
+        "cleanSeconds": 47,
+        "speakingMs": 59000,
+        "hesitations": 3,
+        "longPauses": 1,
+        "longPauseMs": 2100,
+        "repeats": 2,
+        "flags": 1
+      }
+    }
+  ],
+  "transferReviews": [
+    {
+      "id": "transfer-1",
+      "localDate": "2026-10-14",
+      "hasListenerWords": true,
+      "neededClarification": false,
+      "hasSuccess": true,
+      "hasNextFocus": false,
+      "flow": "smooth",
+      "tags": [
+        "story"
+      ]
+    }
+  ],
+  "phrases": [
+    {
+      "id": "phrase-1",
+      "createdAt": "2026-10-10T08:00:00.000Z",
+      "starter": false,
+      "deleted": false
+    }
+  ],
+  "phraseReviews": [
+    {
+      "cardId": "phrase-1",
+      "localDate": "2026-10-11",
+      "rating": "good"
+    }
+  ],
+  "userPrompts": 1,
+  "blindComparisons": 0,
+  "progression": [
+    {
+      "kind": "advance",
+      "stageFrom": 1,
+      "stageTo": 2,
+      "reason": "3 sessions at this stage on 2 days",
+      "createdAt": "2026-10-12T09:00:00.000Z"
+    }
+  ]
+}

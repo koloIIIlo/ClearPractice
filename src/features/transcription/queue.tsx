@@ -3,6 +3,7 @@ import { requestEngagementRefresh } from "@/features/engagement/refresh";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useIpc } from "@/lib/ipc";
+import { keys } from "@/lib/ipc/queries";
 
 export type QueueItem = { attemptId: string; sessionId?: string };
 type Snapshot = { current: QueueItem | null; waiting: QueueItem[]; done: number; failed: number; total: number };
@@ -114,6 +115,10 @@ export function TranscriptionQueueProvider({ children }: { children: ReactNode }
         }
         void qc.invalidateQueries({ queryKey: ["sessions"] });
         if (finished?.sessionId) void qc.invalidateQueries({ queryKey: ["session", finished.sessionId] });
+        // A drill take's result is worked out now, so records see it without opening the result (10.1).
+        // Other takes have none; the call simply fails.
+        await ipc.getActivityResult(event.attemptId).catch(() => null);
+        void qc.invalidateQueries({ queryKey: keys.activityResult(event.attemptId) });
         requestEngagementRefresh("transcript");
         publish();
         void pump.current();

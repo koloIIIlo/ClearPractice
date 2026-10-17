@@ -62,6 +62,8 @@ export interface RecorderPanelProps {
   tourId?: string;
   /** Show the live pace meter whatever the setting (an activity that needs it, e.g. the pace ladder). */
   livePace?: boolean;
+  /** A countdown before every take (a drill round's think time); replaces the 3-second switch. */
+  countdownSeconds?: number;
 }
 
 /**
@@ -70,7 +72,7 @@ export interface RecorderPanelProps {
  * state changes. Shared by the Studio and every later activity, so each gets
  * the same audio safety.
  */
-export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBeforeStart, footer, deemphasize, tourId, livePace }: RecorderPanelProps) {
+export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBeforeStart, footer, deemphasize, tourId, livePace, countdownSeconds }: RecorderPanelProps) {
   const ipc = useIpc();
   const native = ipc.recordingMode === "native";
   const { preferences } = usePreferences();
@@ -118,7 +120,7 @@ export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBef
     else if (rec.phase === "countdown") rec.cancelCountdown();
     else if (!rec.isCapturing) {
       onBeforeStart?.();
-      rec.start({ countdownSeconds: useCountdown && !hideCountdown ? 3 : 0, deviceId: selectedDevice || null, livePace: showPace });
+      rec.start({ countdownSeconds: countdownSeconds ?? (useCountdown && !hideCountdown ? 3 : 0), deviceId: selectedDevice || null, livePace: showPace });
     }
   };
 
@@ -210,7 +212,7 @@ export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBef
               <RefreshCw aria-hidden className={devices.isFetching ? "animate-spin" : undefined} />
             </Button>
           </div>
-          {!hideCountdown && (
+          {!hideCountdown && countdownSeconds === undefined && (
             <div className="flex items-center gap-2">
               <Switch id="countdown" checked={useCountdown} onCheckedChange={setUseCountdown} disabled={locked} />
               <Label htmlFor="countdown" className="font-normal">
@@ -231,9 +233,12 @@ export function RecorderPanel({ rec, inside, clock, labels, hideCountdown, onBef
   );
 }
 
-/** Never silently abandon a take (§6 Practice studio): asks before leaving the page or closing the window while recording. */
-export function useRecorderGuard(rec: Recorder) {
-  const blocker = useBlocker(rec.isCapturing);
+/**
+ * Never silently abandon a take (§6 Practice studio): asks before leaving the page or closing the window while recording.
+ * With `leaveDuringCountdown`, leaving during a countdown (a drill's think time) just cancels it: nothing has recorded yet.
+ */
+export function useRecorderGuard(rec: Recorder, { leaveDuringCountdown = false }: { leaveDuringCountdown?: boolean } = {}) {
+  const blocker = useBlocker(rec.isCapturing && !(leaveDuringCountdown && rec.phase === "countdown"));
   return (
     <AlertDialog open={blocker.state === "blocked" || rec.closeRequested}>
       <AlertDialogContent>

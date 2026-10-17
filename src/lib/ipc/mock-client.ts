@@ -37,6 +37,7 @@ export const MOCK_XP: Record<string, { xp: number; dailyCap?: number }> = {
   personal_record: { xp: 25 },
   weekly_goal: { xp: 50 },
   quest: { xp: 30 },
+  drill_round: { xp: 15 },
 };
 /** Takes shorter than this earn nothing; only the first six takes of a session count. */
 const MIN_TAKE_MS = 10_000;
@@ -114,6 +115,73 @@ export function createMockClient(): IpcClient {
       rateSps: rate, articulationSps: round1(rate / 0.82), unavailableReason: null,
     };
   };
+  // Drills (M10): marks per take and results computed on request, as the native cache keeps them.
+  const takeEvents = new Map<string, S.TakeEvent[]>();
+  const activityResults = new Map<string, S.ActivityResult>();
+  let eventId = 0;
+  /**
+   * Sample results for the preview: plausible, stable per take and built from
+   * the same marks and settings the desktop app reads. No audio exists here.
+   */
+  const mockResult = (session: S.SessionDetail, attempt: S.Attempt): S.ActivityResult => {
+    const base = { attemptId: attempt.id, definitionVersion: 1 };
+    const marks = takeEvents.get(attempt.id) ?? [];
+    const params = session.activitySnapshot?.params ?? {};
+    const list = (key: string) => (Array.isArray(params[key]) ? (params[key] as string[]) : []);
+    const index = attempt.step?.index ?? 0;
+    const words = Math.round((attempt.durationMs / 1000) * 2.1);
+    const jitter = Math.abs(wobble(attempt.id, 1));
+    switch (session.exerciseType) {
+      case "jam": {
+        const speakingMs = Math.min(60_000, Math.max(0, attempt.durationMs - 400));
+        const hesitations = 2 + Math.round(jitter * 2);
+        const flags = marks.filter((m) => m.kind === "self_flag").length;
+        const cleanSeconds = Math.max(0, Math.floor((speakingMs - hesitations * 1000 - 1_800 - 500 - flags * 1000) / 1000));
+        return { ...base, kind: "jam", speakingMs, cleanSeconds, hesitations, longPauses: 1, longPauseMs: 1_800, repeats: 1, flags, unavailableReason: null };
+      }
+      case "word_bomb": {
+        const shown = new Map<number, number>();
+        for (const m of marks) if (m.kind === "word_shown" && typeof m.data.index === "number" && !shown.has(m.data.index)) shown.set(m.data.index, m.atMs);
+        const missed = jitter > 0.6 ? [...shown.keys()].at(-1) : undefined;
+        const spokenAtMs = list("words").map((_, i) => (shown.has(i) && i !== missed ? shown.get(i)! + 2_500 : -1));
+        return { ...base, kind: "word_bomb", shown: shown.size, woven: spokenAtMs.filter((s) => s >= 0).length, spokenAtMs, unavailableReason: null };
+      }
+      case "emphasis": {
+        const target = Number(list("targets")[index] ?? 0);
+        const count = (list("sentences")[index] ?? "").split(" ").filter(Boolean).length;
+        const hit = jitter < 0.7;
+        return { ...base, kind: "emphasis", round: index, target, peakWord: hit ? target : (target + 1) % Math.max(1, count), hit, aligned: true, nuclei: count + 2, expected: count + 2, unavailableReason: null };
+      }
+      case "pace_ladder": {
+        if (attempt.durationMs < 5_000) return { ...base, kind: "pace_ladder", rateSps: null, unavailableReason: "Needs at least 5 seconds of speech." };
+        const centre = { slow: 3.3, natural: 4.3, fast: 5.3 }[attempt.step?.key ?? "natural"] ?? 4.3;
+        return { ...base, kind: "pace_ladder", rateSps: round1(centre + wobble(attempt.id, 0.2)), unavailableReason: null };
+      }
+      case "story_cubes": {
+        const icons = list("icons").length;
+        const usedIcons = list("icons").map((_, i) => (i === icons - 1 && jitter > 0.5 ? 0 : 1));
+        return { ...base, kind: "story_cubes", icons, used: usedIcons.filter(Boolean).length, usedIcons, unavailableReason: null };
+      }
+      case "story_spine": {
+        const advanced = marks.filter((m) => m.kind === "card_advanced").length;
+        return { ...base, kind: "story_spine", steps: Math.min(7, advanced + 1), advanced, words };
+      }
+      case "daily": {
+        const windows = [0, 0, jitter > 0.3 ? 1 : 0, 0, jitter > 0.6 ? 2 : 0, attempt.durationMs >= 55_000 ? 0 : 3];
+        const n = (code: number) => windows.filter((w) => w === code).length;
+        return { ...base, kind: "daily", windows, flowing: n(0), hesitation: n(1), pause: n(2), silent: n(3), transcribed: true, unavailableReason: null };
+      }
+      default:
+        return { ...base, kind: "basic", durationMs: attempt.durationMs, words, speechMs: Math.max(0, attempt.durationMs - 800), hesitations: 2, differentPer50: round1(36 + wobble(attempt.id, 3)) };
+    }
+  };
+  /** A result's numbers, as `FactTake.result` carries them (booleans as 1 or 0). */
+  const resultNumbers = (result: S.ActivityResult | undefined): Record<string, number> | null =>
+    result
+      ? Object.fromEntries(
+          Object.entries(result).flatMap(([k, v]): [string, number][] => (typeof v === "number" ? [[k, v]] : typeof v === "boolean" ? [[k, v ? 1 : 0]] : [])),
+        )
+      : null;
   let retentionDays: S.TrashRetentionDays = 30;
   let preferences: S.Preferences = { ...S.DEFAULT_PREFERENCES };
   let transcriptionPreference: S.TranscriptionPreference = { mode: "local", provider: "deepgram" };
@@ -153,6 +221,8 @@ export function createMockClient(): IpcClient {
     session.attemptCount = session.attempts.length;
     session.durationMs += durationMs;
     awardTake(session, attempt);
+    // Drills (M10): the first saved take of a drill session, whatever its length.
+    if (S.isDrillType(session.exerciseType)) award("drill_round", session.id, session.localDate, { sessionId: session.id, attemptId });
   };
 
   /** Facts from the sample history (7.6): takes count as transcribed in the order the sample says. */
@@ -160,7 +230,7 @@ export function createMockClient(): IpcClient {
     const shown = sessions.filter((s) => !trash.has(s.id) && (s.attemptCount > 0 || s.status === "completed"));
     const filled = (text: string | undefined | null) => !!text && text.trim().length > 0;
     return S.PracticeFacts.parse({
-      factsVersion: 3,
+      factsVersion: 4,
       generatedAt: new Date().toISOString(),
       today: data.today(),
       transcriptionAvailable: false,
@@ -170,6 +240,7 @@ export function createMockClient(): IpcClient {
         audience: filled(s.conditions?.audience), followUp: s.conditions?.followUp ?? false,
         outline: [filled(s.outline.point), filled(s.outline.reason), filled(s.outline.example)],
         ease: s.ease ?? null, focus: s.focus, takeaway: filled(s.takeaway), status: s.status, takeCount: s.attemptCount, durationMs: s.durationMs, preferredTake: s.preferredTake ?? null,
+        activity: s.activitySnapshot ?? null,
       })),
       takes: shown.flatMap((s) => s.attempts.map((a, i) => {
         const transcribed = i < (s.transcribedTakes ?? 0);
@@ -187,6 +258,7 @@ export function createMockClient(): IpcClient {
           checks: Object.fromEntries([...(selfChecks.get(a.id)?.keys() ?? [])].map((check) => [check, checkValues.get(`${a.id}:${check}`)])),
           pitchRangeSt: null,
           rateSps: audioMeasures(a.id, a.durationMs).rateSps,
+          result: resultNumbers(activityResults.get(a.id)),
         };
       })),
       transferReviews: transferReviews.map((r) => ({
@@ -234,6 +306,27 @@ export function createMockClient(): IpcClient {
       return S.PracticeEvent.parse(structuredClone(events.find((e) => e.kind === "sequence_completed" && e.refId === refId)));
     },
     getPracticeFacts: async () => buildFacts(),
+    addTakeEvents: async (attemptId, marks) => {
+      const found = attemptOf(attemptId);
+      if (!found) throw new IpcError("not_found", "This take is unavailable.");
+      if (!S.isDrillType(found.session.exerciseType)) throw new IpcError("invalid", "This take isn't part of a drill.");
+      const parsed = marks.map((m) => S.TakeMark.parse(m));
+      const stored = takeEvents.get(attemptId) ?? [];
+      if (stored.length + parsed.length > 200) throw new IpcError("invalid", "A round keeps at most 200 marks.");
+      const createdAt = new Date().toISOString();
+      takeEvents.set(attemptId, [...stored, ...parsed.map((m) => ({ id: ++eventId, attemptId, atMs: m.atMs, kind: m.kind, data: m.data, createdAt }))].sort((a, b) => a.atMs - b.atMs || a.id - b.id));
+      activityResults.delete(attemptId);
+      return parsed.length;
+    },
+    listTakeEvents: (attemptId) => respond(S.TakeEvent.array(), takeEvents.get(attemptId) ?? []),
+    getActivityResult: async (attemptId) => {
+      const found = attemptOf(attemptId);
+      if (!found) throw new IpcError("not_found", "This take is unavailable.");
+      if (!S.isDrillType(found.session.exerciseType)) throw new IpcError("invalid", "This take isn't part of a drill.");
+      const result = activityResults.get(attemptId) ?? mockResult(found.session, found.attempt);
+      activityResults.set(attemptId, result);
+      return respond(S.ActivityResult, result);
+    },
     getEngagementState: async (week) => {
       if (!isWeekStart(week)) throw new IpcError("invalid", "A week starts on a Monday or a Sunday.");
       const since = addLocalDays(week, -28);
@@ -521,6 +614,26 @@ export function createMockClient(): IpcClient {
       { session: 1, original: "I was reading for maybe forty minutes", expression: "I lost track of time", explanation: "A natural way to say time passed without you noticing.", example: "I lost track of time while cooking." },
       { session: 1, original: "first thing in the morning", expression: "the moment I wake up", explanation: "Sounds more personal and vivid in spoken English.", example: "I check the weather the moment I wake up." },
     ]),
+    previewDrillComparison: async (sessionId, kind, model = "gpt-6-luna") => {
+      const session = sessions.find((s) => s.id === sessionId);
+      if (!session || session.attempts.length < 2) throw new IpcError("invalid", "Every round needs a transcript first.");
+      const word = kind === "three_ways" ? "Version" : "Round";
+      return S.CoachingPreview.parse({
+        version: 1, requestId: `drill-${Date.now()}`, payloadSha256: "0".repeat(64), recipient: "https://api.openai.com/v1/responses", model,
+        selectedText: session.attempts.slice(0, 3).map((a, i) => `${word} ${i + 1} (${a.step?.key ?? "take"}):\nSample transcript of take ${a.ordinal} (browser preview).`).join("\n\n"),
+        prompt: kind === "three_ways" ? "Did the wording change for each listener?" : "Which words carried your point?", focus: "One note and a quote per round, one tip",
+        instructions: "Sample instructions (browser preview).", maximumOutputTokens: 2048, estimatedMaximumCostMicroUsd: 1800,
+        priceDate: "2026-10-08", priceSource: "sample", inputUsdPerMillionTokens: "0.10", outputUsdPerMillionTokens: "0.50",
+        costExplanation: "Browser preview: nothing is sent. Only the transcripts are shown here, never audio.", expiresAtMs: Date.now() + 300_000,
+      });
+    },
+    requestDrillComparison: async () => S.DrillComparison.parse({
+      notes: [
+        { part: 1, note: "Short words and one everyday example suited a child.", quote: "Sample transcript of take 1" },
+        { part: 2, note: "You said why it matters to them, which suits a colleague.", quote: "Sample transcript of take 2" },
+      ],
+      oneTip: "Open each version with the point before the details.",
+    }),
     requestClipNames: async () => { throw new IpcError("desktop_required", "AI suggestions run in the desktop app."); },
     measureClipSource: async () => { throw new IpcError("desktop_required", "Measuring runs in the desktop app."); },
     onClipMeasureProgress: async () => () => {},

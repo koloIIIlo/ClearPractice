@@ -1,6 +1,7 @@
+import { DRILLS, drillForType } from "@/content/drills";
 import { themeFor } from "@/content/monthly-themes";
 import { addLocalDays } from "@/lib/phrase-schedule";
-import type { FactSession, PracticeEvent, PracticeFacts, QuestInput, QuestRow } from "@/lib/ipc/schemas";
+import { isDrillType, type FactSession, type PracticeEvent, type PracticeFacts, type QuestInput, type QuestRow } from "@/lib/ipc/schemas";
 import type { EvalContext } from "./criteria";
 import { inWeek, speechMs } from "./criteria";
 import { seededRandom } from "./random";
@@ -45,11 +46,16 @@ export const QUEST_TEMPLATES: readonly QuestTemplate[] = [
     count: (w) => takesWith(w, (t) => t.phraseIds.length > 0) },
   { id: "imitate-1", title: "Imitate a clip", area: "listening", needed: 1, needs: always, count: (w) => sessionsWith(w, (s) => s.exerciseType === "imitate") },
   { id: "story-1", title: "Tell a story", area: "storytelling", needed: 1, needs: always,
-    count: (w) => sessionsWith(w, (s) => !!s.contentId && (w.ctx.promptTags[s.contentId] ?? []).includes("storytelling")) },
+    count: (w) => sessionsWith(w, (s) => s.exerciseType === "story_spine" || s.exerciseType === "story_cubes" || (!!s.contentId && (w.ctx.promptTags[s.contentId] ?? []).includes("storytelling"))) },
   { id: "no-notes-1", title: "Speak for a minute without notes", area: "structure", needed: 1, needs: always,
     count: (w) => takesWith(w, (t, s) => !!s && !s.outline.some(Boolean) && speechMs(t) >= 60_000) },
   { id: "intonation-2", title: "Look at the intonation of 2 takes", area: "voice", needed: 2, needs: always, count: (w) => takesWith(w, (t) => t.prosodyViewed) },
   { id: "point-first-2", title: "Note \"point first\" on 2 takes", area: "structure", needed: 2, needs: always, count: (w) => takesWith(w, (t) => t.checks.point_first === true) },
+  // Drills (M10): one template per drill, named after it, in the drill's first area.
+  ...DRILLS.filter((d) => d.type !== "daily").map(
+    (d): QuestTemplate => ({ id: `drill-${d.id}`, title: d.type === "boss" ? "Play a boss level" : `Play ${d.title}`, area: d.areas[0], needed: 1, needs: always, count: (w) => sessionsWith(w, (s) => s.exerciseType === d.type) }),
+  ),
+  { id: "daily-3", title: "Play the daily prompt 3 times", area: "spontaneity", needed: 3, needs: always, count: (w) => sessionsWith(w, (s) => s.exerciseType === "daily") },
 ];
 
 export const questTemplate = (id: string) => QUEST_TEMPLATES.find((q) => q.id === id);
@@ -70,15 +76,17 @@ export function areaActivity(facts: PracticeFacts, today: string, ctx: EvalConte
   const since = addLocalDays(today, -30);
   const sessions = facts.sessions.filter((s) => s.localDate > since && s.takeCount > 0);
   const takes = facts.takes.filter((t) => t.localDate > since);
+  // A drill session counts for each area it trains (appendix C.1).
+  const drills = (area: AreaId) => sessions.filter((s) => isDrillType(s.exerciseType) && drillForType(s.exerciseType).areas.includes(area)).length;
   return {
-    structure: sessions.filter((s) => s.outline[0]).length + takes.filter((t) => t.checks.point_first !== undefined || t.checks.clear_ending !== undefined).length,
-    fluency: takes.filter((t) => t.fillersReviewed).length,
-    voice: takes.filter((t) => t.prosodyViewed).length,
-    spontaneity: sessions.filter((s) => s.familiarity === "unfamiliar").length,
-    vocabulary: facts.phraseReviews.filter((r) => r.localDate > since).length + takes.filter((t) => t.phraseIds.length > 0).length,
-    listening: sessions.filter((s) => s.exerciseType === "imitate").length,
-    storytelling: sessions.filter((s) => !!s.contentId && (ctx.promptTags[s.contentId] ?? []).includes("storytelling")).length,
-    courage: facts.transferReviews.filter((r) => r.localDate > since).length,
+    structure: sessions.filter((s) => s.outline[0]).length + takes.filter((t) => t.checks.point_first !== undefined || t.checks.clear_ending !== undefined).length + drills("structure"),
+    fluency: takes.filter((t) => t.fillersReviewed).length + drills("fluency"),
+    voice: takes.filter((t) => t.prosodyViewed).length + drills("voice"),
+    spontaneity: sessions.filter((s) => s.familiarity === "unfamiliar" && !isDrillType(s.exerciseType)).length + drills("spontaneity"),
+    vocabulary: facts.phraseReviews.filter((r) => r.localDate > since).length + takes.filter((t) => t.phraseIds.length > 0).length + drills("vocabulary"),
+    listening: sessions.filter((s) => s.exerciseType === "imitate").length + drills("listening"),
+    storytelling: sessions.filter((s) => !!s.contentId && (ctx.promptTags[s.contentId] ?? []).includes("storytelling")).length + drills("storytelling"),
+    courage: facts.transferReviews.filter((r) => r.localDate > since).length + drills("courage"),
   };
 }
 

@@ -36,7 +36,12 @@ const real: PractiseLink = { label: "Note a real conversation", to: "/progress?v
 const sessions: PractiseLink = { label: "Review a take", to: "/sessions" };
 const phrases: PractiseLink = { label: "Save phrases", to: "/phrases" };
 const phraseReview: PractiseLink = { label: "Review your phrases", to: "/phrases?review=1" };
-const drill = (label: string): PractiseLink => ({ label, to: "/drills", arrives: "Drills" });
+/** A drill (M10), by its title, opening in the drill studio. */
+const DRILL_PATHS: Record<string, string> = {
+  "Just a Minute": "jam", "Topic roulette": "roulette", "Elevator pitch": "pitch", "Emphasis game": "emphasis", "Gauntlet": "gauntlet",
+  "Pace ladder": "pace-ladder", "Story cubes": "story-cubes", "Story spine": "story-spine",
+};
+const drill = (label: string): PractiseLink => ({ label, to: `/drill/${DRILL_PATHS[label]}` });
 const later = (label: string, arrives: string): PractiseLink => ({ label, to: "/", arrives });
 
 const MIN = 60_000;

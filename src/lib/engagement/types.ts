@@ -9,7 +9,7 @@ export type AreaId = (typeof AREA_IDS)[number];
 export type EvidenceRef = { kind: "session" | "take" | "transfer" | "phrase" | "activity"; id: string; date: string };
 
 /** What brings a criterion that can't progress yet. */
-export type Fix = "transcription" | "review" | "drills" | "confidence" | "partner" | "events" | null;
+export type Fix = "transcription" | "review" | "drills" | "learning" | "confidence" | "partner" | "events" | null;
 
 export type CriterionProgress = {
   met: boolean;

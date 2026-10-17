@@ -31,6 +31,9 @@ export const keys = {
   comparisons: (attemptId: string) => ["comparisons", attemptId] as const,
   /** Game core (M9); under "engagement", so one invalidation refreshes everything earned. */
   engagementState: (week: string) => ["engagement", "state", week] as const,
+  // Drills (M10).
+  activityResult: (attemptId: string) => ["drills", "result", attemptId] as const,
+  takeEvents: (attemptId: string) => ["drills", "events", attemptId] as const,
 };
 
 /** Saved preferences; until they load, the defaults apply. */

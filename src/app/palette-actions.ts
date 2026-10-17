@@ -7,7 +7,7 @@ import type { Preferences } from "@/lib/ipc/schemas";
 import type { ThemePreference } from "./theme";
 
 /** Features that arrive with later milestones; their actions stay hidden until then. */
-export const PALETTE_FEATURES = { journey: true, justAMinute: false, conversation: false };
+export const PALETTE_FEATURES = { journey: true, justAMinute: true, conversation: false };
 
 export type PaletteContext = {
   navigate: NavigateFunction;
@@ -57,7 +57,9 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   { id: "zoom-out", label: "Zoom out", keywords: ["smaller", "text size"], icon: ZoomOut, group: "Actions", visible: always, run: (ctx) => ctx.zoom(-1) },
   { id: "zoom-reset", label: "Reset zoom", keywords: ["100", "actual size", "text size"], icon: Search, group: "Actions", visible: always, run: (ctx) => ctx.zoom(0) },
   { id: "journey", label: "Open Journey", keywords: ["levels", "game", "progress"], icon: Compass, group: "Actions", visible: (ctx) => ctx.playful && features(ctx).journey, run: (ctx) => ctx.navigate("/journey") },
-  { id: "just-a-minute", label: "Play Just a Minute", keywords: ["drill", "game", "minute"], icon: Play, group: "Actions", visible: (ctx) => features(ctx).justAMinute, run: (ctx) => ctx.navigate("/drills/jam") },
+  { id: "just-a-minute", label: "Play Just a Minute", keywords: ["drill", "game", "minute"], icon: Play, group: "Actions", visible: (ctx) => features(ctx).justAMinute, run: (ctx) => ctx.navigate("/drill/jam") },
+  { id: "daily-prompt", label: "Play today's daily prompt", keywords: ["drill", "daily", "prompt", "game"], icon: Play, group: "Actions", visible: (ctx) => features(ctx).justAMinute, run: (ctx) => ctx.navigate("/drill/daily") },
+  { id: "drills", label: "Show all drills", keywords: ["drill", "games", "exercises"], icon: Play, group: "Actions", visible: (ctx) => features(ctx).justAMinute, run: (ctx) => ctx.navigate("/exercises?tab=drills") },
   { id: "conversation", label: "Start a conversation", keywords: ["ai", "partner", "talk"], icon: MessageSquareHeart, group: "Actions", visible: (ctx) => features(ctx).conversation, run: (ctx) => ctx.navigate("/conversation") },
 ];
 

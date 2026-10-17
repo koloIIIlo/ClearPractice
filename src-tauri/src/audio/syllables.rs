@@ -177,6 +177,38 @@ pub fn detect(samples: &[f32], sample_rate: u32) -> RateResult {
     }
 }
 
+/// One syllable nucleus with what the emphasis game (10.6) weighs: its time,
+/// loudness, sample position and how long it stays within 6 dB of its peak.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NucleusDetail {
+    pub t_ms: u64,
+    pub db: f32,
+    pub center: usize,
+    pub voiced_ms: u32,
+}
+
+/// The voiced nuclei of a short take, with no minimum length: the emphasis
+/// game reads one sentence of about three seconds.
+pub fn nuclei_detail(samples: &[f32], sample_rate: u32) -> Vec<NucleusDetail> {
+    let db = intensity(samples, sample_rate);
+    if db.len() < 3 {
+        return Vec::new();
+    }
+    let threshold = (percentile_99(&db) - THRESHOLD_BELOW_DB).max(MIN_THRESHOLD_DB);
+    let hop = (sample_rate * HOP_MS / 1000) as usize;
+    let half_frame = (sample_rate * FRAME_MS / 2000) as usize;
+    peaks(&db, threshold)
+        .into_iter()
+        .filter(|&k| voiced_at(samples, sample_rate, k * hop + half_frame))
+        .map(|k| {
+            let near = |j: &usize| db[*j] >= db[k] - 6.0 && db[*j] > threshold;
+            let before = (0..k).rev().take_while(near).count();
+            let after = (k + 1..db.len()).take_while(near).count();
+            NucleusDetail { t_ms: k as u64 * u64::from(HOP_MS) + u64::from(FRAME_MS / 2), db: db[k], center: k * hop + half_frame, voiced_ms: (before + after + 1) as u32 * HOP_MS }
+        })
+        .collect()
+}
+
 /// The live meter's counter (8.8), fed with mono blocks while recording. It
 /// keeps 2 s of audio for the voicing check and a 1 dB histogram of the last
 /// 30 s for the threshold, so each block costs O(n) plus a few pitch checks.

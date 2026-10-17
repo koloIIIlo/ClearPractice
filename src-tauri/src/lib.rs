@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod activity_results;
 pub mod analysis;
 pub mod api;
 mod commands;
@@ -861,6 +862,61 @@ async fn request_phrase_suggestions(
     let accounting = accounting.inner().clone();
     let budget = accounting.0.as_ref().map_err(Clone::clone)?;
     owner.send_phrase_suggestions(budget, &accounting.1, &request_id, &payload_sha256).await
+}
+
+/// An optional AI comparison of a drill's rounds (roadmap 10.5, 10.9): previews
+/// a text-only request with the latest take of each round, under its listener
+/// or length (your corrections where you made them). Nothing is sent here.
+#[tauri::command]
+async fn preview_drill_comparison(
+    storage: State<'_, Arc<SessionStorage>>,
+    owner: State<'_, Arc<api::coaching::PreviewOwner>>,
+    session_id: String,
+    kind: api::coaching::DrillComparisonKind,
+    model: Option<api::coaching::CoachingModel>,
+) -> Result<api::coaching::Preview, String> {
+    use api::coaching::DrillComparisonKind;
+    let owner = owner.inner().clone();
+    with_storage(&storage, move |db| {
+        // Never a silent switch of provider (shared rule 1): this goes to your OpenAI account only.
+        match preferences::load(db)?.coaching_mode.as_str() {
+            "api" => {}
+            "off" => return Err("AI suggestions are turned off in Settings → Coaching.".into()),
+            _ => return Err("This comparison uses your OpenAI account, and Coaching is set to your local model, so nothing was sent. Choose in Settings → Coaching.".into()),
+        }
+        let rounds: &[(&str, &str)] = match kind {
+            DrillComparisonKind::ThreeWays => &[("child", "A 10-year-old"), ("colleague", "A colleague from another team"), ("expert", "An expert")],
+            DrillComparisonKind::Pitch => &[("r60", "60 seconds"), ("r30", "30 seconds"), ("r15", "15 seconds")],
+        };
+        let detail = db.get_session(&session_id)?;
+        let attempts = detail["attempts"].as_array().cloned().unwrap_or_default();
+        let mut parts = Vec::new();
+        for (key, label) in rounds {
+            let latest = attempts.iter().rev().find(|a| a["step"]["key"].as_str() == Some(key)).and_then(|a| a["id"].as_str());
+            let text = latest
+                .and_then(|id| db.take_coaching_input(id).ok())
+                .map(|input| input.text)
+                .ok_or("Transcribe every round first; the comparison needs all of them.")?;
+            parts.push((label.to_string(), text));
+        }
+        owner.preview_drill_comparison(kind, &parts, model.unwrap_or_default())
+    })
+    .await
+    .map_err(|_| "Preparing the request failed.".to_string())?
+}
+
+/// Sends an approved drill comparison under the shared budget.
+#[tauri::command]
+async fn request_drill_comparison(
+    owner: State<'_, Arc<api::coaching::PreviewOwner>>,
+    accounting: State<'_, Arc<ApiAccounting>>,
+    request_id: String,
+    payload_sha256: String,
+) -> Result<api::coaching::DrillComparison, String> {
+    let owner = owner.inner().clone();
+    let accounting = accounting.inner().clone();
+    let budget = accounting.0.as_ref().map_err(Clone::clone)?;
+    owner.send_drill_comparison(budget, &accounting.1, &request_id, &payload_sha256).await
 }
 
 /// Optional AI titles and descriptions for proposed clips (4.4c): previews a
@@ -2575,6 +2631,9 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::drills::add_take_events,
+            commands::drills::list_take_events,
+            commands::drills::get_activity_result,
             commands::engagement::list_practice_events,
             commands::engagement::record_sequence_completed,
             commands::engagement::get_practice_facts,
@@ -2605,6 +2664,8 @@ pub fn run() {
             stop_level_monitor,
             preview_phrase_suggestions,
             request_phrase_suggestions,
+            preview_drill_comparison,
+            request_drill_comparison,
             whisper_download_options,
             download_whisper,
             cancel_whisper_download,

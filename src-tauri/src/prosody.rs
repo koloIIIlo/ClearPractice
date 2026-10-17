@@ -212,6 +212,113 @@ pub const ALGORITHM: &str = "yin-v1";
 pub const DEFINITION_VERSION: i64 = 1;
 
 /// Settings recorded with each stored track, so a result can be traced to them.
+/// One syllable nucleus of an emphasis take (10.6), scored against the take.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Nucleus {
+    pub t_ms: u64,
+    pub db: f32,
+    /// Pitch in semitones above 100 Hz; `None` when no clear period was found.
+    pub f0_st: Option<f32>,
+    pub voiced_ms: u32,
+    pub prominence: f32,
+}
+
+/// Which word carried the strongest beat (10.6), Estimated.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Prominence {
+    pub nuclei: Vec<Nucleus>,
+    pub expected_syllables: u32,
+    pub peak_word: Option<usize>,
+    /// False when the nuclei found differ from the expected syllables by more than a quarter.
+    pub aligned: bool,
+    pub unavailable_reason: Option<String>,
+}
+
+/// A rough syllable count: vowel groups (y included), minus a silent final
+/// "e", "ed" or "es", plus one for a syllabic "n't" ("didn't"); at least 1.
+pub fn syllable_estimate(word: &str) -> u32 {
+    let w: String = word.to_lowercase().chars().filter(|c| c.is_ascii_alphabetic() || *c == '\'').collect();
+    let letters: Vec<char> = w.chars().filter(char::is_ascii_alphabetic).collect();
+    let vowel = |c: char| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u' | 'y');
+    let mut count = 0u32;
+    let mut previous = false;
+    for &c in &letters {
+        let v = vowel(c);
+        if v && !previous {
+            count += 1;
+        }
+        previous = v;
+    }
+    let n = letters.len();
+    let before = |k: usize| n.checked_sub(k).and_then(|i| letters.get(i)).copied();
+    if count > 1 {
+        // "table" keeps its "-le" syllable; "stole" and "make" don't.
+        let syllabic_le = w.ends_with("le") && before(3).is_some_and(|c| !vowel(c));
+        let silent_e = w.ends_with('e') && !w.ends_with("ee") && !syllabic_le && before(2).is_some_and(|c| !vowel(c));
+        let silent_ed = w.ends_with("ed") && n > 3 && before(3).is_some_and(|c| !matches!(c, 't' | 'd') && !vowel(c));
+        let silent_es = w.ends_with("es") && n > 3 && before(3).is_some_and(|c| !matches!(c, 's' | 'x' | 'z' | 'c' | 'g' | 'h') && !vowel(c));
+        if silent_e || silent_ed || silent_es {
+            count -= 1;
+        }
+    }
+    if w.ends_with("n't") && before(3).is_some_and(|c| !vowel(c)) {
+        count += 1;
+    }
+    count.max(1)
+}
+
+fn z_scores(values: &[f32]) -> Vec<f32> {
+    let n = values.len() as f32;
+    let mean = values.iter().sum::<f32>() / n;
+    let sd = (values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / n).sqrt();
+    values.iter().map(|v| if sd > 1e-6 { (v - mean) / sd } else { 0.0 }).collect()
+}
+
+/// The emphasis game's analysis (10.6). Each nucleus is scored relative to
+/// this take: z(loudness) + z(pitch) + 0.5·z(length). The strongest one is
+/// mapped to a word by spreading each word's estimated syllables over the
+/// nuclei in order. With too few nuclei, or a count far from the sentence's,
+/// nothing is claimed.
+pub fn prominence(samples: &[f32], sample_rate: u32, words: &[&str]) -> Prominence {
+    let expected: u32 = words.iter().map(|w| syllable_estimate(w)).sum();
+    let found = crate::audio::syllables::nuclei_detail(samples, sample_rate);
+    let half = (sample_rate * WINDOW_MS as u32 / 2000) as usize;
+    let pitch: Vec<Option<f32>> = found
+        .iter()
+        .map(|n| {
+            let (from, to) = (n.center.checked_sub(half)?, n.center + half);
+            let hz = yin_with(samples.get(from..to)?, sample_rate, 0.35)?;
+            Some((12.0 * (hz / 100.0).log2()) as f32)
+        })
+        .collect();
+    let mut voiced_pitch: Vec<f32> = pitch.iter().flatten().copied().collect();
+    voiced_pitch.sort_by(f32::total_cmp);
+    let median = voiced_pitch.get(voiced_pitch.len() / 2).copied().unwrap_or(0.0);
+    let loud = z_scores(&found.iter().map(|n| n.db).collect::<Vec<_>>());
+    let high = z_scores(&pitch.iter().map(|p| p.unwrap_or(median)).collect::<Vec<_>>());
+    let long = z_scores(&found.iter().map(|n| n.voiced_ms as f32).collect::<Vec<_>>());
+    let nuclei: Vec<Nucleus> = found
+        .iter()
+        .enumerate()
+        .map(|(k, n)| Nucleus { t_ms: n.t_ms, db: n.db, f0_st: pitch[k], voiced_ms: n.voiced_ms, prominence: loud[k] + high[k] + 0.5 * long[k] })
+        .collect();
+    if nuclei.len() < 2 || expected == 0 {
+        return Prominence { nuclei, expected_syllables: expected, peak_word: None, aligned: false, unavailable_reason: Some("Too few beats were found in the recording.".into()) };
+    }
+    let aligned = (nuclei.len() as f32 - expected as f32).abs() / expected as f32 <= 0.25;
+    let strongest = nuclei.iter().enumerate().max_by(|a, b| a.1.prominence.total_cmp(&b.1.prominence)).map(|(k, _)| k).unwrap_or(0);
+    // The nucleus's position on the sentence's syllable scale, then the word that covers it.
+    let position = (strongest as f32 + 0.5) * expected as f32 / nuclei.len() as f32;
+    let mut covered = 0.0f32;
+    let peak_word = words.iter().position(|w| {
+        covered += syllable_estimate(w) as f32;
+        position < covered
+    });
+    Prominence { nuclei, expected_syllables: expected, peak_word: if aligned { peak_word } else { None }, aligned, unavailable_reason: None }
+}
+
 pub fn settings() -> String {
     format!(r#"{{"hopMs":{HOP_MS},"windowMs":{WINDOW_MS},"minF0Hz":{MIN_F0},"maxF0Hz":{MAX_F0},"yinThreshold":{YIN_THRESHOLD},"silenceDb":{SILENCE_DB}}}"#)
 }
@@ -299,6 +406,56 @@ mod tests {
     use std::f64::consts::TAU;
 
     const RATE: u32 = 16_000;
+
+    /// Six syllable-like bursts of a 150 Hz voice with silence between them;
+    /// `strong` is 6 dB louder, a semitone higher and half as long again.
+    fn bursts(strong: Option<usize>, count: usize) -> Vec<f32> {
+        let rate = f64::from(RATE);
+        let silence = |ms: f64| vec![0.0f32; (ms / 1000.0 * rate) as usize];
+        let mut out = silence(200.0);
+        for k in 0..count {
+            let loud = strong == Some(k);
+            let (f0, gain, ms) = if loud { (150.0 * 2f64.powf(1.0 / 12.0), 0.3, 300.0) } else { (150.0, 0.15, 200.0) };
+            let n = (ms / 1000.0 * rate) as usize;
+            let mut phase = 0.0f64;
+            for i in 0..n {
+                // A short fade in and out, like a syllable's onset and release.
+                let edge = ((i.min(n - i) as f64) / (0.02 * rate)).min(1.0);
+                phase += TAU * f0 / rate;
+                let s: f64 = (1..=6).map(|h| (phase * h as f64).sin() / h as f64).sum();
+                out.push((gain * edge * s) as f32);
+            }
+            out.extend(silence(250.0));
+        }
+        out
+    }
+
+    #[test]
+    fn prominence_picks_the_louder_higher_longer_syllable_in_synthetic_audio() {
+        let words = ["one", "two", "three", "four", "five", "six"];
+        let p = prominence(&bursts(Some(3), 6), RATE, &words);
+        assert_eq!((p.nuclei.len(), p.expected_syllables, p.aligned), (6, 6, true), "{p:?}");
+        assert_eq!(p.peak_word, Some(3));
+        assert!(p.nuclei[3].f0_st.zip(p.nuclei[0].f0_st).is_some_and(|(high, low)| high - low > 0.5), "{p:?}");
+        // The same audio with the stress elsewhere moves the peak.
+        assert_eq!(prominence(&bursts(Some(1), 6), RATE, &words).peak_word, Some(1));
+    }
+
+    #[test]
+    fn unaligned_when_nuclei_differ_by_more_than_a_quarter() {
+        // Six beats for a sentence of twelve estimated syllables: nothing is claimed.
+        let words = ["seventeen", "elephants", "remember", "tomorrow"];
+        let p = prominence(&bursts(Some(2), 6), RATE, &words);
+        assert_eq!(p.expected_syllables, 12);
+        assert!(!p.aligned && p.peak_word.is_none());
+        assert!(prominence(&[0.0; 16_000], RATE, &words).unavailable_reason.is_some(), "silence has no beats");
+    }
+
+    #[test]
+    fn syllable_estimate_handles_silent_e_and_diphthongs() {
+        let counts: Vec<u32> = ["make", "money", "stole", "didn't", "table", "played", "wanted", "boxes", "don't"].iter().map(|w| syllable_estimate(w)).collect();
+        assert_eq!(counts, [1, 2, 1, 2, 2, 1, 2, 2, 1]);
+    }
 
     /// A voice-like tone: fundamental plus decaying harmonics, so octave errors
     /// (the classic failure of autocorrelation trackers) would show up.
