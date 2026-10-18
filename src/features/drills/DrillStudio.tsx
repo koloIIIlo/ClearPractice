@@ -14,6 +14,7 @@ import { useRecorder } from "@/features/practice/recorder";
 import { RecorderPanel, useRecorderGuard } from "@/features/practice/RecorderPanel";
 import { RecordingLibrary } from "@/features/practice/RecordingLibrary";
 import { SequenceBar } from "@/features/practice/SequenceBar";
+import { ShareChallenge } from "@/features/social/ShareChallenge";
 import { CountdownRing, lightAt } from "./CountdownRing";
 import { DRILL_MODULES, type DrillModule, type DrillParams, type DrillPlan } from "./drill-module";
 import { newSeed } from "./plan-helpers";
@@ -172,6 +173,7 @@ function DrillRun({ drill, module, prompts, seed }: { drill: DrillDef; module: D
                 {module.repeatable ? "Again, new topic" : "Play again"}
               </Button>
             )}
+            <ShareChallenge plan={plan} ctx={ctx} />
             <Button variant="outline" asChild>
               <Link to={`/sessions/${sessionId}`}>Open the session</Link>
             </Button>

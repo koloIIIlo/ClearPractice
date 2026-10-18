@@ -30,6 +30,24 @@
 | 15.3 | Challenge codes | S |
 | 15.4 | Copy my week | S |
 
+**As built (18 Oct)**
+- **Schema.** As below, plus `club_speeches.word_used` (null, 0 or 1: whether the speaker used the word of the day, your note). `counts` holds only the six counters (um, uh, so, like, you know, other), each 0 to 999, and zero counts are dropped. A speech is at most six hours. Saving an agenda keeps each speaker's result by id, and speakers you removed are deleted for good. A meeting is deleted softly.
+- **15.1 Buddy feedback presets.** Ask a listener… gains a Questions select: Listener (the three default questions), Buddy feedback (two stars and a wish, with an optional fourth), Teacher check and Custom. Editing any question switches it to Custom. Nothing extra is stored: the preset is recognised from the pack's questions, and the answers are headed "Buddy feedback: Sam" or "Teacher check: Ms Lee". **Buddies** on Progress → Real conversations is derived only from imported answer files: one row per name (case and spaces ignored, unnamed files together as "Unnamed listener") with the number of answer files and the last import.
+- **15.2 Club mode.** `/club` (lazy, not in the sidebar) from Exercises → Drills → **Club mode** and Ctrl+K → Run a club meeting.
+  - **Setup:** title, word of the day, agenda rows (speaker, kind, window in seconds: prepared 5–7 min, table topic 1–2, evaluation 2–3, other none) and the consent note.
+  - **Run view:** the light as a large block with the word, the time (Measured), Start, Stop and Next speaker. Then the Ah-counter (Your note; 1–6, Undo last), Word of the day used and Notes. For table topics, New topic from the roulette topics. Space, N and 1–6 work except while typing in a field. Each speaker is saved on Next speaker.
+  - **Lights:** green at the minimum, amber at the window's midpoint and red at the maximum, in TypeScript (`src/lib/social/club.ts`) and Rust (`light_reached`) alike.
+  - **Second window:** **Open timing light in a new window** opens a Tauri window labelled `club-light` at `#/club/light`, outside the app shell (`capabilities/club-light.json` grants it `core:default` only). The light's state goes to it with a Tauri event every 500 ms and on every change; the browser preview uses a BroadcastChannel and a pop-up.
+  - **Summary:** a table (speaker, time, light reached, counts, word used). Copy as text copies the Markdown from `club_summary`, and Save as file… writes it as `<title> <date>.md` through the save dialog. The Markdown ends "Timed with ClearPractice. Nobody was recorded."
+  - The browser preview has two sample meetings, one under way and one finished.
+- **15.3 Challenge codes.**
+  - **Format:** `CP1-<drill>-<seed>[-<options>]-<check>`. The drill is three letters (JAM, ROU, WBM, EMP, STC, PIT, GAU). The seed is eight Crockford base-32 characters: new plays now get such seeds. Options are a letter and an index into the bundled content, such as the topic, the speaking time or a re-spin. The check is two characters of CRC-10 over the rest.
+  - **Reading a code:** O reads as 0, and I and L read as 1. A wrong check says "That code doesn't look right. Check the last two characters." An unknown version, drill or option says "This challenge needs a newer ClearPractice."
+  - **Share challenge** at the end of a drill appears only when replaying the code gives the same plan, with your prompts and with the bundled ones. So a typed pitch idea or your own prompt hides it.
+  - **Enter a code:** on the Drills tab and in Ctrl+K (`/exercises?tab=drills&code=1`), checked as you type. Play opens the drill with that seed and its options.
+- **15.4 Copy my week.** A button in Progress's and Journey's headers opens a dialog with the exact note before anything is copied. The note gives practice days, minutes and takes (Measured), drills played with Just a Minute's best clean seconds (Estimated), and real conversations. A highlight is added only if you choose one: a reflection of the week, your own words, or none.
+- **Not done here:** no new XP or achievements for M15. Club meetings are not practice sessions and don't count toward levels.
+
 **Schema v24**
 ```sql
 -- Club mode (15.2). Counts and times only; no recording of anyone. Names are what

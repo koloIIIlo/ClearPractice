@@ -4,8 +4,23 @@ import { describe, expect, it, vi } from "vitest";
 import { createMockClient } from "@/lib/ipc/mock-client";
 import { renderWithApp } from "@/test/render";
 import { ImportListenerAnswers, ListenerAnswers } from "./ListenerAnswers";
+import { QUESTION_PRESETS } from "./ListenerPackDialog";
 
 describe("a listener's answers (14.4)", () => {
+  it("recognises buddy and teacher headings from the pack's questions", async () => {
+    for (const preset of QUESTION_PRESETS.filter((p) => p.id !== "listener")) {
+      const client = createMockClient();
+      await client.exportListenerPack("s-06-a1", [...preset.questions], "Alex", false);
+      const imported = await client.importListenerAnswers();
+      const name = preset.id === "teacher" ? "Ms Lee" : "Sam";
+      vi.spyOn(client, "listListenerFeedback").mockResolvedValue([{ ...imported!.feedback, listenerName: name }]);
+      const view = renderWithApp(<ListenerAnswers sessionId="s-06" />, { client });
+      expect(await screen.findByRole("heading", { name: `${preset.title}: ${name}` })).toBeInTheDocument();
+      expect(screen.getByText(preset.questions[0])).toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
   it("shows the listener's words apart from your notes", async () => {
     const user = userEvent.setup();
     const client = createMockClient();

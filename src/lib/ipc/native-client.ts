@@ -1,5 +1,5 @@
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { z } from "zod";
@@ -23,6 +23,7 @@ async function command<T>(name: string, schema: { parse(value: unknown): T }, ar
 
 /** Real-world shapes (M14), loaded with the first real-world call. */
 const rw = () => import("./schemas-real-world");
+const social = () => import("./schemas-social");
 
 /** Native history and recording; curriculum/analysis previews remain separate. */
 export function createNativeClient(): IpcClient {
@@ -30,6 +31,40 @@ export function createNativeClient(): IpcClient {
   const client: IpcClient = {
     ...preview,
     recordingMode: "native",
+    saveClubMeeting: async (input) => {
+      const s = await social();
+      return command("save_club_meeting", s.ClubMeetingView, { input: s.ClubMeetingInput.parse(input) });
+    },
+    listClubMeetings: async () => command("list_club_meetings", (await social()).ClubMeetingSummary.array()),
+    getClubMeeting: async (id) => command("get_club_meeting", (await social()).ClubMeetingView, { id }),
+    deleteClubMeeting: async (id) => { await command("delete_club_meeting", z.null(), { id }); },
+    saveClubSpeech: async (meetingId, speechId, result) => {
+      const s = await social();
+      return command("save_club_speech", s.ClubMeetingView, { meetingId, speechId, result: s.ClubSpeechResult.parse(result) });
+    },
+    clubSummary: (id) => command("club_summary", z.string(), { id }),
+    exportClubSummary: (id) => command("export_club_summary", z.string().nullable(), { id }),
+    openClubLight: async () => {
+      const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+      const existing = await WebviewWindow.getByLabel("club-light");
+      if (existing) { await existing.show(); await existing.setFocus(); return; }
+      await new Promise<void>((resolve, reject) => {
+        const light = new WebviewWindow("club-light", { url: "index.html#/club/light", title: "Club timing light", width: 800, height: 600, minWidth: 320, minHeight: 240 });
+        void light.once("tauri://created", () => resolve());
+        void light.once("tauri://error", (e) => reject(new Error(String(e.payload))));
+      });
+    },
+    publishClubLight: async (state) => {
+      const s = await social();
+      await emitTo("club-light", "club-light-state", s.ClubLightState.parse(state));
+    },
+    onClubLight: async (listener) => {
+      const s = await social();
+      return listen("club-light-state", ({ payload }) => {
+        const parsed = s.ClubLightState.safeParse(payload);
+        if (parsed.success) listener(parsed.data);
+      });
+    },
     listSessions: (filter) => command("list_sessions", S.SessionSummary.array(), { filter: filter ?? null }),
     getSession: (sessionId) => command("get_session", S.SessionDetail, { sessionId }),
     listTrash: () => command("list_trash", S.TrashList),

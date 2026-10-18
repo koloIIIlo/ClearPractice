@@ -33,6 +33,7 @@ function page<K extends string>(load: () => Promise<Record<K, ComponentType>>, n
  * The pathless layout route holds the error boundary so the shell stays usable on failure.
  */
 export const routes: RouteObject[] = [
+  { path: "club/light", lazy: page(() => import("@/features/social/ClubLight"), "ClubLight"), errorElement: <RouteError /> },
   {
     element: <AppShell />,
     children: [
@@ -40,6 +41,7 @@ export const routes: RouteObject[] = [
         errorElement: <RouteError />,
         children: [
           { index: true, element: <TodayPage />, handle: crumb("Today") },
+          { path: "club", lazy: page(() => import("@/features/social/ClubPage"), "ClubPage"), handle: crumb("Club mode") },
           {
             path: "exercises",
             handle: crumb("Exercises"),

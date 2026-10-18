@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "club-light",
+  "description": "The club timing light window (15.2), for a projector or second screen: it shows the light and the time it hears from the main window. No files, dialogs, audio or network.",
+  "windows": [
+    "club-light"
+  ],
+  "permissions": [
+    "core:default"
+  ]
+}

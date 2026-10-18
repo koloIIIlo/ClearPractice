@@ -1,8 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window: core app events, the custom title bar (drag, minimize, maximize, close), page zoom and opening https links in the system browser. Files, dialogs, audio and network go through the app's own commands only.",
-  "windows": ["main"],
+  "description": "Capability for the main window: core app events, the custom title bar (drag, minimize, maximize, close), page zoom, opening the club timing light window (15.2) and opening https links in the system browser. Files, dialogs, audio and network go through the app's own commands only.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
@@ -12,9 +14,15 @@
     "core:window:allow-close",
     "core:window:allow-is-maximized",
     "core:webview:allow-set-webview-zoom",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-set-focus",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://*" }]
+      "allow": [
+        {
+          "url": "https://*"
+        }
+      ]
     }
   ]
 }

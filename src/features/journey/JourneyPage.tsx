@@ -20,6 +20,7 @@ import { MissionCard } from "@/features/events/MissionCard";
 import { SkillMap } from "./SkillMap";
 import { useJourney } from "./useJourney";
 import { WeekGoal } from "./WeekGoal";
+import { CopyMyWeek } from "@/features/social/CopyMyWeek";
 
 /**
  * The home of the game layer (roadmap 9.1, D-29): your week, the eight areas,
@@ -43,7 +44,7 @@ export function JourneyPage() {
 
   return (
     <Page className="max-w-[72rem]">
-      <PageHeader title="Journey" description="Levels, effort points and achievements from your practice. They reward practising and never grade how your English sounds." />
+      <PageHeader title="Journey" description="Levels, effort points and achievements from your practice. They reward practising and never grade how your English sounds." actions={<CopyMyWeek />} />
       {!playful && (
         <p role="note" className="mb-4 rounded-panel border border-dashed px-4 py-3 text-meta text-muted-foreground">
           You're in Calm style. This page isn't in the sidebar. <Link className="text-primary underline underline-offset-2" to="/settings/practice">Practice style</Link>

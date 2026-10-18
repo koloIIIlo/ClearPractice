@@ -7,6 +7,8 @@ import { useIpc, type SessionFilter } from "./index";
 import { DEFAULT_PREFERENCES, type PhraseRating, type Preferences, type ProgressView, type SessionLength } from "./schemas";
 
 export const keys = {
+  clubMeetings: ["club", "meetings"] as const,
+  clubMeeting: (id: string) => ["club", "meetings", id] as const,
   status: ["status"] as const,
   today: (length: SessionLength) => ["today", length] as const,
   exercises: ["exercises"] as const,
@@ -61,6 +63,16 @@ export const keys = {
   listenerPacks: (sessionId?: string) => ["engagement", "listener-packs", sessionId ?? "all"] as const,
   listenerFeedback: (sessionId?: string) => ["engagement", "listener-answers", sessionId ?? "all"] as const,
 };
+
+export function useClubMeetings() {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.clubMeetings, queryFn: () => ipc.listClubMeetings() });
+}
+
+export function useClubMeeting(id: string | undefined) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.clubMeeting(id ?? ""), queryFn: () => ipc.getClubMeeting(id!), enabled: !!id });
+}
 
 /** Saved preferences; until they load, the defaults apply. */
 export function usePreferences() {

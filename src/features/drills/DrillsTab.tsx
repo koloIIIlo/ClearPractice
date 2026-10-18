@@ -1,7 +1,8 @@
 import { useId, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Check, Layers, Play, Shuffle } from "lucide-react";
+import { Check, KeyRound, Layers, Play, Shuffle, Timer } from "lucide-react";
+import { EnterCodeDialog } from "@/features/social/EnterCodeDialog";
 import { startMixedSet } from "@/features/learning/sprint";
 import { Panel } from "@/components/page";
 import { Button } from "@/components/ui/button";
@@ -165,6 +166,13 @@ export function DrillsTab() {
   const { playful } = usePracticeStyle();
   const levels = useLevels();
   const [filter, setFilter] = useState<"all" | AreaId>("all");
+  // Ctrl+K → Enter a challenge code arrives with ?code=1.
+  const [params, setParams] = useSearchParams();
+  const [entering, setEntering] = useState(() => params.get("code") === "1");
+  const closeCode = (open: boolean) => {
+    setEntering(open);
+    if (!open && params.has("code")) setParams((p) => { p.delete("code"); return p; }, { replace: true });
+  };
   const today = toLocalDate(new Date());
   const filterId = useId();
   const transcriptionMissing = status.data?.transcription.state === "needs_setup";
@@ -191,6 +199,12 @@ export function DrillsTab() {
           <Button variant="outline" onClick={() => navigate(`/drill/${randomDrill(facts.data, today, new Date().toISOString()).id}`)}>
             <Shuffle aria-hidden /> Random drill
           </Button>
+          <Button variant="outline" title="Play the same drill as a friend" onClick={() => setEntering(true)}>
+            <KeyRound aria-hidden /> Enter a code
+          </Button>
+          <Button variant="outline" asChild title="Timer, timing light and Ah-counter for a speaking club">
+            <Link to="/club"><Timer aria-hidden /> Club mode</Link>
+          </Button>
         </div>
       </div>
       <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Drills">
@@ -198,6 +212,7 @@ export function DrillsTab() {
           <DrillCard key={d.id} drill={d} stats={drillStats(facts.data, d)} playful={playful} rec={recommendation(d.id, levels)} transcriptionMissing={transcriptionMissing} />
         ))}
       </ul>
+      {entering && <EnterCodeDialog open={entering} onOpenChange={closeCode} />}
     </div>
   );
 }

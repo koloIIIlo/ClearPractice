@@ -1,5 +1,5 @@
 import type { NavigateFunction } from "react-router";
-import { BookOpenText, CalendarClock, Compass, Ear, History, MessageSquareHeart, Mic, Monitor, Moon, Play, Projector, Sun, Zap, ZoomIn, ZoomOut, Search, type LucideIcon } from "lucide-react";
+import { BookOpenText, CalendarClock, Compass, Ear, History, KeyRound, Timer, MessageSquareHeart, Mic, Monitor, Moon, Play, Projector, Sun, Zap, ZoomIn, ZoomOut, Search, type LucideIcon } from "lucide-react";
 import { EXERCISE_IDS } from "@/content/exercises";
 import { loadSequence, startSequence, stepUrl } from "@/features/practice/sequence";
 import { PLAN_STEPS } from "@/lib/today-plan";
@@ -67,6 +67,8 @@ export const PALETTE_ACTIONS: PaletteAction[] = [
   // Real world (M14).
   { id: "new-event", label: "Prepare for an event", keywords: ["event", "interview", "talk", "meeting", "plan", "presentation"], icon: CalendarClock, group: "Actions", visible: always, run: (ctx) => ctx.navigate("/events") },
   { id: "build-talk", label: "Build a talk", keywords: ["talk", "outline", "cue cards", "rehearse", "presentation"], icon: Projector, group: "Actions", visible: always, run: (ctx) => ctx.navigate("/events/talks/new") },
+  { id: "club", label: "Run a club meeting", keywords: ["club", "toastmasters", "timer", "ah-counter", "timing light", "table topics"], icon: Timer, group: "Actions", visible: always, run: (ctx) => ctx.navigate("/club") },
+  { id: "challenge-code", label: "Enter a challenge code", keywords: ["code", "challenge", "friend", "share", "drill"], icon: KeyRound, group: "Actions", visible: (ctx) => features(ctx).justAMinute, run: (ctx) => ctx.navigate("/exercises?tab=drills&code=1") },
   { id: "capsule", label: "Open the time capsule", keywords: ["capsule", "first", "compare", "month"], icon: History, group: "Actions", visible: always, run: (ctx) => ctx.navigate("/capsule") },
 ];
 

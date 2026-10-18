@@ -4,6 +4,11 @@
  * never resolves file paths itself.
  */
 import type {
+  ClubLightState,
+  ClubMeetingInput,
+  ClubMeetingSummary,
+  ClubMeetingView,
+  ClubSpeechResult,
   CapsuleOffer,
   EventInput,
   EventPlanItemInput,
@@ -493,6 +498,17 @@ export interface IpcClient {
   listListenerFeedback(sessionId?: string): Promise<ListenerFeedback[]>;
   /** Your judgement of whether the listener got your main point; null clears it. */
   setListenerJudgement(feedbackId: string, understood: boolean | null): Promise<ListenerFeedback>;
+  /** Club mode (M15.2): only times, counts and your notes; nobody is recorded. */
+  saveClubMeeting(input: ClubMeetingInput): Promise<ClubMeetingView>;
+  listClubMeetings(): Promise<ClubMeetingSummary[]>;
+  getClubMeeting(id: string): Promise<ClubMeetingView>;
+  deleteClubMeeting(id: string): Promise<void>;
+  saveClubSpeech(meetingId: string, speechId: string, result: ClubSpeechResult): Promise<ClubMeetingView>;
+  clubSummary(id: string): Promise<string>;
+  exportClubSummary(id: string): Promise<string | null>;
+  openClubLight(): Promise<void>;
+  publishClubLight(state: ClubLightState): Promise<void>;
+  onClubLight(listener: (state: ClubLightState) => void): Promise<() => void>;
   /** Insights (M8): where saved phrases turned up in takes (one phrase, or all). */
   listPhraseUses(phraseId?: string): Promise<PhraseUse[]>;
   /** Your yes/no note about a take; null clears it. */

@@ -1293,6 +1293,8 @@ export const EventItemKind = z.enum(["outline", "run_through", "qa_drill", "mock
 export type EventItemKind = z.infer<typeof EventItemKind>;
 /** The rest of M14's IPC shapes load with the first real-world call, off the start-up path. */
 export type { CapsuleOffer, EventInput, EventPlanItem, EventPlanItemInput, EventView, ListenerFeedback, ListenerImport, ListenerPack, MissionPick, PlannedEvent, RehearsalReport, RehearsalSection, Talk, TalkInput, TalkSection, TalkSectionInput, TalkView } from "./schemas-real-world";
+/** Club mode (M15.2), loaded on the first Club call. */
+export type { ClubCounter, ClubKind, ClubLightState, ClubMeeting, ClubMeetingInput, ClubMeetingSummary, ClubMeetingView, ClubSpeech, ClubSpeechInput, ClubSpeechResult } from "./schemas-social";
 
 // ── Drills (roadmap M10) ─────────────────────────────────────────────────────
 /** A mark made during a take (10.1): the time into the take, a kind, and keys or numbers. Never words you said. A rehearsal's move to the next cue card is a `section_mark` (14.3). */

@@ -311,6 +311,11 @@ export function createMockClient(): IpcClient {
   type EventsApi = Awaited<ReturnType<typeof realWorld>>["methods"];
   const soon = <K extends keyof EventsApi>(name: K) =>
     (async (...args: unknown[]) => ((await realWorld()).methods[name] as (...a: unknown[]) => unknown)(...args)) as EventsApi[K];
+  let socialLoad: Promise<ReturnType<typeof import("./mock-social").createMockSocial>> | null = null;
+  const social = () => (socialLoad ??= import("./mock-social").then((m) => m.createMockSocial()));
+  type SocialApi = Awaited<ReturnType<typeof social>>;
+  const socialSoon = <K extends keyof SocialApi>(name: K) =>
+    (async (...args: unknown[]) => ((await social())[name] as (...a: unknown[]) => unknown)(...args)) as SocialApi[K];
 
   /** Facts from the sample history (7.6): takes count as transcribed in the order the sample says. */
   const buildFacts = (conversations: S.FactConversation[], world: Pick<S.PracticeFacts, "events" | "listenerAnswers" | "missionPicks">): S.PracticeFacts => {
@@ -403,6 +408,16 @@ export function createMockClient(): IpcClient {
       return S.PracticeEvent.parse(structuredClone(events.find((e) => e.kind === "sequence_completed" && e.refId === refId)));
     },
     getPracticeFacts: async () => buildFacts((await partner()).facts(), (await realWorld()).facts()),
+    saveClubMeeting: socialSoon("saveClubMeeting"),
+    listClubMeetings: socialSoon("listClubMeetings"),
+    getClubMeeting: socialSoon("getClubMeeting"),
+    deleteClubMeeting: socialSoon("deleteClubMeeting"),
+    saveClubSpeech: socialSoon("saveClubSpeech"),
+    clubSummary: socialSoon("clubSummary"),
+    exportClubSummary: socialSoon("exportClubSummary"),
+    openClubLight: socialSoon("openClubLight"),
+    publishClubLight: socialSoon("publishClubLight"),
+    onClubLight: socialSoon("onClubLight"),
     pickMission: soon("pickMission"),
     getMissionPick: soon("getMissionPick"),
     clearMission: soon("clearMission"),

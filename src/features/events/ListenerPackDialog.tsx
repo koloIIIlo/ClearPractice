@@ -7,11 +7,23 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useIpc } from "@/lib/ipc";
 import { keys } from "@/lib/ipc/queries";
 
 /** The questions a pack starts with (14.4); you can change them. */
 export const DEFAULT_QUESTIONS = ["What was my main point?", "Where did you get lost, if anywhere?", "What helped you follow?"] as const;
+export const QUESTION_PRESETS = [
+  { id: "listener", title: "Listener", questions: DEFAULT_QUESTIONS },
+  { id: "buddy", title: "Buddy feedback", questions: ["What did I do well?", "One thing I could do better?", "Another thing that worked?", "Anything else? (optional)"] },
+  { id: "teacher", title: "Teacher check", questions: ["Any wording that sounded unnatural?", "Any sounds that were hard to understand?", "One thing to practise next?"] },
+] as const;
+
+/** Presets are recognised from the pack's questions; nothing extra is stored. */
+export function questionPreset(questions: readonly string[]) {
+  return QUESTION_PRESETS.find((p) => p.questions.length === questions.length && p.questions.every((q, i) => q === questions[i].trim()));
+}
+
 export const MAX_QUESTIONS = 5;
 const MAX_QUESTION_CHARS = 160;
 
@@ -26,6 +38,11 @@ export function ListenerPackDialog({ attemptId, open, onOpenChange }: { attemptI
   const qc = useQueryClient();
   const id = useId();
   const [questions, setQuestions] = useState<string[]>([...DEFAULT_QUESTIONS]);
+  const [preset, setPreset] = useState("listener");
+  const editQuestions = (change: (list: string[]) => string[]) => {
+    setPreset("custom");
+    setQuestions(change);
+  };
   const [from, setFrom] = useState("");
   const [transcript, setTranscript] = useState(false);
   const save = useMutation({
@@ -59,6 +76,17 @@ export function ListenerPackDialog({ attemptId, open, onOpenChange }: { attemptI
         >
           <fieldset className="space-y-2">
             <legend className="mb-1 font-medium">Questions</legend>
+            <Select value={preset} onValueChange={(value) => {
+              setPreset(value);
+              const chosen = QUESTION_PRESETS.find((p) => p.id === value);
+              if (chosen) setQuestions([...chosen.questions]);
+            }}>
+              <SelectTrigger aria-label="Questions" className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {QUESTION_PRESETS.map((p) => <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>)}
+                <SelectItem value="custom">Custom</SelectItem>
+              </SelectContent>
+            </Select>
             {questions.map((q, i) => (
               <div key={i} className="flex items-center gap-2">
                 <span aria-hidden className="w-5 shrink-0 text-right text-muted-foreground tabular-nums">
@@ -68,7 +96,7 @@ export function ListenerPackDialog({ attemptId, open, onOpenChange }: { attemptI
                   value={q}
                   maxLength={MAX_QUESTION_CHARS}
                   aria-label={`Question ${i + 1}`}
-                  onChange={(e) => setQuestions((list) => list.map((x, j) => (j === i ? e.target.value : x)))}
+                  onChange={(e) => editQuestions((list) => list.map((x, j) => (j === i ? e.target.value : x)))}
                 />
                 <Button
                   type="button"
@@ -76,13 +104,13 @@ export function ListenerPackDialog({ attemptId, open, onOpenChange }: { attemptI
                   size="icon"
                   aria-label={`Remove question ${i + 1}`}
                   disabled={questions.length === 1}
-                  onClick={() => setQuestions((list) => list.filter((_, j) => j !== i))}
+                  onClick={() => editQuestions((list) => list.filter((_, j) => j !== i))}
                 >
                   <X aria-hidden />
                 </Button>
               </div>
             ))}
-            <Button type="button" variant="outline" size="sm" disabled={questions.length >= MAX_QUESTIONS} onClick={() => setQuestions((list) => [...list, ""])}>
+            <Button type="button" variant="outline" disabled={questions.length >= MAX_QUESTIONS} onClick={() => editQuestions((list) => [...list, ""])}>
               <Plus aria-hidden /> Add a question
             </Button>
             <p className="text-meta text-muted-foreground">Up to {MAX_QUESTIONS} questions of up to {MAX_QUESTION_CHARS} characters.</p>

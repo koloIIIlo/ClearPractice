@@ -20,7 +20,7 @@ export function sample<T>(rand: Rand, items: readonly T[], n: number): T[] {
 }
 
 /** A fresh seed for a new play: letters, digits and dashes only (7.3). */
-export const newSeed = () => crypto.randomUUID().slice(0, 13);
+export const newSeed = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), (n) => "0123456789ABCDEFGHJKMNPQRSTVWXYZ"[n & 31]).join("");
 
 /** Bundled prompts that match, falling back to all bundled prompts. */
 export function promptsWhere(prompts: readonly PracticePrompt[], match: (p: PracticePrompt) => boolean): PracticePrompt[] {

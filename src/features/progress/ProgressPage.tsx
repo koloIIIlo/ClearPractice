@@ -27,6 +27,8 @@ import { useEvent, usePracticeFacts } from "@/lib/ipc/queries";
 import { capsuleMonths } from "@/lib/capsule";
 import { CapsuleChips } from "@/features/events/TimeCapsule";
 import { Trends } from "@/features/insights/Trends";
+import { Buddies } from "@/features/social/Buddies";
+import { CopyMyWeek } from "@/features/social/CopyMyWeek";
 
 /** Progress tabs: your speech profile first (8.7), then the evidence views. */
 type Tab = "profile" | ProgressView;
@@ -61,6 +63,7 @@ export function ProgressPage() {
     <Page>
       <PageHeader
         title="Progress"
+        actions={<CopyMyWeek />}
         description="Evidence from your own recordings. Rehearsed answers, unfamiliar tasks, and real conversations are kept apart, and nothing is combined into a single score."
       />
       <div className="mb-8">
@@ -413,6 +416,7 @@ function RealConversations() {
         <ListenerAnswers title="Listeners' answers" takeHref={(_, sessionId) => `/sessions/${sessionId}`} />
       </div>
       <aside className="space-y-6 text-meta text-muted-foreground">
+        <Buddies />
         <div>
           <p className="mb-2 font-medium text-foreground">Questions you can ask a listener</p>
           <ul className="list-disc space-y-1 pl-5">

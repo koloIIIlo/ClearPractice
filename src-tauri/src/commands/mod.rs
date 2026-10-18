@@ -9,3 +9,4 @@ pub mod events;
 pub mod insights;
 pub mod learning;
 pub mod partner;
+pub mod social;

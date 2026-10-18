@@ -9,6 +9,7 @@ import { formatDay } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
 import { useListenerFeedback, useListenerPacks } from "@/lib/ipc/queries";
 import type { ListenerFeedback } from "@/lib/ipc/schemas";
+import { questionPreset } from "./ListenerPackDialog";
 
 /** Import listener answers… (14.4): an answer file a listener sent back, checked before anything is kept. */
 export function ImportListenerAnswers({ size = "sm" }: { size?: "sm" | "default" }) {
@@ -58,10 +59,13 @@ function MainPoint({ feedback }: { feedback: ListenerFeedback }) {
 
 /** One listener's words: their answers to your questions, kept apart from your own notes. */
 export function ListenerWords({ feedback, takeHref }: { feedback: ListenerFeedback; takeHref?: string }) {
+  const preset = questionPreset(feedback.answers.map((a) => a.question));
+  const heading = preset && preset.id !== "listener" ? preset.title : "Listener's words";
+  const name = feedback.listenerName.trim();
   return (
     <li className="space-y-3 rounded-panel border bg-card p-4">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <h3 className="font-medium">Listener's words{feedback.listenerName && `: ${feedback.listenerName}`}</h3>
+        <h3 className="font-medium">{heading}{name && `: ${name}`}</h3>
         <span className="text-meta text-muted-foreground">Imported {formatDay(feedback.importedAt.slice(0, 10))}</span>
         {takeHref && <Link className="text-meta text-primary underline underline-offset-2" to={takeHref}>Open the take</Link>}
         <EvidenceLabel source="note" className="ml-auto" />

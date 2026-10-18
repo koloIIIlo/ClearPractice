@@ -33,6 +33,7 @@ ROUTES = [
     "/partner", "/partner/conversation-sample", "/upgrade/upgrade-sample", "/settings/partner",
     "/events", "/events/event-sample", "/events/talks/new", "/events/talks/talk-sample", "/events/talks/talk-sample/cards",
     "/events/talks/talk-sample/rehearse", "/events/talks/talk-sample/reports", "/capsule",
+    "/club", "/club?meeting=club-sample", "/club?meeting=club-finished", "/club/light",
     "/progress?view=real&mission=dinner-story", "/progress?view=real&form=aar&event=event-sample",
     "/settings/audio", "/settings/practice", "/settings/appearance", "/settings/transcription",
     "/settings/coaching", "/settings/data", "/settings/about", "/nope",
