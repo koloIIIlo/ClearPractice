@@ -7,6 +7,7 @@ import { IpcError, type IpcClient, type PracticeContext } from "./client";
 import * as data from "./mock-data";
 import { EXPOSURE_TEMPLATES } from "@/content/exposure-templates";
 import type { MockPartnerHost } from "./mock-partner";
+import type { MockEventsHost } from "./mock-events";
 import * as S from "./schemas";
 import { searchLibrary } from "../search";
 import { isWeekStart, RECORD_UNITS, validateUnlockInput } from "../engagement/validate";
@@ -49,6 +50,10 @@ export const MOCK_XP: Record<string, { xp: number; dailyCap?: number }> = {
   after_action: { xp: 20 },
   conversation: { xp: 30 },
   upgrade: { xp: 20 },
+  mission: { xp: 40 },
+  event_debrief: { xp: 40 },
+  listener_answers: { xp: 30 },
+  capsule: { xp: 20 },
 };
 /** Takes shorter than this earn nothing; only the first six takes of a session count. */
 const MIN_TAKE_MS = 10_000;
@@ -268,6 +273,8 @@ export function createMockClient(): IpcClient {
     if (S.isDrillType(session.exerciseType)) award("drill_round", session.id, session.localDate, { sessionId: session.id, attemptId });
     // Upgrade loop (M13): the retell take completes it.
     if (session.exerciseType === "upgrade" && ctx.step?.key === "retell") award("upgrade", session.id, session.localDate, { sessionId: session.id, attemptId });
+    // The time capsule (M14): once per capsule session.
+    if (session.exerciseType === "capsule") award("capsule", session.id, session.localDate, { sessionId: session.id, attemptId });
   };
   // Conversation partner (M13): sample takes read their sample transcript; simulated takes have none.
   const sampleTakes = new Set(sessions.flatMap((s) => s.attempts.map((a) => a.id)));
@@ -288,9 +295,25 @@ export function createMockClient(): IpcClient {
   type PartnerApi = Awaited<ReturnType<typeof partner>>["methods"];
   const later = <K extends keyof PartnerApi>(name: K) =>
     (async (...args: unknown[]) => ((await partner()).methods[name] as (...a: unknown[]) => unknown)(...args)) as PartnerApi[K];
+  // Real-world practice (M14), also loaded on first use.
+  const eventsHost: MockEventsHost = {
+    sessions,
+    trashed: (sessionId) => trash.has(sessionId),
+    award: (kind, refId, localDate, ids) => award(kind, refId, localDate, ids),
+    takeEvents: (attemptId) => takeEvents.get(attemptId) ?? [],
+    transferReviews: () => transferReviews,
+    routineRuns: () => routineRuns,
+    conversations: async () => (await partner()).facts(),
+    takeText: (attemptId) => partnerHost.takeText(attemptId),
+  };
+  let eventsLoad: Promise<ReturnType<typeof import("./mock-events").createMockEvents>> | null = null;
+  const realWorld = () => (eventsLoad ??= import("./mock-events").then((m) => m.createMockEvents(eventsHost)));
+  type EventsApi = Awaited<ReturnType<typeof realWorld>>["methods"];
+  const soon = <K extends keyof EventsApi>(name: K) =>
+    (async (...args: unknown[]) => ((await realWorld()).methods[name] as (...a: unknown[]) => unknown)(...args)) as EventsApi[K];
 
   /** Facts from the sample history (7.6): takes count as transcribed in the order the sample says. */
-  const buildFacts = (conversations: S.FactConversation[]): S.PracticeFacts => {
+  const buildFacts = (conversations: S.FactConversation[], world: Pick<S.PracticeFacts, "events" | "listenerAnswers" | "missionPicks">): S.PracticeFacts => {
     const shown = sessions.filter((s) => !trash.has(s.id) && (s.attemptCount > 0 || s.status === "completed"));
     const filled = (text: string | undefined | null) => !!text && text.trim().length > 0;
     const exposure = exposureSteps.map((s) => ({
@@ -298,7 +321,7 @@ export function createMockClient(): IpcClient {
       attempts: exposureAttempts.filter((a) => a.stepId === s.id && !a.deleted).map((a) => ({ localDate: a.localDate, before: a.beforeRating, after: a.afterRating, outcome: a.outcome, done: OUTCOME_DONE.has(a.outcome) })),
     }));
     return S.PracticeFacts.parse({
-      factsVersion: 7,
+      factsVersion: 8,
       generatedAt: new Date().toISOString(),
       today: data.today(),
       transcriptionAvailable: false,
@@ -333,7 +356,7 @@ export function createMockClient(): IpcClient {
       })),
       transferReviews: transferReviews.map((r) => ({
         id: r.id, localDate: r.localDate, hasListenerWords: filled(r.listenerText), neededClarification: filled(r.clarification), hasSuccess: filled(r.success),
-        hasNextFocus: filled(r.nextFocus) || filled(r.extra?.nextTime), flow: r.flow, tags: r.tags, kind: r.kind,
+        hasNextFocus: filled(r.nextFocus) || filled(r.extra?.nextTime), flow: r.flow, tags: r.tags, kind: r.kind, missionId: r.missionId, eventId: r.extra?.eventId ?? null,
       })),
       phrases: phrases.map((p) => ({ id: p.id, createdAt: new Date().toISOString(), starter: false, deleted: false })),
       phraseReviews: [],
@@ -343,6 +366,7 @@ export function createMockClient(): IpcClient {
       programme: activeProgramme(),
       exposure,
       conversations,
+      ...world,
     });
   };
 
@@ -378,7 +402,31 @@ export function createMockClient(): IpcClient {
       award("sequence_completed", refId, localDate, { sessionId: sessionIds[0] });
       return S.PracticeEvent.parse(structuredClone(events.find((e) => e.kind === "sequence_completed" && e.refId === refId)));
     },
-    getPracticeFacts: async () => buildFacts((await partner()).facts()),
+    getPracticeFacts: async () => buildFacts((await partner()).facts(), (await realWorld()).facts()),
+    pickMission: soon("pickMission"),
+    getMissionPick: soon("getMissionPick"),
+    clearMission: soon("clearMission"),
+    saveEvent: soon("saveEvent"),
+    saveEventPlan: soon("saveEventPlan"),
+    setPlanItemDone: soon("setPlanItemDone"),
+    linkEventTalk: soon("linkEventTalk"),
+    getEvent: soon("getEvent"),
+    listEvents: soon("listEvents"),
+    deleteEvent: soon("deleteEvent"),
+    saveTalk: soon("saveTalk"),
+    getTalk: soon("getTalk"),
+    listTalks: soon("listTalks"),
+    deleteTalk: soon("deleteTalk"),
+    recordRehearsal: soon("recordRehearsal"),
+    rehearsalReport: soon("rehearsalReport"),
+    listRehearsals: soon("listRehearsals"),
+    capsuleOffer: soon("capsuleOffer"),
+    dismissCapsule: soon("dismissCapsule"),
+    exportListenerPack: soon("exportListenerPack"),
+    importListenerAnswers: soon("importListenerAnswers"),
+    listListenerPacks: soon("listListenerPacks"),
+    listListenerFeedback: soon("listListenerFeedback"),
+    setListenerJudgement: soon("setListenerJudgement"),
     startConversation: later("startConversation"),
     getConversation: later("getConversation"),
     listConversations: later("listConversations"),
@@ -552,8 +600,11 @@ export function createMockClient(): IpcClient {
     addTakeEvents: async (attemptId, marks) => {
       const found = attemptOf(attemptId);
       if (!found) throw new IpcError("not_found", "This take is unavailable.");
-      if (!S.isDrillType(found.session.exerciseType)) throw new IpcError("invalid", "This take isn't part of a drill.");
+      const rehearsal = found.session.exerciseType === "rehearsal";
+      if (!S.isDrillType(found.session.exerciseType) && !rehearsal) throw new IpcError("invalid", "This take isn't part of a drill.");
       const parsed = marks.map((m) => S.TakeMark.parse(m));
+      // A rehearsal keeps only section marks (14.3), and a drill never does.
+      if (parsed.some((m) => (m.kind === "section_mark") !== rehearsal)) throw new IpcError("invalid", "A mark from this round is invalid.");
       const stored = takeEvents.get(attemptId) ?? [];
       if (stored.length + parsed.length > 200) throw new IpcError("invalid", "A round keeps at most 200 marks.");
       const createdAt = new Date().toISOString();
@@ -739,15 +790,19 @@ export function createMockClient(): IpcClient {
     listTransferReviews: async () => [...transferReviews].sort((a, b) => b.localDate.localeCompare(a.localDate) || b.createdAt.localeCompare(a.createdAt)),
     addTransferReview: async (input) => {
       if (input.situation.trim().length < 3) throw new IpcError("invalid", "Describe the situation in a few words.");
-      const { flow = null, tags = [], kind = "reflection", extra = null, ...text } = input;
+      const { flow = null, tags = [], kind = "reflection", extra = null, missionId = null, ...text } = input;
       if ((kind === "aar") !== (extra !== null)) throw new IpcError("invalid", "An after-action review needs its answers.");
-      if (extra && Object.values(extra).every((v) => !v.trim())) throw new IpcError("invalid", "Answer at least one of the four questions.");
-      const trimmed = Object.fromEntries(Object.entries(text).map(([k, v]) => [k, String(v).trim()])) as Omit<S.TransferInput, "flow" | "tags" | "kind" | "extra">;
-      const answers = extra && { planned: extra.planned.trim(), happened: extra.happened.trim(), why: extra.why.trim(), nextTime: extra.nextTime.trim() };
-      const review: S.TransferReview = { ...trimmed, flow, tags: [...new Set(tags)], kind, extra: answers, id: `transfer-${Date.now()}-${transferReviews.length}`, createdAt: new Date().toISOString() };
+      if (extra && [extra.planned, extra.happened, extra.why, extra.nextTime].every((v) => !v.trim())) throw new IpcError("invalid", "Answer at least one of the four questions.");
+      // A mission's reflection (14.1) or an event's debrief (14.2) is checked before it is saved.
+      const world = missionId || extra?.eventId ? await realWorld() : null;
+      const week = world ? world.checkReview({ ...input, kind, missionId }) : null;
+      const trimmed = Object.fromEntries(Object.entries(text).map(([k, v]) => [k, String(v).trim()])) as Omit<S.TransferInput, "flow" | "tags" | "kind" | "extra" | "missionId">;
+      const answers = extra && { planned: extra.planned.trim(), happened: extra.happened.trim(), why: extra.why.trim(), nextTime: extra.nextTime.trim(), ...(extra.eventId ? { eventId: extra.eventId } : {}) };
+      const review: S.TransferReview = { ...trimmed, flow, tags: [...new Set(tags)], kind, extra: answers, missionId, id: `transfer-${Date.now()}-${transferReviews.length}`, createdAt: new Date().toISOString() };
       transferReviews.push(review);
       award("transfer_review", review.id, review.localDate);
       if (kind === "aar") award("after_action", review.id, review.localDate);
+      world?.logReview(review, week);
       return review;
     },
     deleteTransferReview: async (reviewId) => {

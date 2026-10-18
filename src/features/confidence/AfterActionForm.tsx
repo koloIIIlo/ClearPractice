@@ -10,6 +10,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { AAR_QUESTIONS, FLOWS, KINDS, RECENT_DAYS } from "@/features/progress/reflection-options";
 import { formatRelativeDay } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
+import { keys } from "@/lib/ipc/queries";
 import type { AfterAction, TransferFlow, TransferTag } from "@/lib/ipc/schemas";
 
 const EMPTY: AfterAction = { planned: "", happened: "", why: "", nextTime: "" };
@@ -18,15 +19,15 @@ const EMPTY: AfterAction = { planned: "", happened: "", why: "", nextTime: "" };
  * The after-action review (roadmap 12.4): the US Army's four-question debrief
  * after a real talk, in plain words. It is a kind of reflection, so it counts
  * toward Courage and real conversations. The listener's words stay apart from
- * your own reading.
+ * your own reading. Opened from an event's Debrief (14.2), it debriefs that event.
  */
-export function AfterActionForm({ onSaved }: { onSaved?: () => void }) {
+export function AfterActionForm({ onSaved, event }: { onSaved?: () => void; event?: { id: string; title: string } }) {
   const ipc = useIpc();
   const qc = useQueryClient();
   const id = useId();
   const [days] = useState(RECENT_DAYS);
   const [date, setDate] = useState(days[0]);
-  const [talk, setTalk] = useState("");
+  const [talk, setTalk] = useState(event?.title ?? "");
   const [answers, setAnswers] = useState<AfterAction>(EMPTY);
   const [listener, setListener] = useState("");
   const [flow, setFlow] = useState<TransferFlow | null>(null);
@@ -35,7 +36,8 @@ export function AfterActionForm({ onSaved }: { onSaved?: () => void }) {
     mutationFn: () =>
       ipc.addTransferReview({
         localDate: date, situation: talk.trim(), preparation: "", listenerText: listener.trim(), clarification: "", success: "", selfReport: "", nextFocus: "",
-        flow, tags: kinds, kind: "aar", extra: { planned: answers.planned.trim(), happened: answers.happened.trim(), why: answers.why.trim(), nextTime: answers.nextTime.trim() },
+        flow, tags: kinds, kind: "aar",
+        extra: { planned: answers.planned.trim(), happened: answers.happened.trim(), why: answers.why.trim(), nextTime: answers.nextTime.trim(), ...(event ? { eventId: event.id } : {}) },
       }),
     onSuccess: async () => {
       setTalk("");
@@ -44,11 +46,12 @@ export function AfterActionForm({ onSaved }: { onSaved?: () => void }) {
       setFlow(null);
       setKinds([]);
       toast("After-action review saved on this computer.");
-      await Promise.all([qc.invalidateQueries({ queryKey: ["transfer-reviews"] }), qc.invalidateQueries({ queryKey: ["today"] })]);
+      // A debrief finishes its event's plan item (14.2); the rest refreshes through the engagement tag.
+      await Promise.all([qc.invalidateQueries({ queryKey: ["transfer-reviews"] }), qc.invalidateQueries({ queryKey: ["today"] }), ...(event ? [qc.invalidateQueries({ queryKey: keys.realEvents })] : [])]);
       onSaved?.();
     },
   });
-  const answered = Object.values(answers).some((a) => a.trim().length > 0);
+  const answered = [answers.planned, answers.happened, answers.why, answers.nextTime].some((a) => a.trim().length > 0);
   return (
     <form
       className="space-y-4"

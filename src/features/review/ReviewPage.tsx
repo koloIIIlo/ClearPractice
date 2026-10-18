@@ -20,6 +20,8 @@ import { formatClock, formatLongDay } from "@/lib/format";
 import { IpcError, useIpc } from "@/lib/ipc";
 import { NativeSession } from "@/features/sessions/NativeSession";
 import { MoveToTrashButton } from "@/features/sessions/TrashPage";
+import { AskListenerButton } from "@/features/events/ListenerPackDialog";
+import { ListenerAnswers } from "@/features/events/ListenerAnswers";
 import { useAttemptReview, useServiceStatus, useSession } from "@/lib/ipc/queries";
 import type { AttemptReview, Observation, SessionDetail } from "@/lib/ipc/schemas";
 import { cn } from "@/lib/utils";
@@ -78,6 +80,7 @@ function Review({ session, attemptId, ordinal }: { session: SessionDetail; attem
         <div className="flex flex-wrap items-center gap-2">
           <MoveToTrashButton session={session} />
           <span aria-hidden className="mx-1 h-6 w-px bg-border" />
+          <AskListenerButton attemptId={attemptId} size="default" />
           {session.attempts.length > 1 && (
             <Button variant="outline" asChild>
               <Link to={`/sessions/${session.id}/compare`}>
@@ -116,6 +119,9 @@ function Review({ session, attemptId, ordinal }: { session: SessionDetail; attem
       <QueryView query={review} loading={<LoadingBlock rows={4} label="Loading transcript" />}>
         {(r) => <ReviewBody session={session} review={r} durationMs={attempt.durationMs} />}
       </QueryView>
+      <div className="mt-6">
+        <ListenerAnswers sessionId={session.id} title="Listeners' answers" withImport />
+      </div>
     </>
   );
 }

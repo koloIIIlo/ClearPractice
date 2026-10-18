@@ -110,6 +110,26 @@ export const routes: RouteObject[] = [
             ],
           },
           { path: "upgrade/:runId", lazy: page(() => import("@/features/partner/UpgradeLoop"), "UpgradeLoopPage"), handle: crumb("Upgrade loop") },
+          // Real world (M14): events and their plans, talks, rehearsals and the time capsule.
+          {
+            path: "events",
+            handle: crumb("Events"),
+            children: [
+              { index: true, lazy: page(() => import("@/features/events/EventsPage"), "EventsPage") },
+              {
+                path: "talks/:talkId",
+                handle: crumb("Talk"),
+                children: [
+                  { index: true, lazy: page(() => import("@/features/events/TalkBuilder"), "TalkBuilderPage") },
+                  { path: "cards", lazy: page(() => import("@/features/events/CueCards"), "CueCardsPage"), handle: crumb("Cue cards") },
+                  { path: "rehearse", lazy: page(() => import("@/features/events/Rehearse"), "RehearsePage"), handle: crumb("Rehearse") },
+                  { path: "reports", lazy: page(() => import("@/features/events/RehearsalReport"), "RehearsalReportsPage"), handle: crumb("Rehearsal reports") },
+                ],
+              },
+              { path: ":eventId", lazy: page(() => import("@/features/events/EventPage"), "EventPage"), handle: crumb("Event") },
+            ],
+          },
+          { path: "capsule", lazy: page(() => import("@/features/events/TimeCapsule"), "TimeCapsulePage"), handle: crumb("Time capsule") },
           { path: "progress", lazy: page(() => import("@/features/progress/ProgressPage"), "ProgressPage"), handle: crumb("Progress") },
           { path: "settings/:section?", lazy: page(() => import("@/features/settings/SettingsPage"), "SettingsPage"), handle: crumb("Settings") },
           { path: "welcome", lazy: page(() => import("@/features/onboarding/WelcomePage"), "WelcomePage"), handle: crumb("Welcome") },

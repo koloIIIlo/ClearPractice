@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Heart, History, Mic, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { BookOpen, Heart, History, Mic, Pencil, Plus, Projector, Search, Trash2 } from "lucide-react";
 import { EmptyState, Page, PageHeader, QueryView } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -206,9 +206,17 @@ function PromptCollection() {
             <History aria-hidden /> Due to answer again ({due?.length ?? 0})
           </Button>
         )}
-        <Button className="ml-auto" variant="outline" disabled={adding} onClick={() => setAdding(true)}>
-          <Plus aria-hidden /> Add your own prompt
-        </Button>
+        <div className="ml-auto flex flex-wrap gap-2">
+          {/* A talk with an outline, cue cards and timed rehearsals (14.3). */}
+          <Button variant="outline" asChild>
+            <Link to="/events/talks/new">
+              <Projector aria-hidden /> Build a talk
+            </Link>
+          </Button>
+          <Button variant="outline" disabled={adding} onClick={() => setAdding(true)}>
+            <Plus aria-hidden /> Add your own prompt
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">

@@ -1,5 +1,5 @@
 import {
-  BookOpen, Bomb, CalendarDays, Crown, Dice5, Dices, Gauge, Headphones, Highlighter, MessageSquareQuote, MessagesSquare, Presentation, Repeat2, Scale, Sparkles, Speech, Swords, TextQuote, Timer, Users,
+  BookOpen, Bomb, CalendarDays, Crown, Dice5, Dices, Gauge, Headphones, Highlighter, History, MessageSquareQuote, MessagesSquare, Presentation, Projector, Repeat2, Scale, Sparkles, Speech, Swords, TextQuote, Timer, Users,
   type LucideIcon,
 } from "lucide-react";
 import type { ExerciseDefinition, ExerciseType } from "@/lib/ipc/schemas";
@@ -120,6 +120,9 @@ export const EXERCISE_TYPE_INFO: Record<ExerciseType, { label: string; icon: Luc
   // The conversation partner (M13): your turns in a conversation, and an upgrade loop's shadow and retell takes.
   conversation: { label: "Conversation", icon: MessagesSquare },
   upgrade: { label: "Upgrade loop", icon: Sparkles },
+  // Real world (M14): a talk's rehearsal and the monthly time capsule.
+  rehearsal: { label: "Talk rehearsal", icon: Projector },
+  capsule: { label: "Time capsule", icon: History },
 };
 
 /** The four core types, listed first in filters; other types appear once you have used them. */

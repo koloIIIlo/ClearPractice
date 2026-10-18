@@ -31,6 +31,9 @@ ROUTES = [
     "/exercises?tab=programmes", "/exercises?tab=prompts&due=1", "/catch-it", "/practice/ex-repeat?reanswer=s-01-a1",
     "/confidence", "/confidence/routine", "/progress?view=real&form=aar",
     "/partner", "/partner/conversation-sample", "/upgrade/upgrade-sample", "/settings/partner",
+    "/events", "/events/event-sample", "/events/talks/new", "/events/talks/talk-sample", "/events/talks/talk-sample/cards",
+    "/events/talks/talk-sample/rehearse", "/events/talks/talk-sample/reports", "/capsule",
+    "/progress?view=real&mission=dinner-story", "/progress?view=real&form=aar&event=event-sample",
     "/settings/audio", "/settings/practice", "/settings/appearance", "/settings/transcription",
     "/settings/coaching", "/settings/data", "/settings/about", "/nope",
 ]

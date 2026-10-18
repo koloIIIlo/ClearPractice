@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your thoughts on a recording</title>
+<style>
+:root { color-scheme: light dark; --bg: #f6f7f4; --surface: #ffffff; --text: #18251f; --muted: #526159; --accent: #176a50; --on-accent: #ffffff; --border: #d6ded7; }
+@media (prefers-color-scheme: dark) { :root { --bg: #111714; --surface: #18201c; --text: #e6ece8; --muted: #a9b8b0; --accent: #5fd0a2; --on-accent: #0a1f16; --border: #2c3a33; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 "Segoe UI", system-ui, sans-serif; }
+main { max-width: 42rem; margin: 0 auto; padding: 2rem 1rem 4rem; }
+h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 0.5rem; }
+p { margin: 0.5rem 0; }
+.muted { color: var(--muted); }
+audio { width: 100%; margin: 1rem 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; margin: 1rem 0; }
+label { display: block; font-weight: 600; margin: 0 0 0.25rem; }
+textarea, input { width: 100%; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.75rem; }
+textarea { min-height: 6rem; resize: vertical; }
+button { font: inherit; font-weight: 600; background: var(--accent); color: var(--on-accent); border: 0; border-radius: 999px; padding: 0.6rem 1.4rem; min-height: 40px; cursor: pointer; }
+button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+summary { cursor: pointer; }
+ol { padding-left: 1.25rem; }
+li { margin: 0 0 1rem; }
+</style>
+</head>
+<body>
+<main>
+<h1 id="title">Your thoughts on a recording</h1>
+<p id="intro" class="muted"></p>
+<audio controls preload="metadata" src="audio.wav">This browser can't play the recording here. Open audio.wav from the same folder instead.</audio>
+<details id="transcript-box" class="card" hidden><summary>Show what was said</summary><p id="transcript"></p></details>
+<form id="form" class="card" novalidate>
+<ol id="questions"></ol>
+<label for="name">Your name (optional)</label>
+<input id="name" maxlength="60" autocomplete="name">
+<p><button type="submit">Save my answers</button></p>
+</form>
+<p id="done" role="status" class="muted"></p>
+</main>
+<script id="pack" type="application/json">{{PACK}}</script>
+<script>
+(function () {
+  "use strict";
+  var pack = JSON.parse(document.getElementById("pack").textContent);
+  var who = pack.from || "";
+  var back = who || "them";
+  document.title = (who ? who + " asked" : "Someone asked") + " for your thoughts";
+  document.getElementById("title").textContent = document.title;
+  var about = pack.minutes > 0 ? " (about " + pack.minutes + " min)" : "";
+  document.getElementById("intro").textContent = "Listen to the recording" + about + ", then answer the questions. Nothing is sent anywhere: save the answer file and send it back to " + back + " however you like.";
+  if (pack.transcript) {
+    document.getElementById("transcript").textContent = pack.transcript;
+    document.getElementById("transcript-box").hidden = false;
+  }
+  var list = document.getElementById("questions");
+  pack.questions.forEach(function (question, i) {
+    var item = document.createElement("li");
+    var label = document.createElement("label");
+    label.htmlFor = "answer-" + i;
+    label.textContent = question;
+    var box = document.createElement("textarea");
+    box.id = "answer-" + i;
+    box.maxLength = 2000;
+    item.appendChild(label);
+    item.appendChild(box);
+    list.appendChild(item);
+  });
+  document.getElementById("form").addEventListener("submit", function (event) {
+    event.preventDefault();
+    var answers = pack.questions.map(function (unused, i) { return document.getElementById("answer-" + i).value; });
+    var body = JSON.stringify({ format: "clearpractice-listener-answers", version: 1, packId: pack.packId, name: document.getElementById("name").value.slice(0, 60), answers: answers, answeredAt: new Date().toISOString() }, null, 2);
+    var link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+    link.download = "answers.cpanswer.json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    document.getElementById("done").textContent = "Your browser saved answers.cpanswer.json, usually in Downloads. Send that file back to " + back + ".";
+  });
+})();
+</script>
+</body>
+</html>

@@ -34,7 +34,8 @@ describe("app shell", () => {
     const row = await screen.findByRole("link", { name: "A habit I want to change" });
     row.focus();
     await user.keyboard("{Enter}");
-    expect(await screen.findByRole("heading", { level: 1, name: "A habit I want to change" })).toBeInTheDocument();
+    // The review page's code loads on first visit; a busy test worker can take more than a second.
+    expect(await screen.findByRole("heading", { level: 1, name: "A habit I want to change" }, { timeout: 5_000 })).toBeInTheDocument();
     expect(await screen.findByRole("tab", { name: "As transcribed" })).toBeInTheDocument();
   });
 
@@ -47,7 +48,7 @@ describe("app shell", () => {
     // The palette's code loads on first use; a busy test worker can take more than a second.
     const dialog = await screen.findByRole("dialog", undefined, { timeout: 5_000 });
     await user.type(within(dialog).getByRole("combobox"), "track of time");
-    expect(await within(dialog).findByText("I lost track of time")).toBeInTheDocument();
+    expect(await within(dialog).findByText("I lost track of time", undefined, { timeout: 5_000 })).toBeInTheDocument();
   });
 
   it("shows a not-found page for unknown routes without losing the shell", async () => {

@@ -17,6 +17,7 @@ pub mod clips;
 pub mod clipsplit;
 pub mod conversation;
 pub mod linkaudio;
+pub mod listener_pack;
 pub mod preferences;
 pub mod prosody;
 pub mod sources;
@@ -2672,6 +2673,30 @@ pub fn run() {
             commands::partner::get_upgrade_run,
             commands::partner::preview_conversation_feedback,
             commands::partner::request_conversation_feedback,
+            commands::events::pick_mission,
+            commands::events::get_mission_pick,
+            commands::events::clear_mission,
+            commands::events::save_event,
+            commands::events::save_event_plan,
+            commands::events::set_plan_item_done,
+            commands::events::link_event_talk,
+            commands::events::get_event,
+            commands::events::list_events,
+            commands::events::delete_event,
+            commands::events::save_talk,
+            commands::events::get_talk,
+            commands::events::list_talks,
+            commands::events::delete_talk,
+            commands::events::record_rehearsal,
+            commands::events::rehearsal_report,
+            commands::events::list_rehearsals,
+            commands::events::capsule_offer,
+            commands::events::dismiss_capsule,
+            commands::events::export_listener_pack,
+            commands::events::import_listener_answers,
+            commands::events::list_listener_packs,
+            commands::events::list_listener_feedback,
+            commands::events::set_listener_judgement,
             commands::drills::add_take_events,
             commands::drills::list_take_events,
             commands::drills::get_activity_result,

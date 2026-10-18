@@ -439,7 +439,7 @@ fn a07_backup_restores_every_record_and_checksum_into_an_empty_profile() {
         conditions: crate::storage::database::prompts::Conditions { familiarity: "unfamiliar".into(), preparation_seconds: 15, target_seconds: 90, audience: None, follow_up: false } }).unwrap();
     db.set_prompt_favorite("p-habit", true).unwrap();
     db.add_transfer_review(&crate::storage::database::transfer::TransferInput { local_date: "2026-10-12".into(), situation: "Explained a decision".into(), preparation: String::new(),
-        listener_text: "You want to wait.".into(), clarification: String::new(), success: "The example".into(), self_report: "The reason came late.".into(), next_focus: "Lead with it".into(), flow: None, tags: Vec::new(), kind: None, extra: None }).unwrap();
+        listener_text: "You want to wait.".into(), clarification: String::new(), success: "The example".into(), self_report: "The reason came late.".into(), next_focus: "Lead with it".into(), flow: None, tags: Vec::new(), kind: None, extra: None, mission_id: None }).unwrap();
     db.record_progression("advance", "3 unfamiliar sessions on 2 days").unwrap();
     let mut prefs = crate::preferences::load(&db).unwrap();
     prefs.goals = vec!["clarity".into()];
@@ -530,7 +530,7 @@ fn sha256_bytes(bytes: &[u8]) -> String {
 /// Turns a current (v18) profile back into a populated v14 one.
 fn downgrade_to_v14(root: &Path) {
     let conn = Connection::open(root.join("database/app.sqlite")).unwrap();
-    conn.execute_batch("DROP TABLE conversation_feedback; DROP TABLE upgrade_runs; DROP TABLE conversation_turns; DROP TABLE conversations; DROP TABLE routine_runs; DROP TABLE segment_marks; DROP INDEX exposure_attempts_step; DROP TABLE exposure_attempts; DROP TABLE exposure_steps; ALTER TABLE transfer_reviews DROP COLUMN extra; ALTER TABLE transfer_reviews DROP COLUMN kind; DROP TABLE catch_runs; DROP TABLE programme_steps; DROP TABLE programmes; DROP TABLE self_predictions; DROP INDEX take_events_attempt; DROP TABLE take_events; DROP TABLE activity_results; DROP TABLE weekly_quests; DROP INDEX personal_records_record; DROP TABLE personal_records; DROP TABLE achievements; DROP TABLE skill_levels; ALTER TABLE transfer_reviews DROP COLUMN tags; ALTER TABLE transfer_reviews DROP COLUMN flow; DROP INDEX comparisons_b; DROP INDEX comparisons_a; DROP TABLE comparisons; DROP TABLE audio_measures; DROP TABLE self_checks; DROP INDEX phrase_uses_attempt; DROP TABLE phrase_uses; DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DELETE FROM app_settings WHERE key='engagement_backfill_v1'; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; PRAGMA user_version=14;").unwrap();
+    conn.execute_batch("DROP TABLE capsule_months; DROP TABLE listener_feedback; DROP TABLE listener_packs; DROP TABLE rehearsals; DROP TABLE talk_sections; DROP TABLE talks; DROP TABLE event_plan_items; DROP TABLE events; ALTER TABLE transfer_reviews DROP COLUMN event_id; ALTER TABLE transfer_reviews DROP COLUMN mission_id; DROP TABLE mission_picks; DROP TABLE conversation_feedback; DROP TABLE upgrade_runs; DROP TABLE conversation_turns; DROP TABLE conversations; DROP TABLE routine_runs; DROP TABLE segment_marks; DROP INDEX exposure_attempts_step; DROP TABLE exposure_attempts; DROP TABLE exposure_steps; ALTER TABLE transfer_reviews DROP COLUMN extra; ALTER TABLE transfer_reviews DROP COLUMN kind; DROP TABLE catch_runs; DROP TABLE programme_steps; DROP TABLE programmes; DROP TABLE self_predictions; DROP INDEX take_events_attempt; DROP TABLE take_events; DROP TABLE activity_results; DROP TABLE weekly_quests; DROP INDEX personal_records_record; DROP TABLE personal_records; DROP TABLE achievements; DROP TABLE skill_levels; ALTER TABLE transfer_reviews DROP COLUMN tags; ALTER TABLE transfer_reviews DROP COLUMN flow; DROP INDEX comparisons_b; DROP INDEX comparisons_a; DROP TABLE comparisons; DROP TABLE audio_measures; DROP TABLE self_checks; DROP INDEX phrase_uses_attempt; DROP TABLE phrase_uses; DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DELETE FROM app_settings WHERE key='engagement_backfill_v1'; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; PRAGMA user_version=14;").unwrap();
 }
 
 /// A-9 (besides populated_v1_database_upgrades_to_v2_with_a_snapshot and
@@ -579,7 +579,7 @@ fn a09_a_populated_older_profile_upgrades_and_a_failed_upgrade_recovers() {
         assert_eq!(db.attempt_transcript("old-take").unwrap()["correction"]["text"], "Indexes help.");
         assert!(db.list_coaching_runs("old-take").unwrap().is_empty(), "new tables exist and start empty");
         assert_eq!(kept(&read_only(&root.0)), before, "no row lost or changed by the upgrade");
-        let snapshots: Vec<PathBuf> = files(&root.0.join("database/snapshots")).into_iter().filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("before-v22-")).collect();
+        let snapshots: Vec<PathBuf> = files(&root.0.join("database/snapshots")).into_iter().filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("before-v23-")).collect();
         assert_eq!(snapshots.len(), if fail_first { 2 } else { 1 }, "a snapshot before every upgrade attempt");
         for snapshot in snapshots {
             let copy = Connection::open_with_flags(&snapshot, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
@@ -617,7 +617,9 @@ fn a11_every_http_client_is_counted_and_local_modules_name_no_network_code() {
         // Confidence pack (M12, A-32): the ladder, the routine and the best-moments reel stay offline.
         "storage/confidence.rs", "commands/confidence.rs",
         // Conversation partner (M13): conversations and their checks are stored and built offline; only commands/partner.rs sends, after Send.
-        "storage/conversations.rs", "conversation.rs"];
+        "storage/conversations.rs", "conversation.rs",
+        // Real world (M14, A-32): missions, events, talks, rehearsal reports, listener packs and answers stay offline.
+        "storage/events.rs", "storage/listener.rs", "listener_pack.rs", "commands/events.rs"];
     let banned = ["reqwest", "Client::", "TcpStream", "UdpSocket", "std::net", "ApiTransport", "local_llm::chat", "send_reserved", "download_tool", "whisper_setup::", "linkaudio::"];
     for file in local {
         let (_, code) = sources.iter().find(|(n, _)| n == file).unwrap_or_else(|| panic!("{file} not found"));
@@ -705,6 +707,22 @@ fn a11_child_local_paths() {
     assert!(!db.list_phrase_uses(None).unwrap().is_empty());
     db.set_self_check("take-1", "point_first", Some(true), 6).unwrap();
     db.practice_facts("2026-10-16").unwrap();
+    // Real world (M14, A-32): an event plan, a listener pack written and its answers imported.
+    let event = db.save_event(&crate::storage::database::events::EventInput { id: None, title: "Team demo".into(), kind: "talk".into(), local_date: "2026-10-20".into(), start_time: None, minutes: Some(10), audience: String::new(), goal: String::new() }).unwrap();
+    db.save_event_plan(&event.id, &[crate::storage::database::events::PlanItemInput { local_date: "2026-10-18".into(), kind: "run_through".into(), title: "Run-through".into() }]).unwrap();
+    db.list_events().unwrap();
+    db.capsule_offer("2026-10-18").unwrap();
+    let packs = TestRoot::new();
+    let wav = crate::audio::prepare::prepared_path(&root.0, &crate::audio::prepare::prepare(&root.0, "take-1", &AtomicBool::new(false)).unwrap()).unwrap();
+    let source = db.listener_pack_source("take-1").unwrap();
+    let pack_id = db.new_listener_pack_id().unwrap();
+    let questions = vec!["What was my main point?".to_string()];
+    let manifest = crate::listener_pack::PackManifest { format: crate::listener_pack::PACK_FORMAT, version: 1, pack_id: pack_id.clone(), questions: questions.clone(), from: "Alex".into(), created_at: "2026-10-18T10:00:00.000Z".into() };
+    let html = crate::listener_pack::listen_html(&pack_id, &questions, "Alex", 1, source.transcript.as_deref());
+    crate::listener_pack::write_pack(&packs.0.join("pack.zip"), &manifest, &html, &wav, source.transcript.as_deref()).unwrap();
+    db.save_listener_pack(&crate::storage::database::listener::NewPack { id: &pack_id, attempt_id: "take-1", questions: &questions, from: "Alex", include_transcript: true, created_at_ms: 1 }).unwrap();
+    let answer = json!({"format": crate::listener_pack::ANSWERS_FORMAT, "version": 1, "packId": pack_id, "name": "Sam", "answers": ["Indexes help."]}).to_string();
+    db.import_listener_answers(&crate::listener_pack::parse_answers(answer.as_bytes()).unwrap(), &"e".repeat(64)).unwrap();
     // Backup, restore check, session export, storage view and diagnostic report.
     let out = TestRoot::new();
     let summary = backup::create(&db, &out.0, recording::now_ms()).unwrap();
@@ -1425,3 +1443,77 @@ fn a28_ledgers_survive_purges() {
     assert_eq!((state.levels.len(), state.achievements.len(), state.records.len(), state.goal_weeks.len()), (1, 1, 2, 1));
 }
 
+
+// ── A-34 The listener pack (roadmap M14) ────────────────────────────────────
+
+/// A-34: a listener pack holds only the take you chose and the questions you
+/// asked (its transcript only when you ask for it), and an answer file is
+/// checked strictly and kept as the listener's text: nothing in it is run.
+#[test]
+fn a34_the_pack_holds_only_the_chosen_take_and_answers_are_kept_as_text() {
+    use crate::listener_pack::{self, PackManifest, ANSWERS_FORMAT, PACK_FORMAT};
+    use crate::storage::database::listener::NewPack;
+    let root = TestRoot::new();
+    take(&root.0, "take-1");
+    take_with(&root.0, "take-2", 48_000, 48_000, |i| voice(i, 48_000, 220.0));
+    let db = DatabaseOwner::open(&root.0).unwrap();
+    local_transcript(&db, "take-1", "take-1--1", &[("We should delay the release.", Some(0), Some(1_800))], 2);
+    let source = db.listener_pack_source("take-1").unwrap();
+    let prepared = crate::audio::prepare::prepare(&root.0, &source.asset_id, &AtomicBool::new(false)).unwrap();
+    let other = crate::audio::prepare::prepare(&root.0, "take-2", &AtomicBool::new(false)).unwrap();
+    assert_ne!(other.sha256, prepared.sha256);
+    let wav = crate::audio::prepare::prepared_path(&root.0, &prepared).unwrap();
+    let questions = vec!["What was my main point?".to_string(), "Where did you get lost?".to_string()];
+    let out = TestRoot::new();
+    let pack = |name: &str, transcript: Option<&str>| {
+        let id = db.new_listener_pack_id().unwrap();
+        let manifest = PackManifest { format: PACK_FORMAT, version: 1, pack_id: id.clone(), questions: questions.clone(), from: "Alex".into(), created_at: "2026-10-18T10:00:00.000Z".into() };
+        let path = out.0.join(name);
+        listener_pack::write_pack(&path, &manifest, &listener_pack::listen_html(&id, &questions, "Alex", 1, transcript), &wav, transcript).unwrap();
+        db.save_listener_pack(&NewPack { id: &id, attempt_id: "take-1", questions: &questions, from: "Alex", include_transcript: transcript.is_some(), created_at_ms: 1 }).unwrap();
+        (id, zip::ZipArchive::new(fs::File::open(&path).unwrap()).unwrap())
+    };
+    let read = |archive: &mut zip::ZipArchive<fs::File>, name: &str| {
+        let mut bytes = Vec::new();
+        archive.by_name(name).unwrap().read_to_end(&mut bytes).unwrap();
+        bytes
+    };
+    let names = |archive: &zip::ZipArchive<fs::File>| {
+        let mut list: Vec<String> = archive.file_names().map(String::from).collect();
+        list.sort();
+        list
+    };
+
+    // Without the transcript: the page, the chosen take's 16 kHz copy, the questions and a note.
+    let (plain_id, mut plain) = pack("plain.zip", None);
+    assert_eq!(names(&plain), ["README.txt", "audio.wav", "listen.html", "pack.json"]);
+    assert_eq!(sha256_bytes(&read(&mut plain, "audio.wav")), prepared.sha256, "the chosen take only");
+    let page = String::from_utf8(read(&mut plain, "listen.html")).unwrap();
+    assert!(!page.contains("delay the release"), "no transcript unless chosen");
+    let manifest: Value = serde_json::from_slice(&read(&mut plain, "pack.json")).unwrap();
+    assert_eq!(manifest["questions"], json!(questions));
+    assert_eq!(manifest.as_object().unwrap().keys().cloned().collect::<Vec<_>>(), ["createdAt", "format", "from", "packId", "questions", "version"]);
+    // With it: the text as well, and still nothing else.
+    let (_, mut with) = pack("with.zip", Some("We should delay the release."));
+    assert_eq!(names(&with), ["README.txt", "audio.wav", "listen.html", "pack.json", "transcript.txt"]);
+    assert_eq!(read(&mut with, "transcript.txt"), b"We should delay the release.");
+
+    // An answer that looks like markup is kept exactly as text; the same file twice changes nothing.
+    let answer = json!({"format": ANSWERS_FORMAT, "version": 1, "packId": plain_id, "name": "<b>Sam</b>", "answers": ["<script>alert(1)</script>", "Nowhere"], "answeredAt": "2026-10-18T11:00:00.000Z"});
+    let bytes = serde_json::to_vec(&answer).unwrap();
+    let imported = db.import_listener_answers(&listener_pack::parse_answers(&bytes).unwrap(), &sha256_bytes(&bytes)).unwrap();
+    assert_eq!((imported.feedback.answers[0].answer.as_str(), imported.feedback.listener_name.as_str()), ("<script>alert(1)</script>", "<b>Sam</b>"));
+    assert!(db.import_listener_answers(&listener_pack::parse_answers(&bytes).unwrap(), &sha256_bytes(&bytes)).unwrap().already_imported);
+    // Strict: an unknown field, another format or a pack this computer didn't make is refused, and nothing is kept.
+    let mut extra = answer.clone();
+    extra["run"] = json!("anything");
+    assert!(listener_pack::parse_answers(&serde_json::to_vec(&extra).unwrap()).is_err());
+    let mut format = answer.clone();
+    format["format"] = json!(PACK_FORMAT);
+    assert!(listener_pack::parse_answers(&serde_json::to_vec(&format).unwrap()).is_err());
+    let mut unknown = answer.clone();
+    unknown["packId"] = json!("pack-from-elsewhere");
+    let unknown = serde_json::to_vec(&unknown).unwrap();
+    assert!(db.import_listener_answers(&listener_pack::parse_answers(&unknown).unwrap(), &sha256_bytes(&unknown)).is_err());
+    assert_eq!(db.list_listener_feedback(None).unwrap().len(), 1);
+}

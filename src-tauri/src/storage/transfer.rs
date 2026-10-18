@@ -2,10 +2,11 @@
 //! anyone else: the user writes what happened. The listener's own words are
 //! stored apart from the user's reading of the conversation, and nothing is
 //! averaged into a score. After-action reviews (roadmap 12.4) are a kind of
-//! reflection with four answers of their own.
+//! reflection with four answers of their own. A reflection can log this week's
+//! mission (14.1), and an after-action review can debrief an event (14.2).
 use super::{db_error, iso, DatabaseOwner, Result};
 use crate::storage::recording;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize)]
@@ -34,6 +35,9 @@ pub struct TransferInput {
     /// An after-action review's four answers; only with `kind: "aar"`.
     #[serde(default)]
     pub extra: Option<AfterAction>,
+    /// The mission this reflection logs (14.1): it must be picked and not yet done.
+    #[serde(default)]
+    pub mission_id: Option<String>,
 }
 
 /// The US Army's four debrief questions, in plain words (12.4).
@@ -44,6 +48,9 @@ pub struct AfterAction {
     pub happened: String,
     pub why: String,
     pub next_time: String,
+    /// The event this review debriefs (14.2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
 }
 
 /// Kinds of conversation you can note (9.16).
@@ -67,6 +74,8 @@ pub struct TransferReview {
     pub kind: String,
     /// An after-action review's four answers, else null.
     pub extra: Option<AfterAction>,
+    /// The mission it logs (14.1), else null.
+    pub mission_id: Option<String>,
     pub created_at: String,
 }
 
@@ -103,6 +112,13 @@ impl TransferInput {
             ("reflection", Some(_)) => return Err("Only an after-action review has these answers.".into()),
             _ => return Err("Unknown kind of reflection.".into()),
         }
+        let key = |id: &str| !id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_');
+        if self.mission_id.as_deref().is_some_and(|m| !key(m)) {
+            return Err("Choose a mission from the list.".into());
+        }
+        if let Some(event) = self.extra.as_ref().and_then(|a| a.event_id.as_deref()) {
+            recording::validate_id(event)?;
+        }
         Ok(())
     }
 
@@ -111,7 +127,7 @@ impl TransferInput {
     }
 }
 
-const COLUMNS: &str = "id,local_date,situation,preparation,listener_text,clarification,success,self_report,next_focus,created_at_ms,flow,tags,kind,extra";
+const COLUMNS: &str = "id,local_date,situation,preparation,listener_text,clarification,success,self_report,next_focus,created_at_ms,flow,tags,kind,extra,mission_id";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<TransferReview> {
     Ok(TransferReview {
@@ -129,6 +145,7 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<TransferReview> {
         tags: serde_json::from_str(&r.get::<_, String>(11)?).unwrap_or_default(),
         extra: if r.get::<_, String>(12)? == "aar" { serde_json::from_str(&r.get::<_, String>(13)?).ok() } else { None },
         kind: r.get(12)?,
+        mission_id: r.get(14)?,
     })
 }
 
@@ -167,16 +184,39 @@ impl DatabaseOwner {
             n += 1;
         };
         let tx = conn.transaction().map_err(db_error)?;
+        let event_id = input.extra.as_ref().and_then(|a| a.event_id.clone());
         let extra = match &input.extra {
-            Some(a) => serde_json::to_string(&AfterAction { planned: a.planned.trim().into(), happened: a.happened.trim().into(), why: a.why.trim().into(), next_time: a.next_time.trim().into() }),
+            Some(a) => serde_json::to_string(&AfterAction {
+                planned: a.planned.trim().into(),
+                happened: a.happened.trim().into(),
+                why: a.why.trim().into(),
+                next_time: a.next_time.trim().into(),
+                event_id: event_id.clone(),
+            }),
             None => Ok("{}".into()),
         }
         .map_err(|e| e.to_string())?;
+        // A mission is logged once, on the newest week it is picked and open (14.1).
+        let mission_week: Option<String> = match &input.mission_id {
+            Some(mission) => Some(
+                tx.query_row("SELECT week FROM mission_picks WHERE mission_id=?1 AND done_at_ms IS NULL ORDER BY week DESC LIMIT 1", [mission], |r| r.get(0))
+                    .optional()
+                    .map_err(db_error)?
+                    .ok_or("This mission isn't open. Pick it in This week first.")?,
+            ),
+            None => None,
+        };
+        if let Some(event) = &event_id {
+            let live: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM events WHERE id=?1 AND deleted_at_ms IS NULL)", [event], |r| r.get(0)).map_err(db_error)?;
+            if !live {
+                return Err("This event no longer exists.".into());
+            }
+        }
         tx.execute(
-            "INSERT INTO transfer_reviews(id,local_date,situation,preparation,listener_text,clarification,success,self_report,next_focus,created_at_ms,flow,tags,kind,extra) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
+            "INSERT INTO transfer_reviews(id,local_date,situation,preparation,listener_text,clarification,success,self_report,next_focus,created_at_ms,flow,tags,kind,extra,mission_id,event_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
             params![id, input.local_date, input.situation.trim(), input.preparation.trim(), input.listener_text.trim(), input.clarification.trim(),
                 input.success.trim(), input.self_report.trim(), input.next_focus.trim(), now as i64, input.flow, serde_json::to_string(&dedup(&input.tags)).map_err(|e| e.to_string())?,
-                input.kind(), extra],
+                input.kind(), extra, input.mission_id, event_id],
         )
         .map_err(db_error)?;
         // Effort points (roadmap 7.4) on the day of the conversation; an
@@ -185,6 +225,14 @@ impl DatabaseOwner {
         super::engagement::award(&tx, &event(crate::engagement::EventKind::TransferReview))?;
         if input.kind() == "aar" {
             super::engagement::award(&tx, &event(crate::engagement::EventKind::AfterAction))?;
+        }
+        // A mission once per week (14.1), and an event's first debrief (14.2).
+        if let Some(week) = &mission_week {
+            tx.execute("UPDATE mission_picks SET done_at_ms=?2,review_id=?3 WHERE week=?1", params![week, now as i64, id]).map_err(db_error)?;
+            super::engagement::award(&tx, &crate::engagement::NewEvent { ref_id: week, ..event(crate::engagement::EventKind::Mission) })?;
+        }
+        if let Some(event_ref) = &event_id {
+            super::engagement::award(&tx, &crate::engagement::NewEvent { ref_id: event_ref, ..event(crate::engagement::EventKind::EventDebrief) })?;
         }
         let review = tx.query_row(&format!("SELECT {COLUMNS} FROM transfer_reviews WHERE id=?1"), [&id], row).map_err(db_error)?;
         tx.commit().map_err(db_error)?;
@@ -223,6 +271,7 @@ mod tests {
             tags: Vec::new(),
             kind: None,
             extra: None,
+            mission_id: None,
         }
     }
 
@@ -263,7 +312,7 @@ mod tests {
     fn aar_reviews_store_extra_fields_and_award_both_events() {
         let root = TestRoot::new();
         let db = DatabaseOwner::open(&root.0).unwrap();
-        let answers = AfterAction { planned: " Open with the decision ".into(), happened: "I opened with the history".into(), why: String::new(), next_time: "Decision first".into() };
+        let answers = AfterAction { planned: " Open with the decision ".into(), happened: "I opened with the history".into(), why: String::new(), next_time: "Decision first".into(), event_id: None };
         let aar = TransferInput { kind: Some("aar".into()), extra: Some(answers), next_focus: String::new(), listener_text: "You want to wait.".into(), ..input("2026-10-16") };
         let saved = db.add_transfer_review(&aar).unwrap();
         assert_eq!(saved.kind, "aar");
@@ -283,5 +332,67 @@ mod tests {
         let facts = db.practice_facts("2026-10-16").unwrap();
         let fact = facts.transfer_reviews.iter().find(|r| r.id == saved.id).unwrap();
         assert_eq!((fact.kind.as_str(), fact.has_next_focus), ("aar", true));
+    }
+
+    fn xp(db: &DatabaseOwner, kind: &str) -> Vec<(String, String)> {
+        db.connection.lock().unwrap().prepare("SELECT ref_id,local_date FROM practice_events WHERE kind=?1 ORDER BY id").unwrap()
+            .query_map([kind], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<rusqlite::Result<_>>().unwrap()
+    }
+
+    #[test]
+    fn a_reflection_with_a_mission_marks_the_pick_done_and_awards_once() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        let logged = |mission: &str| TransferInput { mission_id: Some(mission.into()), situation: "Asked one question in the team meeting".into(), ..input("2026-10-14") };
+        assert!(db.add_transfer_review(&logged("ask-in-meeting")).is_err(), "only a picked mission");
+        db.pick_mission("2026-10-12", Some("ask-in-meeting")).unwrap();
+        assert!(db.add_transfer_review(&logged("Ask In Meeting")).is_err());
+        let saved = db.add_transfer_review(&logged("ask-in-meeting")).unwrap();
+        assert_eq!(saved.mission_id.as_deref(), Some("ask-in-meeting"));
+        let pick = db.mission_pick("2026-10-12").unwrap().unwrap();
+        assert_eq!((pick.review_id.as_deref(), pick.done_at.is_some()), (Some(saved.id.as_str()), true));
+        assert_eq!(xp(&db, "mission"), [("2026-10-12".to_string(), "2026-10-14".to_string())]);
+        assert!(db.add_transfer_review(&logged("ask-in-meeting")).is_err(), "a done mission is logged once");
+        assert!(db.pick_mission("2026-10-12", Some("dinner-story")).is_err() && db.clear_mission("2026-10-12").is_ok());
+        assert!(db.mission_pick("2026-10-12").unwrap().is_some(), "a done week stays");
+        assert_eq!(xp(&db, "mission").len(), 1);
+        assert_eq!(xp(&db, "transfer_review").len(), 1, "the reflection itself earns as usual");
+        let facts = db.practice_facts("2026-10-14").unwrap();
+        assert_eq!(facts.transfer_reviews[0].mission_id.as_deref(), Some("ask-in-meeting"));
+        assert_eq!(facts.mission_picks.iter().map(|p| (p.week.as_str(), p.done)).collect::<Vec<_>>(), [("2026-10-12", true)]);
+    }
+
+    #[test]
+    fn an_after_action_review_debriefs_an_event_once() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        let event = db
+            .save_event(&crate::storage::database::events::EventInput {
+                id: None,
+                title: "Interview at Acme".into(),
+                kind: "interview".into(),
+                local_date: "2026-10-23".into(),
+                start_time: Some("10:00".into()),
+                minutes: Some(45),
+                audience: "Two engineers".into(),
+                goal: "I can lead a small team".into(),
+            })
+            .unwrap();
+        let debrief = |event_id: &str| TransferInput {
+            kind: Some("aar".into()),
+            extra: Some(AfterAction { planned: "Lead with the result".into(), event_id: Some(event_id.into()), ..AfterAction::default() }),
+            ..input("2026-10-23")
+        };
+        assert!(db.add_transfer_review(&debrief("missing-event")).is_err());
+        let saved = db.add_transfer_review(&debrief(&event.id)).unwrap();
+        assert_eq!(saved.extra.as_ref().and_then(|a| a.event_id.as_deref()), Some(event.id.as_str()));
+        db.add_transfer_review(&debrief(&event.id)).unwrap();
+        assert_eq!(xp(&db, "event_debrief"), [(event.id.clone(), "2026-10-23".to_string())], "an event's first debrief earns");
+        assert!(db.get_event(&event.id).unwrap().debrief_done);
+        let facts = db.practice_facts("2026-10-23").unwrap();
+        assert_eq!(facts.transfer_reviews[0].event_id.as_deref(), Some(event.id.as_str()));
+        assert_eq!(facts.events.iter().map(|e| (e.id.as_str(), e.debrief_done)).collect::<Vec<_>>(), [(event.id.as_str(), true)]);
+        let plain = TransferInput { extra: Some(AfterAction { event_id: Some("x".into()), ..AfterAction::default() }), ..input("2026-10-23") };
+        assert!(db.add_transfer_review(&plain).is_err(), "only an after-action review");
     }
 }

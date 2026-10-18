@@ -48,6 +48,18 @@ export const keys = {
   conversation: (id: string) => ["partner", "conversation", id] as const,
   upgradeRuns: (attemptId: string) => ["partner", "upgrades", attemptId] as const,
   upgradeRun: (runId: string) => ["partner", "upgrade", runId] as const,
+  // Real world (M14); under "engagement", so saved practice brings plans, missions and the capsule up to date.
+  missionPick: (week: string) => ["engagement", "mission", week] as const,
+  /** Every event's key starts with this one, so one invalidation refreshes the list and each event. */
+  realEvents: ["engagement", "real-events"] as const,
+  realEvent: (id: string) => ["engagement", "real-events", id] as const,
+  talks: ["talks"] as const,
+  talk: (id: string) => ["talks", id] as const,
+  rehearsals: (talkId: string) => ["engagement", "rehearsals", talkId] as const,
+  rehearsalReport: (attemptId: string) => ["engagement", "rehearsal", attemptId] as const,
+  capsule: (today: string) => ["engagement", "capsule", today] as const,
+  listenerPacks: (sessionId?: string) => ["engagement", "listener-packs", sessionId ?? "all"] as const,
+  listenerFeedback: (sessionId?: string) => ["engagement", "listener-answers", sessionId ?? "all"] as const,
 };
 
 /** Saved preferences; until they load, the defaults apply. */
@@ -203,6 +215,58 @@ export function useConversations() {
 export function useUpgradeRuns(attemptId: string | null | undefined) {
   const ipc = useIpc();
   return useQuery({ queryKey: keys.upgradeRuns(attemptId ?? ""), queryFn: () => ipc.listUpgradeRuns(attemptId!), enabled: !!attemptId });
+}
+
+/** This week's mission pick (14.1), or null; `week` is the week's first day. */
+export function useMissionPick(week: string) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.missionPick(week), queryFn: () => ipc.getMissionPick(week) });
+}
+
+/** Your events with their plans, soonest first (14.2). */
+export function useEvents() {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.realEvents, queryFn: () => ipc.listEvents() });
+}
+
+export function useEvent(eventId: string | undefined) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.realEvent(eventId ?? ""), queryFn: () => ipc.getEvent(eventId!), enabled: !!eventId });
+}
+
+/** Your talks, the one changed last first (14.3). */
+export function useTalks() {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.talks, queryFn: () => ipc.listTalks() });
+}
+
+export function useTalk(talkId: string | undefined) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.talk(talkId ?? ""), queryFn: () => ipc.getTalk(talkId!), enabled: !!talkId });
+}
+
+/** A talk's rehearsal reports, oldest first (14.3). */
+export function useRehearsals(talkId: string | undefined) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.rehearsals(talkId ?? ""), queryFn: () => ipc.listRehearsals(talkId!), enabled: !!talkId });
+}
+
+/** This month's time capsule (14.5); asking starts its week on offer. */
+export function useCapsuleOffer(today: string) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.capsule(today), queryFn: () => ipc.capsuleOffer(today) });
+}
+
+/** Listener packs (14.4) of a session, or all of them. */
+export function useListenerPacks(sessionId?: string) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.listenerPacks(sessionId), queryFn: () => ipc.listListenerPacks(sessionId) });
+}
+
+/** Listeners' answers (14.4) about a session's takes, or all of them. */
+export function useListenerFeedback(sessionId?: string) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.listenerFeedback(sessionId), queryFn: () => ipc.listListenerFeedback(sessionId) });
 }
 
 /** Where saved phrases turned up in your takes (8.2): one phrase, or all of them. */

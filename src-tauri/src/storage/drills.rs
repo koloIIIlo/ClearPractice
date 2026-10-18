@@ -12,8 +12,9 @@ use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-/// Marks a drill writes (10.1): a word shown, a slip you flagged, a card advanced, a cue shown.
-pub const TAKE_EVENT_KINDS: [&str; 4] = ["word_shown", "self_flag", "card_advanced", "cue_shown"];
+/// Marks a drill writes (10.1): a word shown, a slip you flagged, a card advanced, a cue shown;
+/// and a rehearsal's move to the next cue card (`section_mark`, 14.3).
+pub const TAKE_EVENT_KINDS: [&str; 5] = ["word_shown", "self_flag", "card_advanced", "cue_shown", "section_mark"];
 pub const MAX_TAKE_EVENTS: usize = 200;
 const MAX_EVENT_DATA_BYTES: usize = 512;
 /// No take is longer than four hours.
@@ -94,8 +95,13 @@ impl DatabaseOwner {
             .optional()
             .map_err(db_error)?
             .ok_or("This take is unavailable.")?;
-        if !kind.as_deref().is_some_and(crate::exercise_types::is_drill) {
+        if !kind.as_deref().is_some_and(crate::exercise_types::keeps_marks) {
             return Err("This take isn't part of a drill.".into());
+        }
+        // A rehearsal keeps only section marks, and a drill never does.
+        let rehearsal = kind.as_deref() == Some("rehearsal");
+        if events.iter().any(|e| (e.kind == "section_mark") != rehearsal) {
+            return Err("A mark from this round is invalid.".into());
         }
         let stored: i64 = tx.query_row("SELECT count(*) FROM take_events WHERE attempt_id=?1", [attempt_id], |r| r.get(0)).map_err(db_error)?;
         if usize::try_from(stored).unwrap_or(usize::MAX).saturating_add(events.len()) > MAX_TAKE_EVENTS {

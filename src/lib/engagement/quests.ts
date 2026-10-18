@@ -62,6 +62,9 @@ export const QUEST_TEMPLATES: readonly QuestTemplate[] = [
   // The conversation partner (M13): works offline in scripted mode, so it is always available.
   { id: "partner-1", title: "Have a practice conversation", area: "spontaneity", needed: 1, needs: always,
     count: (w) => finishedConversations(w.facts, 3).filter((c) => inWeek(c.localDate, w.start)).length },
+  // Real world (M14): slot 2 holds it when the week's mission is picked before the quests are made; never a variety pick or a swap.
+  { id: "mission-1", title: "Complete this week's mission", area: "courage", needed: 1, needs: () => false,
+    count: (w) => w.facts.transferReviews.filter((r) => r.missionId !== null && inWeek(r.localDate, w.start)).length },
 ];
 
 export const questTemplate = (id: string) => QUEST_TEMPLATES.find((q) => q.id === id);
@@ -121,7 +124,9 @@ export function generateWeeklyQuests(
 
   const weakest = ranked.find((a) => usable.some((t) => t.area === a.area && t.id !== "real-1")) ?? ranked[0];
   const first = pick(usable.filter((t) => t.area === weakest.area && t.id !== "real-1")) ?? usable.find((t) => t.id !== "real-1")!;
-  const second = usable.find((t) => t.id === "real-1")!;
+  // The real world: this week's mission when one is picked (14.1), else any real conversation.
+  const mission = facts.missionPicks.some((p) => p.week === start && p.missionId !== null);
+  const second = mission ? questTemplate("mission-1")! : usable.find((t) => t.id === "real-1")!;
   const lately = new Set(recent.filter((q) => q.week < start && q.week >= addLocalDays(start, -21)).map((q) => q.quest));
   const fresh = usable.filter((t) => t.id !== first.id && t.id !== second.id && !lately.has(t.id));
   const theme = themeFor(start).area;

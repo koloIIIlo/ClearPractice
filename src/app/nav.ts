@@ -1,8 +1,8 @@
-import { BookOpenText, CalendarCheck, Dumbbell, HeartHandshake, History, LineChart, MessagesSquare, Settings, Sprout, type LucideIcon } from "lucide-react";
+import { BookOpenText, CalendarCheck, CalendarClock, Dumbbell, HeartHandshake, History, LineChart, MessagesSquare, Settings, Sprout, type LucideIcon } from "lucide-react";
 
-/** The primary destinations, Journey in Playful style (roadmap 9.1), Confidence (12.1) and Partner (13.3) in both, plus Settings — blueprint §3. */
+/** The primary destinations, Journey in Playful style (roadmap 9.1), Confidence (12.1), Partner (13.3) and Events (14.2) in both, plus Settings — blueprint §3. */
 export interface NavItem {
-  id: "today" | "exercises" | "sessions" | "phrases" | "confidence" | "partner" | "progress" | "journey" | "settings";
+  id: "today" | "exercises" | "sessions" | "phrases" | "confidence" | "partner" | "events" | "progress" | "journey" | "settings";
   label: string;
   to: string;
   icon: LucideIcon;
@@ -15,6 +15,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { id: "phrases", label: "Phrases", to: "/phrases", icon: BookOpenText },
   { id: "confidence", label: "Confidence", to: "/confidence", icon: HeartHandshake },
   { id: "partner", label: "Partner", to: "/partner", icon: MessagesSquare },
+  { id: "events", label: "Events", to: "/events", icon: CalendarClock },
   { id: "progress", label: "Progress", to: "/progress", icon: LineChart },
   { id: "journey", label: "Journey", to: "/journey", icon: Sprout },
 ];

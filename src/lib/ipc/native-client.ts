@@ -21,6 +21,9 @@ async function command<T>(name: string, schema: { parse(value: unknown): T }, ar
   }
 }
 
+/** Real-world shapes (M14), loaded with the first real-world call. */
+const rw = () => import("./schemas-real-world");
+
 /** Native history and recording; curriculum/analysis previews remain separate. */
 export function createNativeClient(): IpcClient {
   const preview = createMockClient();
@@ -195,6 +198,34 @@ export function createNativeClient(): IpcClient {
     previewConversationFeedback: (conversationId, model) => command("preview_conversation_feedback", S.CoachingPreview, { conversationId, model: model ?? null }),
     requestConversationFeedback: (conversationId, requestId, payloadSha256) =>
       command("request_conversation_feedback", S.ConversationFeedbackRun, { conversationId, requestId, payloadSha256 }),
+    pickMission: async (week, missionId) => command("pick_mission", (await rw()).MissionPick, { week, missionId }),
+    getMissionPick: async (week) => command("get_mission_pick", (await rw()).MissionPick.nullable(), { week }),
+    clearMission: async (week) => { await command("clear_mission", z.null(), { week }); },
+    saveEvent: async (input) =>
+      command("save_event", (await rw()).PlannedEvent, { input: { id: input.id ?? null, title: input.title, kind: input.kind, localDate: input.localDate, startTime: input.startTime ?? null, minutes: input.minutes ?? null, audience: input.audience, goal: input.goal } }),
+    saveEventPlan: async (eventId, items) => command("save_event_plan", (await rw()).EventView, { eventId, items: items.map((i) => ({ localDate: i.localDate, kind: i.kind, title: i.title })) }),
+    setPlanItemDone: async (itemId, done) => command("set_plan_item_done", (await rw()).EventView, { itemId, done }),
+    linkEventTalk: async (eventId, talkId) => command("link_event_talk", (await rw()).EventView, { eventId, talkId }),
+    getEvent: async (eventId) => command("get_event", (await rw()).EventView, { id: eventId }),
+    listEvents: async () => command("list_events", (await rw()).EventView.array()),
+    deleteEvent: async (eventId) => { await command("delete_event", z.null(), { id: eventId }); },
+    saveTalk: async (input) =>
+      command("save_talk", (await rw()).TalkView, {
+        input: { id: input.id ?? null, title: input.title, template: input.template ?? null, sections: input.sections.map((s) => ({ id: s.id ?? null, title: s.title, keywords: s.keywords, notes: s.notes, targetSeconds: s.targetSeconds })) },
+      }),
+    getTalk: async (talkId) => command("get_talk", (await rw()).TalkView, { id: talkId }),
+    listTalks: async () => command("list_talks", (await rw()).TalkView.array()),
+    deleteTalk: async (talkId) => { await command("delete_talk", z.null(), { id: talkId }); },
+    recordRehearsal: async (talkId, attemptId) => command("record_rehearsal", (await rw()).RehearsalReport, { talkId, attemptId }),
+    rehearsalReport: async (attemptId) => command("rehearsal_report", (await rw()).RehearsalReport, { attemptId }),
+    listRehearsals: async (talkId) => command("list_rehearsals", (await rw()).RehearsalReport.array(), { talkId }),
+    capsuleOffer: async (today) => command("capsule_offer", (await rw()).CapsuleOffer, { today }),
+    dismissCapsule: async (month) => { await command("dismiss_capsule", z.null(), { month }); },
+    exportListenerPack: async (attemptId, questions, from, includeTranscript) => command("export_listener_pack", (await rw()).ListenerPack.nullable(), { attemptId, questions, from, includeTranscript }),
+    importListenerAnswers: async () => command("import_listener_answers", (await rw()).ListenerImport.nullable()),
+    listListenerPacks: async (sessionId) => command("list_listener_packs", (await rw()).ListenerPack.array(), { sessionId: sessionId ?? null }),
+    listListenerFeedback: async (sessionId) => command("list_listener_feedback", (await rw()).ListenerFeedback.array(), { sessionId: sessionId ?? null }),
+    setListenerJudgement: async (feedbackId, understood) => command("set_listener_judgement", (await rw()).ListenerFeedback, { feedbackId, understood }),
     listPhraseUses: (phraseId) => command("list_phrase_uses", S.PhraseUse.array(), { cardId: phraseId ?? null }),
     setSelfCheck: async (attemptId, checkId, value) => {
       await command("set_self_check", z.null(), { attemptId, checkId, value });

@@ -45,7 +45,13 @@ const DRILL_PATHS: Record<string, string> = {
   "Pace ladder": "pace-ladder", "Story cubes": "story-cubes", "Story spine": "story-spine",
 };
 const drill = (label: string): PractiseLink => ({ label, to: `/drill/${DRILL_PATHS[label]}` });
-const later = (label: string, arrives: string): PractiseLink => ({ label, to: "/", arrives });
+/** Real world (M14): the week's mission sits in This week on Today; Ask a listener is on any take. */
+const mission: PractiseLink = { label: "This week's mission", to: "/" };
+const listener: PractiseLink = { label: "Ask a listener about a take", to: "/sessions" };
+const events: PractiseLink = { label: "Prepare for an event", to: "/events" };
+const rehearse: PractiseLink = { label: "Rehearse a talk", to: "/events" };
+/** The learning engine (M11): the four-week filler programme. */
+const fillerProgramme: PractiseLink = { label: "Filler programme", to: "/exercises?tab=programmes" };
 const ladder: PractiseLink = { label: "Exposure ladder", to: "/confidence" };
 const bosses: PractiseLink = { label: "Boss levels", to: "/drill/boss" };
 
@@ -67,7 +73,7 @@ export const LEVELS: Readonly<Record<AreaId, readonly LevelDef[]>> = {
       criteria: [{ kind: "anyOf", label: "Twice, a listener told you your main point without asking what you meant", options: [
         { kind: "transfers", label: "2 reflections with the listener's words and no clarification needed", listenerWords: true, noClarification: true, atLeast: 2 },
         { kind: "listenerAnswers", label: "2 listener answers that name your main point", mainPointAnswered: true, atLeast: 2 },
-      ] }], practise: [real, later("Ask a listener", "Listener packs")] },
+      ] }], practise: [real, listener] },
   ],
   fluency: [
     { level: 1, name: "Aware", description: "Notice your hesitations by reviewing them.",
@@ -75,7 +81,7 @@ export const LEVELS: Readonly<Record<AreaId, readonly LevelDef[]>> = {
     { level: 2, name: "Replacing", description: "Let a short pause take the place of a hesitation.",
       criteria: [{ kind: "takes", label: "3 reviewed takes with clearly fewer confirmed hesitations than your first five",
         filter: { fillersReviewed: true, minSpeechMs: 45_000, metric: { key: "confirmedPer100", op: "<=", value: { baseline: "first5ReviewedMedian", factor: 0.7 } } }, atLeast: 3, distinctDays: 2 }],
-      practise: [repeat, later("Filler programme", "the learning engine")] },
+      practise: [repeat, fillerProgramme] },
     { level: 3, name: "Steady", description: "Pause between thoughts, not in the middle of one.",
       criteria: [{ kind: "takes", label: "2 familiar answers of a minute or more with at most one pause inside a clause", filter: { familiarity: "familiar", minSpeechMs: MIN, metric: { key: "midClausePauses", op: "<=", value: 1 } }, atLeast: 2 }],
       practise: [repeat, drill("Just a Minute")] },
@@ -111,7 +117,7 @@ export const LEVELS: Readonly<Record<AreaId, readonly LevelDef[]>> = {
           { kind: "activity", label: "A boss level", type: "boss", atLeast: 1 },
           { kind: "conversation", label: "A practice conversation of 5 turns", minTurns: 5, atLeast: 1 },
         ] },
-      ] }], practise: [repeat, partner, later("Talk rehearsal", "events")] },
+      ] }], practise: [repeat, partner, rehearse] },
   ],
   spontaneity: [
     { level: 1, name: "First unknown", description: "Answer a question you haven't prepared.",
@@ -172,7 +178,7 @@ export const LEVELS: Readonly<Record<AreaId, readonly LevelDef[]>> = {
     { level: 4, name: "On the spot", description: "Make up a story from random pictures.",
       criteria: [{ kind: "activity", label: "3 rounds of story cubes, on 2 days", type: "story_cubes", atLeast: 3, distinctDays: 2 }], practise: [drill("Story cubes")] },
     { level: 5, name: "Told for real", description: "Tell a story to real people.",
-      criteria: [{ kind: "transfers", label: "Tell a story in 2 real conversations and note it", tags: ["story"], atLeast: 2 }], practise: [real] },
+      criteria: [{ kind: "transfers", label: "Tell a story in 2 real conversations and note it", tags: ["story"], atLeast: 2 }], practise: [real, mission] },
   ],
   courage: [
     { level: 1, name: "First reflection", description: "Note a real conversation.",
@@ -184,7 +190,7 @@ export const LEVELS: Readonly<Record<AreaId, readonly LevelDef[]>> = {
         { kind: "exposure", label: "3 steps of your exposure ladder", steps: 3 },
         { kind: "transfers", label: "3 missions", mission: true, atLeast: 3 },
         { kind: "transfers", label: "5 real-conversation reflections", atLeast: 5 },
-      ] }], practise: [real, ladder] },
+      ] }], practise: [real, ladder, mission] },
     { level: 4, name: "Stretch", description: "Do one thing that felt like a real stretch.",
       criteria: [{ kind: "anyOf", label: "Do one thing that felt like a real stretch", options: [
         { kind: "exposure", label: "A ladder step you rated 6 or more before", steps: 1, minBefore: 6 },
@@ -195,7 +201,7 @@ export const LEVELS: Readonly<Record<AreaId, readonly LevelDef[]>> = {
       criteria: [{ kind: "anyOf", label: "10 reflections in 6 different weeks, or an event with its debrief", options: [
         { kind: "debrief", label: "An event with its debrief", atLeast: 1 },
         { kind: "transfers", label: "10 reflections in 6 different weeks", atLeast: 10, distinctWeeks: 6 },
-      ] }], practise: [real] },
+      ] }], practise: [events, real] },
   ],
 };
 

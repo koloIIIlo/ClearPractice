@@ -21,6 +21,11 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { SpeechProfile } from "@/features/insights/SpeechProfile";
 import { AAR_QUESTIONS, FLOWS, KINDS, RECENT_DAYS } from "./reflection-options";
 import { AfterActionForm } from "@/features/confidence/AfterActionForm";
+import { ImportListenerAnswers, ListenerAnswers } from "@/features/events/ListenerAnswers";
+import { missionById } from "@/content/missions";
+import { useEvent, usePracticeFacts } from "@/lib/ipc/queries";
+import { capsuleMonths } from "@/lib/capsule";
+import { CapsuleChips } from "@/features/events/TimeCapsule";
 import { Trends } from "@/features/insights/Trends";
 
 /** Progress tabs: your speech profile first (8.7), then the evidence views. */
@@ -71,11 +76,27 @@ export function ProgressPage() {
         </TabsList>
         {TABS.map((v) => (
           <TabsContent key={v} value={v}>
-            {v === "profile" ? <SpeechProfile /> : v === "real" ? <RealConversations /> : <ViewContent view={v} />}
+            {v === "profile" ? <ProfileTab /> : v === "real" ? <RealConversations /> : <ViewContent view={v} />}
           </TabsContent>
         ))}
       </Tabs>
     </Page>
+  );
+}
+
+/** Your speech profile (8.7), then your time capsules by month (14.5). */
+function ProfileTab() {
+  const facts = usePracticeFacts();
+  return (
+    <div className="space-y-8">
+      <SpeechProfile />
+      {facts.data && capsuleMonths(facts.data).length > 0 && (
+        <section aria-labelledby="profile-capsules">
+          <SectionTitle id="profile-capsules" action={<Button size="sm" variant="ghost" asChild><Link to="/capsule">Time capsule</Link></Button>}>Your capsules</SectionTitle>
+          <CapsuleChips facts={facts.data} />
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -243,21 +264,35 @@ function RealConversations() {
       { replace: true },
     );
   const reviews = useQuery({ queryKey: ["transfer-reviews"], queryFn: () => ipc.listTransferReviews() });
-  const [form, setForm] = useState(EMPTY_REFLECTION);
+  // This week's mission (14.1): I did it opens the form with the mission preselected.
+  const mission = missionById(params.get("mission"));
+  // An event's Debrief (14.2) opens the after-action review for that event.
+  const debriefOf = useEvent(formKind === "aar" ? (params.get("event") ?? undefined) : undefined).data?.event;
+  const [form, setForm] = useState(() => (mission ? { ...EMPTY_REFLECTION, situation: mission.title } : EMPTY_REFLECTION));
   const [flow, setFlow] = useState<TransferFlow | null>(null);
-  const [kinds, setKinds] = useState<TransferTag[]>([]);
+  const [kinds, setKinds] = useState<TransferTag[]>(() => mission?.tags ?? []);
   const [days] = useState(RECENT_DAYS);
   const [date, setDate] = useState(days[0]);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
+  const dropMission = () =>
+    setParams(
+      (p) => {
+        p.delete("mission");
+        return p;
+      },
+      { replace: true },
+    );
   const save = useMutation({ meta: { engagement: "reflection" },
-    mutationFn: () => ipc.addTransferReview({ ...form, localDate: date, flow, tags: kinds }),
+    mutationFn: () => ipc.addTransferReview({ ...form, localDate: date, flow, tags: kinds, missionId: mission?.id ?? null }),
     onSuccess: async () => {
       setForm(EMPTY_REFLECTION);
       setFlow(null);
       setKinds([]);
-      toast("Reflection saved on this computer.");
-      await Promise.all([qc.invalidateQueries({ queryKey: ["transfer-reviews"] }), qc.invalidateQueries({ queryKey: ["today"] })]);
+      toast(mission ? "Mission logged with your reflection." : "Reflection saved on this computer.");
+      if (mission) dropMission();
+      // A mission's week is done now (14.1); the rest refreshes through the engagement tag.
+      await Promise.all([qc.invalidateQueries({ queryKey: ["transfer-reviews"] }), qc.invalidateQueries({ queryKey: ["today"] }), ...(mission ? [qc.invalidateQueries({ queryKey: ["engagement", "mission"] })] : [])]);
     },
   });
 
@@ -275,7 +310,12 @@ function RealConversations() {
           {formKind === "aar" ? (
             <>
               <p className="mb-4 text-muted-foreground">Four questions after a real talk: what you planned, what happened, why, and what you'll do next time.</p>
-              <AfterActionForm />
+              {debriefOf && (
+                <p role="note" className="mb-4 rounded-lg border px-3 py-2 text-meta">
+                  Debrief of <Link className="font-medium text-primary underline underline-offset-2" to={`/events/${debriefOf.id}`}>{debriefOf.title}</Link>. Saving it finishes the plan's Debrief.
+                </p>
+              )}
+              <AfterActionForm key={debriefOf?.id ?? "none"} event={debriefOf ? { id: debriefOf.id, title: debriefOf.title } : undefined} />
             </>
           ) : (
           <>
@@ -283,6 +323,12 @@ function RealConversations() {
             No recording of anyone else is needed. If your listener answers a question, write their words in the listener
             field. Your own reading of it goes in its own field.
           </p>
+          {mission && (
+            <div role="note" className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-meta">
+              <span className="min-w-0 flex-1">Logging this week's mission: <span className="font-medium">{mission.title}</span></span>
+              <Button type="button" size="sm" variant="ghost" onClick={dropMission}>Not a mission</Button>
+            </div>
+          )}
           <form
             className="space-y-4"
             onSubmit={(e) => {
@@ -364,14 +410,23 @@ function RealConversations() {
             )
           }
         </QueryView>
+        <ListenerAnswers title="Listeners' answers" takeHref={(_, sessionId) => `/sessions/${sessionId}`} />
       </div>
-      <aside className="text-meta text-muted-foreground">
-        <p className="mb-2 font-medium text-foreground">Questions you can ask a listener</p>
-        <ul className="list-disc space-y-1 pl-5">
-          <li>What was my main point?</li>
-          <li>Where was I difficult to follow?</li>
-          <li>What helped?</li>
-        </ul>
+      <aside className="space-y-6 text-meta text-muted-foreground">
+        <div>
+          <p className="mb-2 font-medium text-foreground">Questions you can ask a listener</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>What was my main point?</li>
+            <li>Where was I difficult to follow?</li>
+            <li>What helped?</li>
+          </ul>
+        </div>
+        {/* Listener packs (14.4): Ask a listener is on any take; their answer files are imported here. */}
+        <div className="space-y-2">
+          <p className="font-medium text-foreground">A listener's answers</p>
+          <p>Ask a listener about a take from the take's page, then import the answer file they send back.</p>
+          <ImportListenerAnswers />
+        </div>
       </aside>
     </div>
   );

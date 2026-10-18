@@ -16,6 +16,7 @@ import { Companion } from "./Companion";
 import { QuestList } from "./QuestList";
 import { RecordsList } from "./RecordsList";
 import { BestMoments } from "@/features/confidence/BestMoments";
+import { MissionCard } from "@/features/events/MissionCard";
 import { SkillMap } from "./SkillMap";
 import { useJourney } from "./useJourney";
 import { WeekGoal } from "./WeekGoal";
@@ -89,6 +90,14 @@ export function JourneyPage() {
             <SectionTitle>This week's quests</SectionTitle>
             <QuestList journey={journey} />
           </Panel>
+
+          {/* The week's mission (14.1), the same row as on Today. */}
+          <section aria-labelledby="journey-mission">
+            <SectionTitle id="journey-mission">This week's mission</SectionTitle>
+            <ul className="rounded-panel border bg-card">
+              <MissionCard />
+            </ul>
+          </section>
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Panel>

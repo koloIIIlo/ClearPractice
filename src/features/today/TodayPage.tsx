@@ -33,6 +33,8 @@ const JourneyStrip = lazy(() => import("@/features/journey/JourneyStrip").then((
 // The learning engine (M11) loads after the plan, off the start-up path.
 const TodayReanswer = lazy(() => import("@/features/learning/ReanswerCard").then((m) => ({ default: m.TodayReanswer })));
 const ProgrammeCard = lazy(() => import("@/features/learning/ProgrammeCard").then((m) => ({ default: m.ProgrammeCard })));
+// Real world (M14): the week's mission, the next event item and the monthly capsule, also after the plan.
+const TodayRealWorld = lazy(() => import("@/features/events/TodayRealWorld").then((m) => ({ default: m.TodayRealWorld })));
 
 /** The challenge dial (11.2): changes which prompt the plan picks, never your stage. */
 const CHALLENGES: { value: Preferences["challengeBias"]; label: string; hint: string }[] = [
@@ -297,6 +299,7 @@ function TodayContent({
               </li>
               {!firstRun && (
                 <Suspense fallback={null}>
+                  <TodayRealWorld />
                   <TodayReanswer except={plan.weekly.newSituation.promptId} />
                 </Suspense>
               )}

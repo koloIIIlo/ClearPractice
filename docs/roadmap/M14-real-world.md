@@ -30,6 +30,60 @@
 | 14.4 | Listener pack (export and import) | L |
 | 14.5 | Voice time capsule | S |
 
+**As built (18 Oct)**
+- **Schema.** As below, plus:
+  - `mission_picks.mission_id` may be null: a week you skipped.
+  - `transfer_reviews` gains `event_id` beside `mission_id`, so plans and facts find an event's debrief in SQL (the form still sends it as `extra.eventId`, which is kept in `extra` too).
+  - `event_plan_items` gains `by_hand` and checks on its day and title.
+  - `talk_sections` and `rehearsals` get indexes; `rehearsals.attempt_id` is unique.
+  - `listener_packs` keeps `from_name` and `include_transcript`.
+  - `listener_feedback` keeps the answer file's SHA-256 (unique: the same file a second time changes nothing) and `main_point_understood`, your judgement of whether the listener got your main point.
+  - `capsule_months` keeps the first app day the capsule was offered in each month, and a dismissal.
+- **Missions.**
+  - Offers are one of each difficulty, seeded by the week. One of them comes from the area you practised least in the last 30 days (the quests' count), when that area has a mission at that difficulty. Choose another shows three you weren't offered this week; missions you logged in the last eight weeks wait.
+  - Two missions take a different area from appendix C.5 so that every area has one: the voice message (voice) and asking about a word you didn't know (listening).
+  - A reflection with `missionId` is refused unless that mission is picked and open. It marks the week done and earns `mission` once per week.
+  - Quest `mission-1` takes slot 2 when the week's mission is picked before the week's quests are made. Otherwise `real-1` keeps slot 2, and a mission's reflection completes it too. `mission-1` is never a variety pick or a swap.
+- **Events.**
+  - Days are picked with an in-house calendar (`src/components/ui/calendar.tsx`: arrows, Page Up and Down, Home and End, as a WAI-ARIA date grid) and a popover `DatePicker` (`src/components/date-picker.tsx`), not react-day-picker, so no dependency was added. Never a native date input. The time is a Select in 30-minute steps; the length a Select of common lengths.
+  - The plan follows the table, with three details. The debrief is on the day when the event has a time, else the next day. With one to three days left, the dress rehearsal is planned only when the day before isn't today. A rehearsal that would share a day with another moves to a free day before the event.
+  - Items tick themselves in Rust (`refresh_items`), each piece of work used once, in plan order:
+    - outline: the event's talk, once it has sections;
+    - run-through and dress rehearsal: rehearsals of the event's talk whose session day is on or after the item's day;
+    - Q&A drill: a Q&A panel conversation or a boss drill session with a take;
+    - mock: any other conversation;
+    - routine: a routine run with the event's ID;
+    - debrief: an after-action review with the event's ID.
+  - An item ticked or unticked by hand (`by_hand`) never ticks itself again. `save_event_plan` replaces the items that aren't done and numbers all of them by day (a done item first on its day).
+  - Item actions:
+    - the outline builds a talk from the template for the event's kind (STAR answers for an interview, Update for a meeting, Toast, Pitch, else Classic) and links it;
+    - Q&A drill opens the boss level for the event's kind (job interview, meeting, toast; else the sceptical Q&A);
+    - Mock opens the partner's start dialog through `/partner?scenario=` (job interview, or meeting update for meetings);
+    - Routine opens the routine with `?event=`;
+    - Debrief opens the after-action review with `&event=` and the event's title.
+- **Talks.**
+  - Section IDs are lowercase (`section-<ms>`), so they can travel in take marks.
+  - Rehearsing opens one session per sitting (exercise `ex-rehearsal`, type `rehearsal`, the talk as its group). Each take is one rehearsal. Its section marks are written when the take is saved, then `record_rehearsal` takes the snapshot.
+  - Report spans: section 1 starts at 0, each later section at its first mark, and a section runs to the next one reached in time or to the end of the take. A section never reached reads "Not reached". Words, pace and hesitation candidates come from segments that start in the span; pace needs 5 seconds or more, and dismissed hesitation candidates are left out.
+  - Over and under read "+0:11" and "−0:08", with no colour. The comparison chart leaves out the red chart colour.
+- **Listener pack.**
+  - The page's policy adds `file:` to `media-src`: Edge treats a page opened from a folder as its own origin, so `'self'` alone would block `audio.wav`.
+  - `listen_html` also takes the pack ID, the take's length in minutes and the transcript text.
+  - Answer files are `answers.cpanswer.json`. A second download may be renamed `answers.cpanswer (1).json`, so the import dialog filters `.json`.
+  - `listener_answers` (30 XP) is earned per new answer file. Your judgement of each file ("Did they get your main point?") is what Structure 5's second option counts.
+  - A-32: `listener_pack.rs`, `storage/events.rs`, `storage/listener.rs` and `commands/events.rs` are in A-11's offline list. A-11's child process writes a pack and imports an answer file without building an HTTP client; this stands for `listener_pack_builds_no_http_client`.
+- **Time capsule.**
+  - `capsule_offer(today)` starts a month's seven days on its first call that month (Today's first load). It shows until a capsule take that month, or a dismissal. Today offers it only when there is a first question to ask.
+  - The question is the baseline prompt, else the first prompt you answered from the pack or your own. The take's session uses that prompt's ID, so "an earlier answer to this prompt" finds it too.
+  - The capsule achievements count months, not takes.
+- **XP and facts.** `mission` 40, `event_debrief` 40 (an event's first debrief), `listener_answers` 30, `capsule` 20 (once per capsule session); the ledger totals 567. Facts v8 add each reflection's mission and event, `events`, `listenerAnswers` (not in Trash) and `missionPicks`.
+- **Engine.** The `transfers` mission option, `listenerAnswers`, `debrief` and the rehearsal and capsule activities count real evidence now.
+  - An either-or criterion no longer shows an option with nothing done ahead of one with progress. Otherwise Courage 5 would have read 0 of 1 (the new debrief option) instead of 5 of 10 reflections; the golden levels are unchanged.
+  - The practise links point at real pages. The filler programme (M11) had been left hidden; it is linked now.
+- **Elsewhere.** Ctrl+K gains Prepare for an event, Build a talk and Open the time capsule, and Start a conversation now opens the partner. Build a talk also sits in Exercises → Prompts. Ask a listener… is on every take in the Studio and on the session page.
+- **Browser preview.** A sample interview six days ahead with its plan and a STAR outline (`talk-sample`). A pack is recorded without a file. Import listener answers adds a sample listener's answers to the newest pack; a second import reads as the same file.
+- **Remaining by hand:** A-34 in Edge with the network off; an event plan followed with the system date changed; a rehearsal with a real microphone; the calendar with Narrator.
+
 **Schema v23**
 ```sql
 -- Real world (M14).

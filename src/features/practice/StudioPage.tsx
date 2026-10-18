@@ -26,6 +26,7 @@ import { createPlayerLink } from "@/features/review/player-link";
 import { useQuery } from "@tanstack/react-query";
 import type { SavedRecording } from "@/lib/ipc/schemas";
 import { MoveTakeToTrashButton } from "@/features/sessions/TrashPage";
+import { AskListenerButton } from "@/features/events/ListenerPackDialog";
 import { PASSAGES, type Passage } from "@/content/passages";
 import { BASELINE_PROMPT, CURRICULUM_VERSION } from "@/content/prompts";
 import { passagePrompt, ThoughtGroupPassage } from "./ThoughtGroupPassage";
@@ -312,13 +313,19 @@ function Studio({ exercise, prompt, passage, phrase, phrases = [] }: { exercise:
                 label={`Take ${t.ordinal}`}
                 meta={formatClock(t.durationMs)}
                 status={trashed.has(t.asset.assetId) ? "In Trash" : native ? "Saved" : "Simulated"}
-                action={native && !trashed.has(t.asset.assetId) && (
-                  <MoveTakeToTrashButton
-                    take={{ id: t.asset.assetId, ordinal: t.ordinal, durationMs: t.durationMs }}
-                    sessionTitle={prompt.text}
-                    onMoved={() => setTrashed((s) => new Set(s).add(t.asset.assetId))}
-                    onRestored={() => setTrashed((s) => { const next = new Set(s); next.delete(t.asset.assetId); return next; })}
-                  />
+                action={!trashed.has(t.asset.assetId) && (
+                  <div className="flex flex-wrap gap-2">
+                    {/* A listener pack for this take (14.4). */}
+                    <AskListenerButton attemptId={t.asset.assetId} />
+                    {native && (
+                      <MoveTakeToTrashButton
+                        take={{ id: t.asset.assetId, ordinal: t.ordinal, durationMs: t.durationMs }}
+                        sessionTitle={prompt.text}
+                        onMoved={() => setTrashed((s) => new Set(s).add(t.asset.assetId))}
+                        onRestored={() => setTrashed((s) => { const next = new Set(s); next.delete(t.asset.assetId); return next; })}
+                      />
+                    )}
+                  </div>
                 )}
               >
                 {trashed.has(t.asset.assetId) ? (

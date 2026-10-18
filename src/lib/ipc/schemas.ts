@@ -33,8 +33,8 @@ export type ServiceStatus = z.infer<typeof ServiceStatus>;
 /** The drills of roadmap M10, each an exercise type of its own (D-30). */
 export const DRILL_TYPES = ["jam", "roulette", "word_bomb", "three_ways", "emphasis", "pace_ladder", "story_spine", "story_cubes", "pitch", "steelman", "daily", "gauntlet", "boss"] as const;
 export type DrillType = (typeof DRILL_TYPES)[number];
-/** Core exercises, drills, saying a phrase aloud during review (M11), and the partner's conversations and upgrade loops (M13). */
-export const ExerciseType = z.enum(["repeat", "thought_groups", "imitate", "expression", ...DRILL_TYPES, "phrase_say_it", "conversation", "upgrade"]);
+/** Core exercises, drills, saying a phrase aloud during review (M11), the partner's conversations and upgrade loops (M13), and a talk's rehearsals and the time capsule (M14). */
+export const ExerciseType = z.enum(["repeat", "thought_groups", "imitate", "expression", ...DRILL_TYPES, "phrase_say_it", "conversation", "upgrade", "rehearsal", "capsule"]);
 export type ExerciseType = z.infer<typeof ExerciseType>;
 export const isDrillType = (type: string | null | undefined): type is DrillType => !!type && (DRILL_TYPES as readonly string[]).includes(type);
 
@@ -108,7 +108,7 @@ export type TransferFlow = z.infer<typeof TransferFlow>;
 export const TransferTag = z.enum(["story", "meeting", "presentation", "interview", "small_talk", "phone", "other"]);
 export type TransferTag = z.infer<typeof TransferTag>;
 /** An after-action review's four answers (12.4): what you planned, what happened, why, and what next time. */
-export const AfterAction = z.object({ planned: z.string(), happened: z.string(), why: z.string(), nextTime: z.string() }).strict();
+export const AfterAction = z.object({ planned: z.string(), happened: z.string(), why: z.string(), nextTime: z.string(), /** The event it debriefs (14.2). */ eventId: Id.optional() }).strict();
 export type AfterAction = z.infer<typeof AfterAction>;
 export const TransferKind = z.enum(["reflection", "aar"]);
 export type TransferKind = z.infer<typeof TransferKind>;
@@ -118,10 +118,12 @@ export const TransferReview = z.object({
   flow: TransferFlow.nullable().default(null), tags: z.array(TransferTag).default([]),
   /** A reflection, or an after-action review with its four answers (12.4). */
   kind: TransferKind.default("reflection"), extra: AfterAction.nullable().default(null),
+  /** The mission it logs (14.1). */
+  missionId: z.string().nullable().default(null),
 }).strict();
 export type TransferReview = z.infer<typeof TransferReview>;
-export type TransferInput = Omit<TransferReview, "id" | "createdAt" | "flow" | "tags" | "kind" | "extra"> & {
-  flow?: TransferFlow | null; tags?: TransferTag[]; kind?: TransferKind; extra?: AfterAction | null;
+export type TransferInput = Omit<TransferReview, "id" | "createdAt" | "flow" | "tags" | "kind" | "extra" | "missionId"> & {
+  flow?: TransferFlow | null; tags?: TransferTag[]; kind?: TransferKind; extra?: AfterAction | null; missionId?: string | null;
 };
 /** What you write for your own prompt (4.13). */
 export type PromptInput = { text: string; tags: PromptTag[]; conditions: TaskConditions };
@@ -1282,9 +1284,19 @@ export const UpgradeRun = z
   .strict();
 export type UpgradeRun = z.infer<typeof UpgradeRun>;
 
+// ── Real world (roadmap M14) ────────────────────────────────────────────────
+/** What you prepare for (14.2). */
+export const RealEventKind = z.enum(["talk", "interview", "meeting", "toast", "pitch", "other"]);
+export type RealEventKind = z.infer<typeof RealEventKind>;
+/** A step of an event's plan (14.2). */
+export const EventItemKind = z.enum(["outline", "run_through", "qa_drill", "mock", "dress_rehearsal", "routine", "debrief"]);
+export type EventItemKind = z.infer<typeof EventItemKind>;
+/** The rest of M14's IPC shapes load with the first real-world call, off the start-up path. */
+export type { CapsuleOffer, EventInput, EventPlanItem, EventPlanItemInput, EventView, ListenerFeedback, ListenerImport, ListenerPack, MissionPick, PlannedEvent, RehearsalReport, RehearsalSection, Talk, TalkInput, TalkSection, TalkSectionInput, TalkView } from "./schemas-real-world";
+
 // ── Drills (roadmap M10) ─────────────────────────────────────────────────────
-/** A mark made during a take (10.1): the time into the take, a kind, and keys or numbers. Never words you said. */
-export const TakeMarkKind = z.enum(["word_shown", "self_flag", "card_advanced", "cue_shown"]);
+/** A mark made during a take (10.1): the time into the take, a kind, and keys or numbers. Never words you said. A rehearsal's move to the next cue card is a `section_mark` (14.3). */
+export const TakeMarkKind = z.enum(["word_shown", "self_flag", "card_advanced", "cue_shown", "section_mark"]);
 export type TakeMarkKind = z.infer<typeof TakeMarkKind>;
 const MarkData = z.record(z.string().regex(/^[A-Za-z0-9_]{1,40}$/), z.union([z.number(), z.string().regex(/^[a-z0-9_-]{1,40}$/), z.boolean()]));
 export const TakeMark = z.object({ atMs: z.number().int().nonnegative(), kind: TakeMarkKind, data: MarkData.default({}) }).strict();
@@ -1381,6 +1393,9 @@ export const FactTransfer = z
     flow: TransferFlow.nullable(), tags: z.array(TransferTag),
     /** Facts v6 (12.4). */
     kind: TransferKind,
+    /** Facts v8 (M14): the mission it logs and the event it debriefs. */
+    missionId: z.string().nullable(),
+    eventId: z.string().nullable(),
   })
   .strict();
 export type FactTransfer = z.infer<typeof FactTransfer>;
@@ -1396,6 +1411,15 @@ export const FactConversation = z
   .object({ id: Id, scenarioId: z.string(), pressure: z.number().int().min(0).max(3), mode: ConversationMode, learnerTurns: z.number().int().nonnegative(), localDate: z.string(), endedAt: z.string().nullable(), bossId: z.string().nullable() })
   .strict();
 export type FactConversation = z.infer<typeof FactConversation>;
+/** Facts v8 (14.2): an event you prepare for, and whether its debrief is written. */
+export const FactEvent = z.object({ id: Id, kind: RealEventKind, localDate: z.string(), debriefDone: z.boolean() }).strict();
+export type FactEvent = z.infer<typeof FactEvent>;
+/** Facts v8 (14.4): one imported answer file; whether they got your main point is your judgement. */
+export const FactListenerAnswer = z.object({ id: Id, attemptId: Id, localDate: z.string(), mainPointAnswered: z.boolean() }).strict();
+export type FactListenerAnswer = z.infer<typeof FactListenerAnswer>;
+/** Facts v8 (14.1): a week's mission, or the week skipped. */
+export const FactMissionPick = z.object({ week: z.string(), missionId: z.string().nullable(), done: z.boolean() }).strict();
+export type FactMissionPick = z.infer<typeof FactMissionPick>;
 export const FactPhrase = z.object({ id: Id, createdAt: z.string(), starter: z.boolean(), deleted: z.boolean() }).strict();
 export type FactPhrase = z.infer<typeof FactPhrase>;
 export const FactPhraseReview = z.object({ cardId: Id, localDate: z.string(), rating: PhraseRating }).strict();
@@ -1423,6 +1447,10 @@ export const PracticeFacts = z
     exposure: z.array(FactExposureStep),
     /** Facts v7 (M13): your practice conversations. */
     conversations: z.array(FactConversation),
+    /** Facts v8 (M14): events, listeners' answer files and the weeks' missions. */
+    events: z.array(FactEvent),
+    listenerAnswers: z.array(FactListenerAnswer),
+    missionPicks: z.array(FactMissionPick),
   })
   .strict();
 export type PracticeFacts = z.infer<typeof PracticeFacts>;

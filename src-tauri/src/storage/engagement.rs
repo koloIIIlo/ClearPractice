@@ -14,7 +14,7 @@ use std::collections::HashMap;
 /// app_settings key marking that history was turned into events once.
 const BACKFILL_KEY: &str = "engagement_backfill_v1";
 /// Bumped when facts gain fields, so the interface can tell what to expect.
-pub const FACTS_VERSION: u32 = 7;
+pub const FACTS_VERSION: u32 = 8;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,6 +93,23 @@ pub(crate) fn award_drill_round(conn: &Connection, attempt_id: &str, session_id:
         .flatten();
     if kind.as_deref().is_some_and(crate::exercise_types::is_drill) {
         award(conn, &NewEvent { kind: EventKind::DrillRound, ref_id: session_id, local_date, session_id: Some(session_id), attempt_id: Some(attempt_id), created_at_ms, backfilled })?;
+    }
+    Ok(())
+}
+
+/// `capsule` once per time-capsule session (14.5), on its first saved take.
+pub(crate) fn award_capsule(conn: &Connection, attempt_id: &str, session_id: &str, local_date: &str, created_at_ms: i64, backfilled: bool) -> Result<()> {
+    let kind: Option<String> = conn
+        .query_row(
+            "SELECT e.type FROM session_steps st JOIN exercise_definitions e ON e.id=st.exercise_id AND e.version=st.exercise_version WHERE st.session_id=?1 LIMIT 1",
+            [session_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(db_error)?
+        .flatten();
+    if kind.as_deref() == Some("capsule") {
+        award(conn, &NewEvent { kind: EventKind::Capsule, ref_id: session_id, local_date, session_id: Some(session_id), attempt_id: Some(attempt_id), created_at_ms, backfilled })?;
     }
     Ok(())
 }
@@ -322,6 +339,39 @@ pub struct FactTransfer {
     pub tags: Vec<String>,
     /// Facts v6 (12.4): "reflection" or "aar" (an after-action review).
     pub kind: String,
+    /// Facts v8 (M14): the mission it logs and the event it debriefs.
+    pub mission_id: Option<String>,
+    pub event_id: Option<String>,
+}
+
+/// Facts v8 (14.2): an event you prepare for (not deleted), and whether its debrief is written.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FactEvent {
+    pub id: String,
+    pub kind: String,
+    pub local_date: String,
+    pub debrief_done: bool,
+}
+
+/// Facts v8 (14.4): one imported answer file. Whether the listener got your
+/// main point is your judgement (Your note).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FactListenerAnswer {
+    pub id: String,
+    pub attempt_id: String,
+    pub local_date: String,
+    pub main_point_answered: bool,
+}
+
+/// Facts v8 (14.1): a week's mission, or the week skipped (no mission).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FactMissionPick {
+    pub week: String,
+    pub mission_id: Option<String>,
+    pub done: bool,
 }
 
 /// Facts v6 (12.2): a ladder step, deleted or not, with its attempts (your ratings, Your note).
@@ -402,6 +452,10 @@ pub struct PracticeFacts {
     pub exposure: Vec<FactExposureStep>,
     /// Facts v7 (M13): your practice conversations.
     pub conversations: Vec<FactConversation>,
+    /// Facts v8 (M14): events, listeners' answer files and the weeks' missions.
+    pub events: Vec<FactEvent>,
+    pub listener_answers: Vec<FactListenerAnswer>,
+    pub mission_picks: Vec<FactMissionPick>,
 }
 
 fn count_rows(conn: &Connection, sql: &str) -> Result<u32> {
@@ -643,7 +697,7 @@ impl DatabaseOwner {
             .map_err(db_error)?;
 
         let mut stmt = conn
-            .prepare("SELECT id,local_date,listener_text,clarification,success,next_focus,flow,tags,kind,json_extract(extra,'$.nextTime') FROM transfer_reviews WHERE deleted_at_ms IS NULL ORDER BY local_date,created_at_ms")
+            .prepare("SELECT id,local_date,listener_text,clarification,success,next_focus,flow,tags,kind,json_extract(extra,'$.nextTime'),mission_id,event_id FROM transfer_reviews WHERE deleted_at_ms IS NULL ORDER BY local_date,created_at_ms")
             .map_err(db_error)?;
         let transfer_reviews = stmt
             .query_map([], |r| {
@@ -658,6 +712,8 @@ impl DatabaseOwner {
                     flow: r.get(6)?,
                     tags: serde_json::from_str(&r.get::<_, String>(7)?).unwrap_or_default(),
                     kind: r.get(8)?,
+                    mission_id: r.get(10)?,
+                    event_id: r.get(11)?,
                 })
             })
             .map_err(db_error)?
@@ -708,6 +764,34 @@ impl DatabaseOwner {
             .map_err(db_error)?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(db_error)?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT e.id,e.kind,e.local_date,EXISTS(SELECT 1 FROM transfer_reviews t WHERE t.event_id=e.id AND t.kind='aar' AND t.deleted_at_ms IS NULL) \
+                 FROM events e WHERE e.deleted_at_ms IS NULL ORDER BY e.local_date,e.created_at_ms,e.id",
+            )
+            .map_err(db_error)?;
+        let events = stmt
+            .query_map([], |r| Ok(FactEvent { id: r.get(0)?, kind: r.get(1)?, local_date: r.get(2)?, debrief_done: r.get(3)? }))
+            .map_err(db_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(db_error)?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT f.id,p.attempt_id,f.imported_at_ms,f.main_point_understood IS 1 FROM listener_feedback f JOIN listener_packs p ON p.id=f.pack_id \
+                 JOIN attempts a ON a.id=p.attempt_id JOIN sessions s ON s.id=p.session_id WHERE a.deleted_at_ms IS NULL AND s.deleted_at_ms IS NULL ORDER BY f.imported_at_ms,f.id",
+            )
+            .map_err(db_error)?;
+        let listener_answers = stmt
+            .query_map([], |r| Ok(FactListenerAnswer { id: r.get(0)?, attempt_id: r.get(1)?, local_date: local_date(r.get(2)?), main_point_answered: r.get(3)? }))
+            .map_err(db_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(db_error)?;
+        let mut stmt = conn.prepare("SELECT week,mission_id,done_at_ms IS NOT NULL FROM mission_picks ORDER BY week").map_err(db_error)?;
+        let mission_picks = stmt
+            .query_map([], |r| Ok(FactMissionPick { week: r.get(0)?, mission_id: r.get(1)?, done: r.get(2)? }))
+            .map_err(db_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(db_error)?;
         let mut stmt = conn.prepare("SELECT id,created_at_ms,deleted_at_ms IS NOT NULL FROM phrase_cards ORDER BY created_at_ms,id").map_err(db_error)?;
         let phrases = stmt
             .query_map([], |r| {
@@ -739,6 +823,9 @@ impl DatabaseOwner {
             programme,
             exposure,
             conversations,
+            events,
+            listener_answers,
+            mission_picks,
         })
     }
 }
@@ -893,6 +980,7 @@ pub(crate) mod tests {
                 tags: Vec::new(),
                 kind: None,
                 extra: None,
+                mission_id: None,
             })
             .unwrap();
         assert!(db.record_sequence_completed(&["missing".into()], "2026-10-12").unwrap().is_none(), "no take, no event");
@@ -1119,7 +1207,7 @@ pub(crate) mod tests {
     }
 
     /// The interface parses facts with strict schemas; its fixture
-    /// (src/lib/ipc/fixtures/facts-v7.json) must have exactly these fields.
+    /// (src/lib/ipc/fixtures/facts-v8.json) must have exactly these fields.
     #[test]
     fn facts_serialize_with_the_same_fields_as_the_interface_fixture() {
         let root = TestRoot::new();
@@ -1129,7 +1217,7 @@ pub(crate) mod tests {
         db.add_transfer_review(&super::super::transfer::TransferInput {
             local_date: "2026-10-14".into(), situation: "Explained my job".into(), preparation: String::new(), listener_text: "Your job sounds fun".into(),
             clarification: String::new(), success: String::new(), self_report: String::new(), next_focus: String::new(), flow: Some("smooth".into()), tags: vec!["story".into()],
-            kind: None, extra: None,
+            kind: None, extra: None, mission_id: None,
         }).unwrap();
         let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 16).unwrap();
         let card = db.add_phrase(&phrase_text(), None, today).unwrap();
@@ -1139,11 +1227,19 @@ pub(crate) mod tests {
         db.add_exposure_attempt(&super::super::confidence::AttemptInput { step_id: step.id, local_date: "2026-10-15".into(), before_rating: Some(6), after_rating: Some(3), outcome: "yes".into(), note: String::new() }).unwrap();
         let conversation = db.create_conversation(&super::super::conversations::tests::new_conversation("scripted"), None).unwrap();
         db.add_learner_turn(&conversation.conversation.id, None, Some("I led a migration."), false).unwrap();
+        db.pick_mission("2026-10-12", Some("ask-in-meeting")).unwrap();
+        db.save_event(&super::super::events::EventInput {
+            id: None, title: "Team demo".into(), kind: "talk".into(), local_date: "2026-10-20".into(), start_time: None, minutes: Some(10), audience: String::new(), goal: String::new(),
+        }).unwrap();
+        let pack = db.new_listener_pack_id().unwrap();
+        db.save_listener_pack(&super::super::listener::NewPack { id: &pack, attempt_id: "t1", questions: &["What was my main point?".into()], from: "", include_transcript: false, created_at_ms: 1 }).unwrap();
+        let answers = crate::listener_pack::Answers { pack_id: pack, name: String::new(), answers: vec!["Search".into()], answered_at: None };
+        db.import_listener_answers(&answers, &"d".repeat(64)).unwrap();
         let actual = serde_json::to_value(db.practice_facts("2026-10-16").unwrap()).unwrap();
-        let fixture: Value = serde_json::from_str(include_str!("../../../src/lib/ipc/fixtures/facts-v7.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../../src/lib/ipc/fixtures/facts-v8.json")).unwrap();
         let keys = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<std::collections::BTreeSet<_>>();
         assert_eq!(keys(&actual), keys(&fixture));
-        for list in ["sessions", "takes", "transferReviews", "phrases", "phraseReviews", "progression", "exposure", "conversations"] {
+        for list in ["sessions", "takes", "transferReviews", "phrases", "phraseReviews", "progression", "exposure", "conversations", "events", "listenerAnswers", "missionPicks"] {
             assert_eq!(keys(&actual[list][0]), keys(&fixture[list][0]), "{list}");
         }
         assert_eq!(keys(&actual["exposure"][0]["attempts"][0]), keys(&fixture["exposure"][0]["attempts"][0]));

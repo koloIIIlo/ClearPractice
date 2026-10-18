@@ -1,7 +1,7 @@
 import {
   Award, BookOpenText, Calendar, CalendarCheck, CalendarHeart, Ear, EyeOff, FileText, Flag, Footprints, Gem, Hourglass, ListOrdered, MessageSquareQuote,
   Mic, Milestone, NotebookPen, PenLine, Repeat, Search, Sparkles, Sprout, Sunrise, Target, Trophy, Waves, Zap, Bomb, CalendarDays, Crown, Dices, Gauge, Highlighter,
-  Shapes, Swords, Timer, MessagesSquare, Flame, ArrowUpCircle, type LucideIcon,
+  Shapes, Swords, Timer, MessagesSquare, Flame, ArrowUpCircle, Compass, Presentation, History, type LucideIcon,
 } from "lucide-react";
 import { BOSSES, type BossId } from "@/content/bosses";
 import { DRILL_TYPES } from "@/lib/ipc/schemas";
@@ -154,6 +154,16 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
     criterion: { kind: "conversation", label: "1 conversation at pressure 3", minTurns: 3, minPressure: 3, atLeast: 1 } },
   { id: "aar", title: "Lessons learned", description: "Write an after-action review.", category: "real", icon: NotebookPen,
     criterion: custom("1 after-action review", ({ facts }) => count(facts.transferReviews.filter((r) => r.kind === "aar").length, 1)) },
+  // Real world (M14).
+  { id: "first-mission", title: "On a mission", description: "Complete a mission.", category: "real", icon: Compass,
+    criterion: { kind: "transfers", label: "1 mission logged with its reflection", mission: true, atLeast: 1 } },
+  { id: "listener-words", title: "In their words", description: "Import a listener's answers.", category: "real", icon: MessageSquareQuote,
+    criterion: { kind: "listenerAnswers", label: "1 listener's answers", atLeast: 1 } },
+  { id: "event-done", title: "Showtime", description: "Debrief an event you prepared for.", category: "real", icon: Presentation,
+    criterion: { kind: "debrief", label: "1 event with its debrief", atLeast: 1 } },
+  capsules("capsule-2", "Time traveller", "Record two time capsules.", 2),
+  capsules("capsule-6", "Half a year", "Record six time capsules.", 6),
+  capsules("capsule-12", "A year of you", "Record twelve time capsules.", 12),
   // Explore
   { id: "all-exercises", title: "Well rounded", description: "Try all four exercises.", category: "explore", icon: Award,
     criterion: custom("All four exercises", ({ facts }) => count(new Set(facts.sessions.filter((s) => s.takeCount > 0 && CORE.has(s.exerciseType ?? "")).map((s) => s.exerciseType)).size, 4)) },
@@ -201,6 +211,14 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   { id: "upgrade-3", title: "Upgraded", description: "Complete 3 upgrade loops.", category: "listening", icon: ArrowUpCircle,
     criterion: { kind: "activity", label: "3 upgrade loops", type: "upgrade", atLeast: 3 } },
 ];
+
+/** Time capsules (14.5): one a month counts, however often you answer it again. */
+function capsules(id: string, title: string, description: string, needed: number): AchievementDef {
+  return {
+    id, title, description, category: "real", icon: History,
+    criterion: custom(`${needed} time capsules`, ({ facts }) => count(new Set(facts.sessions.filter((s) => s.exerciseType === "capsule" && s.takeCount > 0).map((s) => s.localDate.slice(0, 7))).size, needed)),
+  };
+}
 
 /** Progress toward an achievement, with the evidence behind it. */
 export function achievementProgress(def: AchievementDef, input: AchievementInput): CriterionProgress {

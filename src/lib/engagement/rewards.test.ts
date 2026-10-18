@@ -97,6 +97,17 @@ describe("achievements (9.6)", () => {
     expect(ids(loop(loop(loop(factsBuilder()))).build())).toContain("upgrade-3");
   });
 
+  it("real-world achievements: a mission, a listener's words, a debrief and time capsules by month (M14)", () => {
+    const ids = (facts: PracticeFacts) => newAchievements(facts, empty, [], ctx(facts), [], { weekStartsOn: "monday", weeklyGoalDays: 3 }).map((a) => a.id);
+    expect(ids(factsBuilder().transfer().build())).not.toContain("first-mission");
+    const facts = factsBuilder().transfer({ missionId: "dinner-story" }).session().take().listenerAnswer().event({ debriefDone: true }).build();
+    expect(ids(facts)).toEqual(expect.arrayContaining(["first-mission", "listener-words", "event-done"]));
+    expect(ids(factsBuilder().event().build())).not.toContain("event-done");
+    const capsule = (b: ReturnType<typeof factsBuilder>) => b.session({ exerciseType: "capsule" }).take();
+    expect(ids(capsule(capsule(factsBuilder().onDay(1)).onDay(2)).build()), "two in one month count once").not.toContain("capsule-2");
+    expect(ids(capsule(capsule(factsBuilder().onDay(1)).onDay(40)).build())).toContain("capsule-2");
+  });
+
   it("Comeback needs fourteen days away", () => {
     const comeback = ACHIEVEMENTS.find((a) => a.id === "comeback")!;
     const facts = factsBuilder().build();
@@ -179,6 +190,21 @@ describe("weekly quests (9.9)", () => {
     if (first.quest !== "phrases-10") expect(third.quest).toBe("phrases-10");
     const thisWeek = [{ week: monday, slot: 2, quest: "real-1", params: {}, swapped: false, createdAt: "x", completedAt: null }];
     expect(swapCandidate(1, thisWeek, facts, recent, monday)?.quest).toBe("phrases-10");
+  });
+
+  it("slot 2 holds this week's mission when one is picked, and its reflection completes it (M14)", () => {
+    const picked = factsBuilder("2026-10-14").onDay(2).missionPick({ week: monday }).build();
+    const quests = generateWeeklyQuests(picked, areas, [], monday, [], ctx(picked));
+    expect(quests[1]).toEqual({ slot: 2, quest: "mission-1", params: {} });
+    expect(quests.filter((q) => q.quest === "mission-1")).toHaveLength(1);
+    const skipped = factsBuilder("2026-10-14").missionPick({ week: monday, missionId: null }).build();
+    expect(generateWeeklyQuests(skipped, areas, [], monday, [], ctx(skipped))[1].quest).toBe("real-1");
+    expect(swapCandidate(3, [], picked, [], monday)?.quest).not.toBe("mission-1");
+    const logged = factsBuilder("2026-10-14").onDay(1).transfer().build();
+    expect(questProgress({ quest: "mission-1", week: monday }, logged, [], ctx(logged)).met).toBe(false);
+    const done = factsBuilder("2026-10-14").onDay(1).transfer({ missionId: "ask-in-meeting" }).build();
+    expect(questProgress({ quest: "mission-1", week: monday }, done, [], ctx(done)).met).toBe(true);
+    expect(questProgress({ quest: "real-1", week: monday }, done, [], ctx(done)).met, "a mission's reflection is a real conversation too").toBe(true);
   });
 
   it("a practice conversation this week completes the partner quest (M13)", () => {

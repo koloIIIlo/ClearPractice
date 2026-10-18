@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Page } from "@/components/page";
 import { Button } from "@/components/ui/button";
@@ -82,22 +82,25 @@ function NameField() {
 /**
  * The 3-minute pre-talk routine (roadmap 12.3): breathe, warm up, reframe,
  * unload and encourage. Every step can be skipped, it works offline, and the
- * worry text is never stored unless you keep it.
+ * worry text is never stored unless you keep it. Opened from an event's plan
+ * (14.2) with ?event=, the run finishes that plan's Routine item.
  */
 export function RoutinePage() {
   const ipc = useIpc();
   const qc = useQueryClient();
   const { preferences } = usePreferences();
+  const [search] = useSearchParams();
+  const eventId = search.get("event");
   const runs = useQuery({ queryKey: keys.routineRuns, queryFn: () => ipc.listRoutineRuns() });
   const [index, setIndex] = useState(0);
   const [done, setDone] = useState<RoutineStepId[]>([]);
   const [worries, setWorries] = useState("");
   const [keep, setKeep] = useState(false);
   const save = useMutation({
-    mutationFn: (steps: RoutineStepId[]) => ipc.saveRoutineRun({ steps, keptNote: keep && worries.trim() ? worries.trim() : null }),
+    mutationFn: (steps: RoutineStepId[]) => ipc.saveRoutineRun({ steps, keptNote: keep && worries.trim() ? worries.trim() : null, ...(eventId ? { eventId } : {}) }),
     onSuccess: () => {
       requestEngagementRefresh("activity");
-      return qc.invalidateQueries({ queryKey: keys.routineRuns });
+      return Promise.all([qc.invalidateQueries({ queryKey: keys.routineRuns }), qc.invalidateQueries({ queryKey: keys.realEvents })]);
     },
   });
   const today = toLocalDate(new Date());
@@ -128,8 +131,14 @@ export function RoutinePage() {
             {done.length === 0 && <p className="text-muted-foreground">You skipped every step, so nothing was saved. That's fine too.</p>}
             {save.error && <p role="alert" className="text-meta text-destructive">{save.error.message}</p>}
             <div className="flex flex-wrap justify-center gap-2">
-              <Button variant="outline" asChild><Link to="/confidence">Back to Confidence</Link></Button>
-              <Button variant="ghost" asChild><Link to="/progress?view=real&form=aar">Afterwards: write a review</Link></Button>
+              {eventId ? (
+                <Button variant="outline" asChild><Link to={`/events/${eventId}`}>Back to the event</Link></Button>
+              ) : (
+                <Button variant="outline" asChild><Link to="/confidence">Back to Confidence</Link></Button>
+              )}
+              <Button variant="ghost" asChild>
+                <Link to={eventId ? `/progress?view=real&form=aar&event=${encodeURIComponent(eventId)}` : "/progress?view=real&form=aar"}>Afterwards: write a review</Link>
+              </Button>
             </div>
           </section>
         ) : (

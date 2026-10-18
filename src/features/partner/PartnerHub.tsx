@@ -26,7 +26,8 @@ function ModeChip({ label, available, reason }: { label: string; available: bool
 /**
  * The practice partner's hub (roadmap 13.3): scenarios to start, your recent
  * conversations, and which modes are ready. A boss played with the partner
- * (13.6) arrives as /partner?boss=… and opens its start dialog.
+ * (13.6) arrives as /partner?boss=… and opens its start dialog; an event's mock
+ * (14.2) arrives as /partner?scenario=….
  */
 export function PartnerHubPage() {
   const [search, setSearch] = useSearchParams();
@@ -34,19 +35,22 @@ export function PartnerHubPage() {
   const conversations = useConversations();
   const [starting, setStarting] = useState<{ scenario: Scenario; preset?: StartPreset } | null>(null);
   const bossId = search.get("boss");
+  const scenarioId = search.get("scenario");
   useEffect(() => {
-    if (!bossId) return;
-    const mapping = BOSS_PARTNERS[bossId as BossId];
-    const scenario = mapping ? scenarioById(mapping.scenarioId) : undefined;
-    if (mapping && scenario) setStarting({ scenario, preset: { persona: mapping.persona, pressure: mapping.pressure, guidance: mapping.guidance, bossId } });
+    if (!bossId && !scenarioId) return;
+    const mapping = bossId ? BOSS_PARTNERS[bossId as BossId] : undefined;
+    const scenario = mapping ? scenarioById(mapping.scenarioId) : scenarioId ? scenarioById(scenarioId) : undefined;
+    if (mapping && scenario) setStarting({ scenario, preset: { persona: mapping.persona, pressure: mapping.pressure, guidance: mapping.guidance, bossId: bossId! } });
+    else if (scenario) setStarting({ scenario });
     setSearch(
       (s) => {
         s.delete("boss");
+        s.delete("scenario");
         return s;
       },
       { replace: true },
     );
-  }, [bossId, setSearch]);
+  }, [bossId, scenarioId, setSearch]);
 
   return (
     <Page>

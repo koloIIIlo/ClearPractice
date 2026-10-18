@@ -4,6 +4,18 @@
  * never resolves file paths itself.
  */
 import type {
+  CapsuleOffer,
+  EventInput,
+  EventPlanItemInput,
+  EventView,
+  ListenerFeedback,
+  ListenerImport,
+  ListenerPack,
+  MissionPick,
+  PlannedEvent,
+  RehearsalReport,
+  TalkInput,
+  TalkView,
   ActivityContext,
   ActivityResult,
   CatchRun,
@@ -441,6 +453,46 @@ export interface IpcClient {
   /** Previews AI feedback on a whole conversation (13.11): your turns, with the partner's lines as context. */
   previewConversationFeedback(conversationId: string, model?: CoachingModel): Promise<CoachingPreview>;
   requestConversationFeedback(conversationId: string, requestId: string, payloadSha256: string): Promise<ConversationFeedbackRun>;
+  /** Real world (M14): picks this week's mission, or skips the week with `null`. `week` is the week's first day. */
+  pickMission(week: string, missionId: string | null): Promise<MissionPick>;
+  getMissionPick(week: string): Promise<MissionPick | null>;
+  /** Takes back this week's pick or skip, so the offers show again; a done week stays. */
+  clearMission(week: string): Promise<void>;
+  /** Creates or changes an event you prepare for (14.2). */
+  saveEvent(input: EventInput): Promise<PlannedEvent>;
+  /** Replaces the plan items that are not done; done ones stay and all are numbered by day. */
+  saveEventPlan(eventId: string, items: EventPlanItemInput[]): Promise<EventView>;
+  /** Ticks or unticks a plan item by hand; it no longer ticks itself. */
+  setPlanItemDone(itemId: string, done: boolean): Promise<EventView>;
+  linkEventTalk(eventId: string, talkId: string): Promise<EventView>;
+  /** An event with its plan, brought up to date with the work you did. */
+  getEvent(eventId: string): Promise<EventView>;
+  /** Your events, soonest first. */
+  listEvents(): Promise<EventView[]>;
+  /** Deletes an event softly; its talk and rehearsal takes stay. */
+  deleteEvent(eventId: string): Promise<void>;
+  /** Creates or changes a talk (14.3); its sections replace the old ones in order. */
+  saveTalk(input: TalkInput): Promise<TalkView>;
+  getTalk(talkId: string): Promise<TalkView>;
+  listTalks(): Promise<TalkView[]>;
+  deleteTalk(talkId: string): Promise<void>;
+  /** Links a saved rehearsal take to its talk with a snapshot of the sections; recording it again keeps the first. */
+  recordRehearsal(talkId: string, attemptId: string): Promise<RehearsalReport>;
+  rehearsalReport(attemptId: string): Promise<RehearsalReport>;
+  /** A talk's rehearsals, oldest first. */
+  listRehearsals(talkId: string): Promise<RehearsalReport[]>;
+  /** This month's time capsule (14.5); the first call in a month starts its seven days on offer. */
+  capsuleOffer(today: string): Promise<CapsuleOffer>;
+  /** Not this month. */
+  dismissCapsule(month: string): Promise<void>;
+  /** Saves a listener pack for one take where you choose (14.4); null when you cancel. Nothing is sent anywhere. */
+  exportListenerPack(attemptId: string, questions: string[], from: string, includeTranscript: boolean): Promise<ListenerPack | null>;
+  /** Imports a listener's answer file you choose; null when you cancel. The same file twice changes nothing. */
+  importListenerAnswers(): Promise<ListenerImport | null>;
+  listListenerPacks(sessionId?: string): Promise<ListenerPack[]>;
+  listListenerFeedback(sessionId?: string): Promise<ListenerFeedback[]>;
+  /** Your judgement of whether the listener got your main point; null clears it. */
+  setListenerJudgement(feedbackId: string, understood: boolean | null): Promise<ListenerFeedback>;
   /** Insights (M8): where saved phrases turned up in takes (one phrase, or all). */
   listPhraseUses(phraseId?: string): Promise<PhraseUse[]>;
   /** Your yes/no note about a take; null clears it. */

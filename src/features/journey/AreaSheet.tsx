@@ -51,6 +51,12 @@ function evidenceLink(e: EvidenceRef, journey: Journey): { to: string | null; te
   if (e.kind === "conversation") {
     return journey.facts.conversations.some((c) => c.id === e.id) ? { to: `/partner/${e.id}`, text: `Practice conversation, ${date}` } : { to: null, text: "From a deleted conversation" };
   }
+  if (e.kind === "event") return { to: `/events/${e.id}`, text: `Event, ${date}` };
+  if (e.kind === "listener") {
+    const answer = journey.facts.listenerAnswers.find((a) => a.id === e.id);
+    const take = answer && journey.facts.takes.find((t) => t.id === answer.attemptId);
+    return take ? { to: `/sessions/${take.sessionId}/attempt/${take.ordinal}`, text: `A listener's answers, ${date}` } : { to: null, text: "From a deleted take" };
+  }
   return { to: "/phrases", text: `Phrase, ${date}` };
 }
 

@@ -41,10 +41,15 @@ pub enum EventKind {
     // Conversation partner (M13).
     Conversation,
     Upgrade,
+    // Real world (M14).
+    Mission,
+    EventDebrief,
+    ListenerAnswers,
+    Capsule,
 }
 
 impl EventKind {
-    pub const ALL: [EventKind; 24] = [
+    pub const ALL: [EventKind; 28] = [
         EventKind::TakeSaved,
         EventKind::Retake,
         EventKind::SequenceCompleted,
@@ -69,6 +74,10 @@ impl EventKind {
         EventKind::AfterAction,
         EventKind::Conversation,
         EventKind::Upgrade,
+        EventKind::Mission,
+        EventKind::EventDebrief,
+        EventKind::ListenerAnswers,
+        EventKind::Capsule,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -97,6 +106,10 @@ impl EventKind {
             EventKind::AfterAction => "after_action",
             EventKind::Conversation => "conversation",
             EventKind::Upgrade => "upgrade",
+            EventKind::Mission => "mission",
+            EventKind::EventDebrief => "event_debrief",
+            EventKind::ListenerAnswers => "listener_answers",
+            EventKind::Capsule => "capsule",
         }
     }
 
@@ -135,6 +148,12 @@ impl EventKind {
             // upgrade loop's retell take (appendix B).
             EventKind::Conversation => 30,
             EventKind::Upgrade => 20,
+            // A mission's reflection, an event's debrief, a listener's answer file
+            // and the monthly time capsule (appendix B).
+            EventKind::Mission => 40,
+            EventKind::EventDebrief => 40,
+            EventKind::ListenerAnswers => 30,
+            EventKind::Capsule => 20,
         }
     }
 
@@ -178,10 +197,11 @@ mod tests {
             assert!(kind.xp() <= 1000);
         }
         assert_eq!(EventKind::parse("drill_round").map(|k| k.xp()), Some(15));
-        assert_eq!(EventKind::parse("mission"), None, "added with M14");
+        assert_eq!(EventKind::parse("mission").map(|k| k.xp()), Some(40));
+        assert_eq!(EventKind::parse("streak"), None, "unknown kinds are refused");
         assert_eq!(EventKind::parse("level_reached").map(|k| k.xp()), Some(50));
         let total: u32 = EventKind::ALL.iter().map(|k| k.xp()).sum();
-        assert_eq!(total, 437, "update appendix B when amounts change");
+        assert_eq!(total, 567, "update appendix B when amounts change");
     }
 
     #[test]

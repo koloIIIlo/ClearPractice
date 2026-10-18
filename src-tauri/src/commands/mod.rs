@@ -5,6 +5,7 @@
 pub mod confidence;
 pub mod drills;
 pub mod engagement;
+pub mod events;
 pub mod insights;
 pub mod learning;
 pub mod partner;

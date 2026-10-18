@@ -6,7 +6,7 @@
 export const AREA_IDS = ["structure", "fluency", "voice", "spontaneity", "vocabulary", "listening", "storytelling", "courage"] as const;
 export type AreaId = (typeof AREA_IDS)[number];
 
-export type EvidenceRef = { kind: "session" | "take" | "transfer" | "phrase" | "activity" | "exposure" | "conversation"; id: string; date: string };
+export type EvidenceRef = { kind: "session" | "take" | "transfer" | "phrase" | "activity" | "exposure" | "conversation" | "event" | "listener"; id: string; date: string };
 
 /** What brings a criterion that can't progress yet. */
 export type Fix = "transcription" | "review" | "drills" | "learning" | "confidence" | "partner" | "events" | null;

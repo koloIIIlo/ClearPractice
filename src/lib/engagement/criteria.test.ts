@@ -87,14 +87,34 @@ describe("criteria DSL (9.2)", () => {
 
   it("reports unavailable criteria with the feature that brings them", () => {
     const facts = factsBuilder().build();
-    expect(run({ kind: "activity", label: "talk", type: "rehearsal", atLeast: 1 }, facts).unavailable?.fix).toBe("events");
+    expect(run({ kind: "activity", label: "a later format", type: "debate", atLeast: 1 }, facts).unavailable?.reason).toBe("Arrives with a later version");
     expect(run({ kind: "activity", label: "jam", type: "jam", atLeast: 1 }, facts).unavailable).toBeNull();
-    // The conversation partner (M13) is here.
+    // The conversation partner (M13) and real-world practice (M14) are here.
     expect(run({ kind: "activity", label: "upgrade", type: "upgrade", atLeast: 1 }, facts).unavailable).toBeNull();
     expect(run({ kind: "conversation", label: "talk", minTurns: 5, atLeast: 1 }, facts).unavailable).toBeNull();
-    expect(run({ kind: "debrief", label: "event", atLeast: 1 }, facts).unavailable?.fix).toBe("events");
+    expect(run({ kind: "activity", label: "talk", type: "rehearsal", atLeast: 1 }, facts).unavailable).toBeNull();
+    expect(run({ kind: "debrief", label: "event", atLeast: 1 }, facts).unavailable).toBeNull();
+    expect(run({ kind: "listenerAnswers", label: "listener", atLeast: 1 }, facts).unavailable).toBeNull();
     const noTranscription = { ...factsBuilder().session().take().build(), transcriptionAvailable: false };
     expect(run(takes({ transcribed: true, fillersReviewed: true }, 3), noTranscription).unavailable).toEqual({ reason: "Needs local transcription", fix: "transcription" });
+  });
+
+  it("counts missions, listeners' answers, debriefs and rehearsals (M14)", () => {
+    const facts = factsBuilder()
+      .onDay(9).transfer({ missionId: "ask-in-meeting" }).transfer()
+      .onDay(5).session({ exerciseType: "rehearsal" }).take().listenerAnswer({ mainPointAnswered: true }).listenerAnswer()
+      .onDay(4).event({ debriefDone: true }).event()
+      .onDay(2).session({ exerciseType: "rehearsal" })
+      .build();
+    const missions = run({ kind: "transfers", label: "missions", mission: true, atLeast: 3 }, facts);
+    expect([missions.done, missions.evidence.map((e) => e.kind)]).toEqual([1, ["transfer"]]);
+    expect(run({ kind: "listenerAnswers", label: "answers", atLeast: 2 }, facts).met).toBe(true);
+    const understood = run({ kind: "listenerAnswers", label: "main point", mainPointAnswered: true, atLeast: 2 }, facts);
+    expect([understood.done, understood.evidence]).toEqual([1, [{ kind: "listener", id: "listener-5", date: "2026-10-07" }]]);
+    const debrief = run({ kind: "debrief", label: "event", atLeast: 1 }, facts);
+    expect([debrief.met, debrief.evidence.map((e) => e.kind)]).toEqual([true, ["event"]]);
+    const rehearsal = run({ kind: "activity", label: "talk", type: "rehearsal", atLeast: 2 }, facts);
+    expect([rehearsal.done, rehearsal.met], "a rehearsal session needs a saved take").toEqual([1, false]);
   });
 
   it("counts conversations you ended, with enough answers and pressure (M13)", () => {

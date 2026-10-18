@@ -207,9 +207,9 @@ export function progressOf(c: Criterion, facts: PracticeFacts, ctx: EvalContext)
       return progress(c.label, count, c.atLeast, evidence, c.distinctDays ? { done: distinctCount(matches.map((s) => s.localDate)), needed: c.distinctDays, unit: "days" } : null);
     }
     case "transfers": {
-      if (c.mission) return unavailable(c.label, c.atLeast, "Arrives with missions", "events");
       const matches = facts.transferReviews.filter(
         (r) =>
+          (!c.mission || r.missionId !== null) &&
           (!c.listenerWords || r.hasListenerWords) &&
           (!c.noClarification || !r.neededClarification) &&
           (!c.flow || (r.flow !== null && c.flow.includes(r.flow))) &&
@@ -241,7 +241,13 @@ export function progressOf(c: Criterion, facts: PracticeFacts, ctx: EvalContext)
         const evidence = loops.slice(0, MAX_EVIDENCE).map((s): EvidenceRef => ({ kind: "session", id: s.id, date: s.localDate }));
         return progress(c.label, loops.length, c.atLeast, evidence, c.distinctDays ? { done: distinctCount(loops.map((s) => s.localDate)), needed: c.distinctDays, unit: "days" } : null);
       }
-      if (!isDrillType(c.type)) return unavailable(c.label, c.atLeast, "Arrives with talks and events", "events");
+      if (c.type === "rehearsal" || c.type === "capsule") {
+        // A talk's rehearsal or a time capsule (M14): a session of that type with a saved take.
+        const played = facts.sessions.filter((s) => s.exerciseType === c.type && s.takeCount > 0);
+        const evidence = played.slice(0, MAX_EVIDENCE).map((s): EvidenceRef => ({ kind: "session", id: s.id, date: s.localDate }));
+        return progress(c.label, played.length, c.atLeast, evidence, c.distinctDays ? { done: distinctCount(played.map((s) => s.localDate)), needed: c.distinctDays, unit: "days" } : null);
+      }
+      if (!isDrillType(c.type)) return unavailable(c.label, c.atLeast, "Arrives with a later version", null);
       const result = c.result;
       const plays = drillPlays(facts, c.type).filter((p) => {
         if (!result) return true;
@@ -264,9 +270,18 @@ export function progressOf(c: Criterion, facts: PracticeFacts, ctx: EvalContext)
       const evidence = matches.slice(0, MAX_EVIDENCE).map((x): EvidenceRef => ({ kind: "conversation", id: x.id, date: x.localDate }));
       return progress(c.label, matches.length, c.atLeast, evidence);
     }
-    case "listenerAnswers":
-    case "debrief":
-      return unavailable(c.label, c.atLeast, "Arrives with events and listener packs", "events");
+    case "listenerAnswers": {
+      // Answer files you imported (14.4); with mainPointAnswered, ones where you judged they got your main point.
+      const matches = facts.listenerAnswers.filter((a) => !c.mainPointAnswered || a.mainPointAnswered);
+      const evidence = matches.slice(0, MAX_EVIDENCE).map((a): EvidenceRef => ({ kind: "listener", id: a.id, date: a.localDate }));
+      return progress(c.label, matches.length, c.atLeast, evidence);
+    }
+    case "debrief": {
+      // Events with their debrief written (14.2).
+      const matches = facts.events.filter((e) => e.debriefDone);
+      const evidence = matches.slice(0, MAX_EVIDENCE).map((e): EvidenceRef => ({ kind: "event", id: e.id, date: e.localDate }));
+      return progress(c.label, matches.length, c.atLeast, evidence);
+    }
     case "anyOf": {
       const options = c.options.map((o) => progressOf(o, facts, ctx));
       const met = options.find((o) => o.met);
@@ -274,7 +289,8 @@ export function progressOf(c: Criterion, facts: PracticeFacts, ctx: EvalContext)
       const available = options.filter((o) => !o.unavailable);
       if (available.length === 0) return { ...options[0], label: c.label };
       // The available option you are furthest along shows (the first on a tie); any option meets it.
-      const along = (o: CriterionProgress) => Math.min(1, o.done / Math.max(1, o.needed)) + (o.days ? Math.min(1, o.days.done / Math.max(1, o.days.needed)) : 1);
+      // An option with nothing done yet is not along at all, whatever its other dimension says.
+      const along = (o: CriterionProgress) => (o.done === 0 ? 0 : Math.min(1, o.done / Math.max(1, o.needed)) + (o.days ? Math.min(1, o.days.done / Math.max(1, o.days.needed)) : 1));
       return { ...available.reduce((best, o) => (along(o) > along(best) ? o : best)), label: c.label };
     }
     case "allOf": {

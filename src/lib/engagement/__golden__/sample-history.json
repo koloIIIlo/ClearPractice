@@ -1,5 +1,5 @@
 {
- "factsVersion": 7,
+ "factsVersion": 8,
  "generatedAt": "2026-10-12T12:00:00.000Z",
  "today": "2026-10-12",
  "transcriptionAvailable": true,
@@ -1585,7 +1585,9 @@
    "tags": [
     "story"
    ],
-   "kind": "reflection"
+   "kind": "reflection",
+   "missionId": null,
+   "eventId": null
   },
   {
    "id": "transfer-16",
@@ -1598,7 +1600,9 @@
    "tags": [
     "story"
    ],
-   "kind": "reflection"
+   "kind": "reflection",
+   "missionId": null,
+   "eventId": null
   },
   {
    "id": "transfer-28",
@@ -1611,7 +1615,9 @@
    "tags": [
     "story"
    ],
-   "kind": "reflection"
+   "kind": "reflection",
+   "missionId": null,
+   "eventId": null
   },
   {
    "id": "transfer-41",
@@ -1624,7 +1630,9 @@
    "tags": [
     "story"
    ],
-   "kind": "reflection"
+   "kind": "reflection",
+   "missionId": null,
+   "eventId": null
   },
   {
    "id": "transfer-53",
@@ -1637,7 +1645,9 @@
    "tags": [
     "story"
    ],
-   "kind": "reflection"
+   "kind": "reflection",
+   "missionId": null,
+   "eventId": null
   }
  ],
  "phrases": [
@@ -1715,5 +1725,8 @@
  "blindComparisons": 0,
  "programme": null,
  "exposure": [],
- "conversations": []
+ "conversations": [],
+ "events": [],
+ "listenerAnswers": [],
+ "missionPicks": []
 }

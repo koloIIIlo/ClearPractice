@@ -15,10 +15,12 @@ import { MoveTakeToTrashButton, MoveToTrashButton } from "./TrashPage";
 import { TakeTranscript } from "@/features/review/TakeTranscript";
 import { TakeSummary } from "@/features/review/TakeSummary";
 import { IntonationTrack } from "@/features/review/IntonationTrack";
-import { BookmarkPlus, Columns2, Download, MessagesSquare, Mic } from "lucide-react";
+import { BookmarkPlus, Columns2, Download, History, MessagesSquare, Mic, Projector } from "lucide-react";
 import { PhraseForm } from "@/features/phrases/PhrasesPage";
 import { TakeCoaching } from "@/features/review/TakeCoaching";
 import { Checkbox } from "@/components/ui/checkbox";
+import { AskListenerButton } from "@/features/events/ListenerPackDialog";
+import { ListenerAnswers } from "@/features/events/ListenerAnswers";
 
 /**
  * Where to continue a session (user request 2026-10-09): the same exercise and
@@ -63,6 +65,11 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
           {/* The partner (M13): a conversation's session is the conversation's; an upgrade loop's is "<run>-loop". */}
           {session.exerciseType === "conversation" && <Button asChild><Link to={`/partner/${session.id}`}><MessagesSquare aria-hidden /> Open the conversation</Link></Button>}
           {session.exerciseType === "upgrade" && session.id.endsWith("-loop") && <Button variant="outline" asChild><Link to={`/upgrade/${session.id.slice(0, -"-loop".length)}`}>Open the upgrade loop</Link></Button>}
+          {/* Real world (M14): a rehearsal's report, and the time capsule's comparison. */}
+          {session.exerciseType === "rehearsal" && session.activitySnapshot?.groupId && (
+            <Button variant="outline" asChild><Link to={`/events/talks/${session.activitySnapshot.groupId}/reports`}><Projector aria-hidden /> Rehearsal reports</Link></Button>
+          )}
+          {session.exerciseType === "capsule" && <Button variant="outline" asChild><Link to="/capsule"><History aria-hidden /> Time capsule</Link></Button>}
         </div>
       }
     />
@@ -84,10 +91,15 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
     {attempts.map((a) => <Panel key={a.id} className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="font-semibold">Take {a.ordinal} · {formatClock(a.durationMs)} <span className="text-meta font-normal text-muted-foreground">Measured duration</span></h2>
-        <div className="ml-auto"><MoveTakeToTrashButton take={a} sessionTitle={session.title} /></div>
+        <div className="ml-auto flex flex-wrap gap-2">
+          {!a.audioUnavailableReason && <AskListenerButton attemptId={a.id} />}
+          <MoveTakeToTrashButton take={a} sessionTitle={session.title} />
+        </div>
       </div>
       {a.audioUnavailableReason ? <p role="alert">Audio unavailable: {a.audioUnavailableReason}</p> : <LinkedTake attemptId={a.id} sessionId={session.id} />}
     </Panel>)}
+    {/* A listener's answers about this session's takes (14.4), apart from your notes. */}
+    <ListenerAnswers sessionId={session.id} title="Listeners' answers" withImport />
     <Panel>
       <form className="space-y-4" onChange={() => save.reset()} onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
         <h2 className="font-semibold">Session details</h2>

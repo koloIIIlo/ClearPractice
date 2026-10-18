@@ -1,5 +1,7 @@
 import { addLocalDays } from "@/lib/phrase-schedule";
-import { PracticeFacts, type FactConversation, type FactPhrase, type FactPhraseReview, type FactSession, type FactTake, type FactTransfer } from "@/lib/ipc/schemas";
+import {
+  PracticeFacts, type FactConversation, type FactEvent, type FactListenerAnswer, type FactMissionPick, type FactPhrase, type FactPhraseReview, type FactSession, type FactTake, type FactTransfer,
+} from "@/lib/ipc/schemas";
 
 /**
  * Builds valid practice facts for rule-engine tests (roadmap 7.7). Items are
@@ -14,6 +16,12 @@ export interface FactsBuilder {
   phraseReview(p?: Partial<FactPhraseReview>): FactsBuilder;
   /** A practice conversation with the partner (M13), ended by default. */
   conversation(p?: Partial<FactConversation>): FactsBuilder;
+  /** An event you prepare for (M14), without its debrief by default. */
+  event(p?: Partial<FactEvent>): FactsBuilder;
+  /** A listener's answer file (M14) for the last take. */
+  listenerAnswer(p?: Partial<FactListenerAnswer>): FactsBuilder;
+  /** A week's mission (M14), picked and not yet done by default. */
+  missionPick(p?: Partial<FactMissionPick>): FactsBuilder;
   /** Following items happen this many days before today. */
   onDay(offsetDays: number): FactsBuilder;
   build(): PracticeFacts;
@@ -21,9 +29,9 @@ export interface FactsBuilder {
 
 export function factsBuilder(today = "2026-10-12"): FactsBuilder {
   const facts: PracticeFacts = {
-    factsVersion: 7, generatedAt: `${today}T12:00:00.000Z`, today, transcriptionAvailable: true,
+    factsVersion: 8, generatedAt: `${today}T12:00:00.000Z`, today, transcriptionAvailable: true,
     sessions: [], takes: [], transferReviews: [], phrases: [], phraseReviews: [], progression: [], userPrompts: 0, blindComparisons: 0, programme: null, exposure: [],
-    conversations: [],
+    conversations: [], events: [], listenerAnswers: [], missionPicks: [],
   };
   let offset = 0;
   let n = 0;
@@ -59,7 +67,7 @@ export function factsBuilder(today = "2026-10-12"): FactsBuilder {
     },
     transfer(p = {}) {
       n += 1;
-      facts.transferReviews.push({ id: `transfer-${n}`, localDate: day(), hasListenerWords: false, neededClarification: false, hasSuccess: false, hasNextFocus: false, flow: null, tags: [], kind: "reflection", ...p });
+      facts.transferReviews.push({ id: `transfer-${n}`, localDate: day(), hasListenerWords: false, neededClarification: false, hasSuccess: false, hasNextFocus: false, flow: null, tags: [], kind: "reflection", missionId: null, eventId: null, ...p });
       return builder;
     },
     phrase(p = {}) {
@@ -75,6 +83,20 @@ export function factsBuilder(today = "2026-10-12"): FactsBuilder {
     conversation(p = {}) {
       n += 1;
       facts.conversations.push({ id: `conversation-${n}`, scenarioId: "small-talk", pressure: 1, mode: "scripted", learnerTurns: 3, localDate: day(), endedAt: `${day()}T09:00:00.000Z`, bossId: null, ...p });
+      return builder;
+    },
+    event(p = {}) {
+      n += 1;
+      facts.events.push({ id: `event-${n}`, kind: "talk", localDate: day(), debriefDone: false, ...p });
+      return builder;
+    },
+    listenerAnswer(p = {}) {
+      n += 1;
+      facts.listenerAnswers.push({ id: `listener-${n}`, attemptId: facts.takes.at(-1)?.id ?? "take-0", localDate: day(), mainPointAnswered: false, ...p });
+      return builder;
+    },
+    missionPick(p = {}) {
+      facts.missionPicks.push({ week: day(), missionId: "ask-in-meeting", done: false, ...p });
       return builder;
     },
     onDay(offsetDays) {

@@ -1,5 +1,5 @@
 {
-  "factsVersion": 7,
+  "factsVersion": 8,
   "generatedAt": "2026-10-16T18:00:00.000Z",
   "today": "2026-10-16",
   "transcriptionAvailable": true,
@@ -169,7 +169,9 @@
       "tags": [
         "story"
       ],
-      "kind": "reflection"
+      "kind": "reflection",
+      "missionId": null,
+      "eventId": null
     }
   ],
   "phrases": [
@@ -241,6 +243,29 @@
       "localDate": "2026-10-16",
       "endedAt": null,
       "bossId": null
+    }
+  ],
+  "events": [
+    {
+      "id": "event-1760600000000",
+      "kind": "talk",
+      "localDate": "2026-10-20",
+      "debriefDone": false
+    }
+  ],
+  "listenerAnswers": [
+    {
+      "id": "listener-1760600000000",
+      "attemptId": "t1",
+      "localDate": "2026-10-16",
+      "mainPointAnswered": false
+    }
+  ],
+  "missionPicks": [
+    {
+      "week": "2026-10-12",
+      "missionId": "ask-in-meeting",
+      "done": false
     }
   ]
 }
