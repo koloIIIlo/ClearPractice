@@ -1,5 +1,5 @@
 import {
-  BookOpen, Bomb, CalendarDays, Crown, Dice5, Dices, Gauge, Headphones, Highlighter, MessageSquareQuote, Presentation, Repeat2, Scale, Speech, Swords, TextQuote, Timer, Users,
+  BookOpen, Bomb, CalendarDays, Crown, Dice5, Dices, Gauge, Headphones, Highlighter, MessageSquareQuote, MessagesSquare, Presentation, Repeat2, Scale, Sparkles, Speech, Swords, TextQuote, Timer, Users,
   type LucideIcon,
 } from "lucide-react";
 import type { ExerciseDefinition, ExerciseType } from "@/lib/ipc/schemas";
@@ -117,6 +117,9 @@ export const EXERCISE_TYPE_INFO: Record<ExerciseType, { label: string; icon: Luc
   boss: { label: "Boss level", icon: Crown },
   // The learning engine (M11): a phrase said aloud during review.
   phrase_say_it: { label: "Phrase practice", icon: Speech },
+  // The conversation partner (M13): your turns in a conversation, and an upgrade loop's shadow and retell takes.
+  conversation: { label: "Conversation", icon: MessagesSquare },
+  upgrade: { label: "Upgrade loop", icon: Sparkles },
 };
 
 /** The four core types, listed first in filters; other types appear once you have used them. */

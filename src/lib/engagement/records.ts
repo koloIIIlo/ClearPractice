@@ -22,6 +22,8 @@ export type RecordDef = {
   celebrate: "card" | "toast";
   /** Drill records (M10) read a round's result instead: a take's, or a whole session's. */
   play?: { type: DrillType; key: string };
+  /** The partner's record (M13) reads your answers in ended conversations instead. */
+  conversation?: true;
 };
 
 const firstUnfamiliar = (t: FactTake, s: FactSession) => s.familiarity === "unfamiliar" && t.ordinal === 1;
@@ -51,6 +53,9 @@ export const RECORDS: readonly RecordDef[] = [
   drillRecord("pace_range", "Pace range", "syll/s", (v) => `${v.toFixed(1)} syllables a second`, "pace_ladder", "range", "toast"),
   drillRecord("emphasis_hits", "Emphasis", "sentences", (v) => `${v} sentences on the beat`, "emphasis", "estimatedHits", "toast"),
   drillRecord("gauntlet_rounds", "Gauntlet rounds in one go", "rounds", (v) => `${v} rounds`, "gauntlet", "roundsCompleted", "toast"),
+  // The conversation partner (M13): your answers in one conversation.
+  { id: "conversation_turns", title: "Longest conversation", unit: "turns", better: "higher", source: "measured", format: (v) => `${v} answers`,
+    eligible: () => false, value: () => null, celebrate: "toast", conversation: true },
 ];
 
 export const recordDef = (id: string) => RECORDS.find((r) => r.id === id);
@@ -71,6 +76,14 @@ export function newRecords(facts: PracticeFacts, stored: readonly RecordRow[]): 
   const current = bests(stored);
   const out: NewRecord[] = [];
   for (const def of RECORDS) {
+    if (def.conversation) {
+      const best = facts.conversations.filter((c) => c.endedAt !== null && c.learnerTurns > 0).reduce<PracticeFacts["conversations"][number] | null>((b, c) => (!b || c.learnerTurns > b.learnerTurns ? c : b), null);
+      const stored = current.get(def.id);
+      if (best && !(stored && best.learnerTurns <= stored.value)) {
+        out.push({ record: def.id, value: best.learnerTurns, unit: def.unit, attemptId: null, sessionId: best.id, definitionVersion: RECORDS_VERSION });
+      }
+      continue;
+    }
     let best: { value: number; take: FactTake } | null = null;
     if (def.play) {
       for (const play of drillPlays(facts, def.play.type)) {

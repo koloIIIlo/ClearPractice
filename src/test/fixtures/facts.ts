@@ -1,5 +1,5 @@
 import { addLocalDays } from "@/lib/phrase-schedule";
-import { PracticeFacts, type FactPhrase, type FactPhraseReview, type FactSession, type FactTake, type FactTransfer } from "@/lib/ipc/schemas";
+import { PracticeFacts, type FactConversation, type FactPhrase, type FactPhraseReview, type FactSession, type FactTake, type FactTransfer } from "@/lib/ipc/schemas";
 
 /**
  * Builds valid practice facts for rule-engine tests (roadmap 7.7). Items are
@@ -12,6 +12,8 @@ export interface FactsBuilder {
   transfer(p?: Partial<FactTransfer>): FactsBuilder;
   phrase(p?: Partial<FactPhrase>): FactsBuilder;
   phraseReview(p?: Partial<FactPhraseReview>): FactsBuilder;
+  /** A practice conversation with the partner (M13), ended by default. */
+  conversation(p?: Partial<FactConversation>): FactsBuilder;
   /** Following items happen this many days before today. */
   onDay(offsetDays: number): FactsBuilder;
   build(): PracticeFacts;
@@ -19,8 +21,9 @@ export interface FactsBuilder {
 
 export function factsBuilder(today = "2026-10-12"): FactsBuilder {
   const facts: PracticeFacts = {
-    factsVersion: 6, generatedAt: `${today}T12:00:00.000Z`, today, transcriptionAvailable: true,
+    factsVersion: 7, generatedAt: `${today}T12:00:00.000Z`, today, transcriptionAvailable: true,
     sessions: [], takes: [], transferReviews: [], phrases: [], phraseReviews: [], progression: [], userPrompts: 0, blindComparisons: 0, programme: null, exposure: [],
+    conversations: [],
   };
   let offset = 0;
   let n = 0;
@@ -67,6 +70,11 @@ export function factsBuilder(today = "2026-10-12"): FactsBuilder {
     phraseReview(p = {}) {
       if (facts.phrases.length === 0) builder.phrase();
       facts.phraseReviews.push({ cardId: facts.phrases[facts.phrases.length - 1].id, localDate: day(), rating: "good", ...p });
+      return builder;
+    },
+    conversation(p = {}) {
+      n += 1;
+      facts.conversations.push({ id: `conversation-${n}`, scenarioId: "small-talk", pressure: 1, mode: "scripted", learnerTurns: 3, localDate: day(), endedAt: `${day()}T09:00:00.000Z`, bossId: null, ...p });
       return builder;
     },
     onDay(offsetDays) {

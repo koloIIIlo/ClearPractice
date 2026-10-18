@@ -1,4 +1,6 @@
 import { useId, useState } from "react";
+import { Link } from "react-router";
+import { MessagesSquare } from "lucide-react";
 import { Panel } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -80,7 +82,15 @@ function Setup({ plan: initial, onReady }: Parameters<NonNullable<DrillModule["S
           </Label>
         ))}
       </RadioGroup>
-      <Button onClick={() => onReady(plan(initial.seed, { boss: chosen }))}>Start</Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => onReady(plan(initial.seed, { boss: chosen }))}>Start</Button>
+        {/* Boss levels v2 (13.6): the partner plays the other person; either version finishes the boss. */}
+        <Button variant="outline" asChild>
+          <Link to={`/partner?boss=${chosen}`}>
+            <MessagesSquare aria-hidden /> Play with the partner
+          </Link>
+        </Button>
+      </div>
     </Panel>
   );
 }

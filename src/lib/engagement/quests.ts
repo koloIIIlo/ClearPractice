@@ -3,7 +3,7 @@ import { themeFor } from "@/content/monthly-themes";
 import { addLocalDays } from "@/lib/phrase-schedule";
 import { isDrillType, type FactSession, type PracticeEvent, type PracticeFacts, type QuestInput, type QuestRow } from "@/lib/ipc/schemas";
 import type { EvalContext } from "./criteria";
-import { inWeek, speechMs } from "./criteria";
+import { finishedConversations, inWeek, speechMs } from "./criteria";
 import { seededRandom } from "./random";
 import { areaDef } from "./skills";
 import type { AreaId, AreaStatus } from "./types";
@@ -59,6 +59,9 @@ export const QUEST_TEMPLATES: readonly QuestTemplate[] = [
   // The confidence pack (M12): offered once you have a ladder.
   { id: "ladder-1", title: "Take one step on your ladder", area: "courage", needed: 1, needs: (f) => f.exposure.some((s) => !s.deleted),
     count: (w) => w.facts.exposure.reduce((n, s) => n + s.attempts.filter((a) => a.done && inWeek(a.localDate, w.start)).length, 0) },
+  // The conversation partner (M13): works offline in scripted mode, so it is always available.
+  { id: "partner-1", title: "Have a practice conversation", area: "spontaneity", needed: 1, needs: always,
+    count: (w) => finishedConversations(w.facts, 3).filter((c) => inWeek(c.localDate, w.start)).length },
 ];
 
 export const questTemplate = (id: string) => QUEST_TEMPLATES.find((q) => q.id === id);

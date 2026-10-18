@@ -43,6 +43,11 @@ export const keys = {
   routineRuns: ["engagement", "routines"] as const,
   segmentMarks: (attemptId: string) => ["engagement", "segment-marks", attemptId] as const,
   bestMoments: (weekStart: string) => ["engagement", "best-moments", weekStart] as const,
+  // Conversation partner (M13).
+  conversations: ["partner", "list"] as const,
+  conversation: (id: string) => ["partner", "conversation", id] as const,
+  upgradeRuns: (attemptId: string) => ["partner", "upgrades", attemptId] as const,
+  upgradeRun: (runId: string) => ["partner", "upgrade", runId] as const,
 };
 
 /** Saved preferences; until they load, the defaults apply. */
@@ -186,6 +191,18 @@ export function useExposure() {
   const steps = useQuery({ queryKey: keys.exposureSteps, queryFn: () => ipc.listExposureSteps() });
   const attempts = useQuery({ queryKey: keys.exposureAttempts, queryFn: () => ipc.listExposureAttempts() });
   return { steps, attempts };
+}
+
+/** Your practice conversations, newest first (13.3). */
+export function useConversations() {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.conversations, queryFn: () => ipc.listConversations() });
+}
+
+/** A take's upgrades, newest first (13.10). */
+export function useUpgradeRuns(attemptId: string | null | undefined) {
+  const ipc = useIpc();
+  return useQuery({ queryKey: keys.upgradeRuns(attemptId ?? ""), queryFn: () => ipc.listUpgradeRuns(attemptId!), enabled: !!attemptId });
 }
 
 /** Where saved phrases turned up in your takes (8.2): one phrase, or all of them. */

@@ -101,6 +101,15 @@ export const routes: RouteObject[] = [
               { path: "routine", lazy: page(() => import("@/features/confidence/RoutinePage"), "RoutinePage"), handle: crumb("Before a real talk") },
             ],
           },
+          {
+            path: "partner",
+            handle: crumb("Partner"),
+            children: [
+              { index: true, lazy: page(() => import("@/features/partner/PartnerHub"), "PartnerHubPage") },
+              { path: ":conversationId", lazy: page(() => import("@/features/partner/ConversationPage"), "ConversationPage"), handle: crumb("Conversation") },
+            ],
+          },
+          { path: "upgrade/:runId", lazy: page(() => import("@/features/partner/UpgradeLoop"), "UpgradeLoopPage"), handle: crumb("Upgrade loop") },
           { path: "progress", lazy: page(() => import("@/features/progress/ProgressPage"), "ProgressPage"), handle: crumb("Progress") },
           { path: "settings/:section?", lazy: page(() => import("@/features/settings/SettingsPage"), "SettingsPage"), handle: crumb("Settings") },
           { path: "welcome", lazy: page(() => import("@/features/onboarding/WelcomePage"), "WelcomePage"), handle: crumb("Welcome") },

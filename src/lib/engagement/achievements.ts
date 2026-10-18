@@ -1,13 +1,13 @@
 import {
   Award, BookOpenText, Calendar, CalendarCheck, CalendarHeart, Ear, EyeOff, FileText, Flag, Footprints, Gem, Hourglass, ListOrdered, MessageSquareQuote,
   Mic, Milestone, NotebookPen, PenLine, Repeat, Search, Sparkles, Sprout, Sunrise, Target, Trophy, Waves, Zap, Bomb, CalendarDays, Crown, Dices, Gauge, Highlighter,
-  Shapes, Swords, Timer, type LucideIcon,
+  Shapes, Swords, Timer, MessagesSquare, Flame, ArrowUpCircle, type LucideIcon,
 } from "lucide-react";
 import { BOSSES, type BossId } from "@/content/bosses";
 import { DRILL_TYPES } from "@/lib/ipc/schemas";
 import { profileReadiness } from "@/lib/insights/profile";
 import type { EngagementState, NewAchievement, PracticeEvent, PracticeFacts, Preferences } from "@/lib/ipc/schemas";
-import { progressOf, type Criterion, type EvalContext } from "./criteria";
+import { finishedConversations, progressOf, type Criterion, type EvalContext } from "./criteria";
 import { LEVELS } from "./skills";
 import type { AreaStatus, CriterionProgress } from "./types";
 import { allPracticeDays, goalProgress, weekStart, weeksInARow } from "./weekly";
@@ -49,10 +49,17 @@ const count = (n: number, needed: number) => ({ done: n, needed });
 const events = (kind: string) => ({ events }: AchievementInput) => events.filter((e) => e.kind === kind).length;
 const CORE = new Set<string>(["repeat", "thought_groups", "imitate", "expression"]);
 /** A boss level finished: every round recorded (10.13). */
+/** A boss level finished: every round recorded (10.13), or played with the partner and ended after three answers (13.6). */
 const boss = (id: string, title: string, description: string, bossId: BossId): AchievementDef => ({
   id, title, description, category: "courage", icon: Crown,
   criterion: custom(`Finish ${BOSSES.find((b) => b.id === bossId)!.title}`, ({ facts }) =>
-    count(drillPlays(facts, "boss").some((p) => p.result.finished === 1 && p.session.activity?.params.boss === bossId) ? 1 : 0, 1)),
+    count(
+      drillPlays(facts, "boss").some((p) => p.result.finished === 1 && p.session.activity?.params.boss === bossId) ||
+        finishedConversations(facts, 3).some((c) => c.bossId === bossId)
+        ? 1
+        : 0,
+      1,
+    )),
 });
 
 /** Weeks in a row as of now, this week counting once met. */
@@ -140,6 +147,11 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   { id: "stretch", title: "Stretch", description: "Complete a step you rated 6 or more before.", category: "courage", icon: Flag,
     criterion: { kind: "exposure", label: "A step you rated 6 or more before, done", steps: 1, minBefore: 6 } },
   // Real world
+  // The conversation partner (M13).
+  { id: "conversation-first", title: "Talking back", description: "Finish a conversation with the partner.", category: "courage", icon: MessagesSquare,
+    criterion: { kind: "conversation", label: "1 conversation with 3 answers or more", minTurns: 3, atLeast: 1 } },
+  { id: "conversation-pressure", title: "Under pressure", description: "Finish a conversation at pressure 3.", category: "courage", icon: Flame,
+    criterion: { kind: "conversation", label: "1 conversation at pressure 3", minTurns: 3, minPressure: 3, atLeast: 1 } },
   { id: "aar", title: "Lessons learned", description: "Write an after-action review.", category: "real", icon: NotebookPen,
     criterion: custom("1 after-action review", ({ facts }) => count(facts.transferReviews.filter((r) => r.kind === "aar").length, 1)) },
   // Explore
@@ -186,6 +198,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
     criterion: custom("A blind A/B choice", ({ facts }) => count(facts.blindComparisons, 1)) },
   { id: "catch-it", title: "Caught it", description: "Catch 4 or more hesitations in one round of Catch it.", category: "listening", icon: Ear,
     criterion: custom("A round of Catch it with 4 or more caught", ({ facts }) => count(facts.takes.some((tk) => tk.catchRuns.some((r) => r.caught >= 4)) ? 1 : 0, 1)) },
+  { id: "upgrade-3", title: "Upgraded", description: "Complete 3 upgrade loops.", category: "listening", icon: ArrowUpCircle,
+    criterion: { kind: "activity", label: "3 upgrade loops", type: "upgrade", atLeast: 3 } },
 ];
 
 /** Progress toward an achievement, with the evidence behind it. */

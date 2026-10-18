@@ -41,3 +41,58 @@ export function speakGroups(
     onEnd();
   };
 }
+
+/** Windows' built-in voices by how they sound, for a persona's hint (13.7). */
+const LOWER_VOICES = ["david", "mark", "george", "james", "richard", "ravi", "sean", "ryan", "guy", "william", "thomas"];
+const HIGHER_VOICES = ["zira", "hazel", "susan", "catherine", "linda", "heera", "heather", "eva", "aria", "jenny", "libby", "sonia", "natasha", "clara", "emily"];
+
+/**
+ * The partner's voice (13.7): your chosen offline voice, else one that suits
+ * the persona's hint, else any offline English voice; null when there is none
+ * (the partner then speaks in captions only). The app never downloads voices.
+ */
+export function pickPartnerVoice(voices: SpeechSynthesisVoice[], preferredName: string | null, hint: "any" | "lower" | "higher"): SpeechSynthesisVoice | null {
+  const offline = voices.filter((v) => v.localService && v.lang.toLowerCase().startsWith("en"));
+  const preferred = preferredName ? offline.find((v) => v.name === preferredName) : undefined;
+  if (preferred) return preferred;
+  const names = hint === "lower" ? LOWER_VOICES : hint === "higher" ? HIGHER_VOICES : [];
+  return offline.find((v) => names.some((n) => v.name.toLowerCase().includes(n))) ?? offline[0] ?? null;
+}
+
+/**
+ * Speaks one line with an offline voice only (13.7); resolves when it ends,
+ * fails or is stopped through `signal`, and never throws. Without an offline
+ * voice nothing is spoken and it resolves at once.
+ */
+export function speakText(
+  text: string,
+  { voice, rate = 1, signal, synth = globalThis.speechSynthesis }: { voice?: SpeechSynthesisVoice | null; rate?: number; signal?: AbortSignal; synth?: SpeechSynthesis } = {},
+): Promise<void> {
+  return new Promise((resolve) => {
+    const chosen = voice === undefined ? (offlineEnglishVoices(synth)[0] ?? null) : voice;
+    if (!synth || !chosen || !chosen.localService || signal?.aborted || !text.trim()) {
+      resolve();
+      return;
+    }
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      signal?.removeEventListener("abort", stop);
+      resolve();
+    };
+    const stop = () => {
+      synth.cancel();
+      finish();
+    };
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.voice = chosen;
+    utterance.lang = chosen.lang;
+    utterance.rate = Math.min(1.2, Math.max(0.8, rate));
+    utterance.onend = finish;
+    utterance.onerror = finish;
+    signal?.addEventListener("abort", stop, { once: true });
+    synth.cancel();
+    synth.speak(utterance);
+  });
+}

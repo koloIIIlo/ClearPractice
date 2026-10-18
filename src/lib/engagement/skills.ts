@@ -36,6 +36,9 @@ const real: PractiseLink = { label: "Note a real conversation", to: "/progress?v
 const sessions: PractiseLink = { label: "Review a take", to: "/sessions" };
 const phrases: PractiseLink = { label: "Save phrases", to: "/phrases" };
 const phraseReview: PractiseLink = { label: "Review your phrases", to: "/phrases?review=1" };
+/** The conversation partner (M13). */
+const partner: PractiseLink = { label: "Practice conversation", to: "/partner" };
+const upgrade: PractiseLink = { label: "Upgrade a recent answer", to: "/sessions" };
 /** A drill (M10), by its title, opening in the drill studio. */
 const DRILL_PATHS: Record<string, string> = {
   "Just a Minute": "jam", "Topic roulette": "roulette", "Elevator pitch": "pitch", "Emphasis game": "emphasis", "Gauntlet": "gauntlet",
@@ -89,7 +92,7 @@ export const LEVELS: Readonly<Record<AreaId, readonly LevelDef[]>> = {
           { kind: "conversation", label: "A practice conversation of 5 turns", minTurns: 5, atLeast: 1 },
           { kind: "sessions", label: "Answer follow-up questions in 3 sessions", filter: { followUp: true, minTakes: 2 }, atLeast: 3 },
         ] },
-      ] }], practise: [real, prompts] },
+      ] }], practise: [real, partner, prompts] },
   ],
   voice: [
     { level: 1, name: "Listening back", description: "Look at where your voice rises and falls.",
@@ -108,7 +111,7 @@ export const LEVELS: Readonly<Record<AreaId, readonly LevelDef[]>> = {
           { kind: "activity", label: "A boss level", type: "boss", atLeast: 1 },
           { kind: "conversation", label: "A practice conversation of 5 turns", minTurns: 5, atLeast: 1 },
         ] },
-      ] }], practise: [repeat, later("Talk rehearsal", "events")] },
+      ] }], practise: [repeat, partner, later("Talk rehearsal", "events")] },
   ],
   spontaneity: [
     { level: 1, name: "First unknown", description: "Answer a question you haven't prepared.",
@@ -126,7 +129,7 @@ export const LEVELS: Readonly<Record<AreaId, readonly LevelDef[]>> = {
       criteria: [{ kind: "anyOf", label: "Five rounds of the gauntlet, or a practice conversation of 6 turns", options: [
         { kind: "activity", label: "Five rounds of the gauntlet", type: "gauntlet", result: { key: "roundsCompleted", op: ">=", value: 5 }, atLeast: 1 },
         { kind: "conversation", label: "A practice conversation of 6 turns", minTurns: 6, atLeast: 1 },
-      ] }], practise: [drill("Gauntlet"), later("Practice conversation", "the conversation partner")] },
+      ] }], practise: [drill("Gauntlet"), partner] },
   ],
   vocabulary: [
     { level: 1, name: "Collector", description: "Keep expressions you want to use.",
@@ -153,7 +156,7 @@ export const LEVELS: Readonly<Record<AreaId, readonly LevelDef[]>> = {
       criteria: [{ kind: "anyOf", label: "10 imitation sessions on 5 days, or 3 upgrade loops", options: [
         { kind: "activity", label: "3 upgrade loops", type: "upgrade", atLeast: 3 },
         { kind: "sessions", label: "10 imitation sessions on 5 days", filter: { exercise: ["imitate"] }, atLeast: 10, distinctDays: 5 },
-      ] }], practise: [imitate] },
+      ] }], practise: [imitate, upgrade] },
   ],
   storytelling: [
     { level: 1, name: "First story", description: "Tell a story from a storytelling prompt.",
@@ -187,7 +190,7 @@ export const LEVELS: Readonly<Record<AreaId, readonly LevelDef[]>> = {
         { kind: "exposure", label: "A ladder step you rated 6 or more before", steps: 1, minBefore: 6 },
         { kind: "activity", label: "A boss level", type: "boss", atLeast: 1 },
         { kind: "conversation", label: "A pressured practice conversation of 6 turns", minTurns: 6, minPressure: 2, atLeast: 1 },
-      ] }], practise: [ladder, bosses] },
+      ] }], practise: [ladder, bosses, partner] },
     { level: 5, name: "Event", description: "Prepare for a real event and look back on it.",
       criteria: [{ kind: "anyOf", label: "10 reflections in 6 different weeks, or an event with its debrief", options: [
         { kind: "debrief", label: "An event with its debrief", atLeast: 1 },

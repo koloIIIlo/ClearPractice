@@ -78,6 +78,14 @@ pub struct Preferences {
     pub predict_tip_seen: bool,
     /// The name the pre-talk routine uses to encourage you (12.3); empty says "you".
     pub display_name: String,
+    /// The partner's offline voice (13.7), by name; `None` picks one for the persona.
+    pub partner_voice: Option<String>,
+    /// The partner's speaking speed (13.7), 0.8 to 1.2.
+    pub partner_rate: f64,
+    /// New local-model conversations send turns without asking (13.3, D-33); off by default.
+    pub partner_auto_send_local: bool,
+    /// The cost limit a new OpenAI conversation starts with (13.1), in micro-USD.
+    pub partner_max_cost_micro_usd: u64,
 }
 
 pub const ACCENTS: [&str; 6] = ["green", "ocean", "amber", "violet", "rose", "graphite"];
@@ -90,7 +98,8 @@ impl Default for Preferences {
             local_endpoint: "http://127.0.0.1:8080".into(), local_model: String::new(), budget_warning_micro_usd: 4_000_000, reminder_time: None,
             coaching_prices: Default::default(), practice_style: "playful".into(), style_chosen: false, celebrations: "full".into(), celebration_sounds: false,
             live_pace: false, watch_words: Vec::new(), weekly_goal_days: 3, week_starts_on: "monday".into(), companion: true, accent: "green".into(),
-            challenge_bias: 0, warm_up: false, measures_timing: "always".into(), predict_first: false, predict_tip_seen: false, display_name: String::new() }
+            challenge_bias: 0, warm_up: false, measures_timing: "always".into(), predict_first: false, predict_tip_seen: false, display_name: String::new(),
+            partner_voice: None, partner_rate: 1.0, partner_auto_send_local: false, partner_max_cost_micro_usd: 50_000 }
     }
 }
 
@@ -168,6 +177,16 @@ fn validate(mut p: Preferences) -> Result<Preferences, String> {
     if p.display_name.chars().count() > 40 || p.display_name.chars().any(char::is_control) {
         return Err("Keep your name under 40 characters, on one line.".into());
     }
+    p.partner_voice = p.partner_voice.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    if p.partner_voice.as_ref().is_some_and(|v| v.chars().count() > 200 || v.chars().any(char::is_control)) {
+        return Err("The voice name is too long.".into());
+    }
+    if !(0.8..=1.2).contains(&p.partner_rate) {
+        return Err("Choose a speaking speed between 0.8 and 1.2.".into());
+    }
+    if !(10_000..=5_000_000).contains(&p.partner_max_cost_micro_usd) {
+        return Err("Choose a cost limit between USD 0.01 and USD 5.00.".into());
+    }
     p.input_device_id = p.input_device_id.filter(|id| !id.trim().is_empty());
     if p.input_device_id.as_ref().is_some_and(|id| id.len() > 512) {
         return Err("The microphone ID is too long.".into());
@@ -244,6 +263,21 @@ mod tests {
         assert_eq!(save(&db, Preferences { display_name: "  Alex ".into(), ..defaults.clone() }).unwrap().display_name, "Alex");
         assert!(save(&db, Preferences { display_name: "x".repeat(41), ..defaults.clone() }).is_err());
         assert!(save(&db, Preferences { display_name: "Al\nex".into(), ..defaults }).is_err());
+    }
+
+    #[test]
+    fn partner_settings_are_checked() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        let defaults = load(&db).unwrap();
+        assert_eq!((defaults.partner_voice.clone(), defaults.partner_rate, defaults.partner_auto_send_local, defaults.partner_max_cost_micro_usd), (None, 1.0, false, 50_000));
+        let saved = save(&db, Preferences { partner_voice: Some("  Microsoft Zira  ".into()), partner_rate: 1.2, partner_auto_send_local: true, ..defaults.clone() }).unwrap();
+        assert_eq!((saved.partner_voice.as_deref(), saved.partner_auto_send_local), (Some("Microsoft Zira"), true));
+        assert_eq!(save(&db, Preferences { partner_voice: Some(" ".into()), ..defaults.clone() }).unwrap().partner_voice, None);
+        assert!(save(&db, Preferences { partner_rate: 1.3, ..defaults.clone() }).is_err());
+        assert!(save(&db, Preferences { partner_rate: 0.7, ..defaults.clone() }).is_err());
+        assert!(save(&db, Preferences { partner_max_cost_micro_usd: 5_000_001, ..defaults.clone() }).is_err());
+        assert!(save(&db, Preferences { partner_max_cost_micro_usd: 9_999, ..defaults }).is_err());
     }
 
     #[test]

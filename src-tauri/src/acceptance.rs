@@ -530,7 +530,7 @@ fn sha256_bytes(bytes: &[u8]) -> String {
 /// Turns a current (v18) profile back into a populated v14 one.
 fn downgrade_to_v14(root: &Path) {
     let conn = Connection::open(root.join("database/app.sqlite")).unwrap();
-    conn.execute_batch("DROP TABLE routine_runs; DROP TABLE segment_marks; DROP INDEX exposure_attempts_step; DROP TABLE exposure_attempts; DROP TABLE exposure_steps; ALTER TABLE transfer_reviews DROP COLUMN extra; ALTER TABLE transfer_reviews DROP COLUMN kind; DROP TABLE catch_runs; DROP TABLE programme_steps; DROP TABLE programmes; DROP TABLE self_predictions; DROP INDEX take_events_attempt; DROP TABLE take_events; DROP TABLE activity_results; DROP TABLE weekly_quests; DROP INDEX personal_records_record; DROP TABLE personal_records; DROP TABLE achievements; DROP TABLE skill_levels; ALTER TABLE transfer_reviews DROP COLUMN tags; ALTER TABLE transfer_reviews DROP COLUMN flow; DROP INDEX comparisons_b; DROP INDEX comparisons_a; DROP TABLE comparisons; DROP TABLE audio_measures; DROP TABLE self_checks; DROP INDEX phrase_uses_attempt; DROP TABLE phrase_uses; DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DELETE FROM app_settings WHERE key='engagement_backfill_v1'; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; PRAGMA user_version=14;").unwrap();
+    conn.execute_batch("DROP TABLE conversation_feedback; DROP TABLE upgrade_runs; DROP TABLE conversation_turns; DROP TABLE conversations; DROP TABLE routine_runs; DROP TABLE segment_marks; DROP INDEX exposure_attempts_step; DROP TABLE exposure_attempts; DROP TABLE exposure_steps; ALTER TABLE transfer_reviews DROP COLUMN extra; ALTER TABLE transfer_reviews DROP COLUMN kind; DROP TABLE catch_runs; DROP TABLE programme_steps; DROP TABLE programmes; DROP TABLE self_predictions; DROP INDEX take_events_attempt; DROP TABLE take_events; DROP TABLE activity_results; DROP TABLE weekly_quests; DROP INDEX personal_records_record; DROP TABLE personal_records; DROP TABLE achievements; DROP TABLE skill_levels; ALTER TABLE transfer_reviews DROP COLUMN tags; ALTER TABLE transfer_reviews DROP COLUMN flow; DROP INDEX comparisons_b; DROP INDEX comparisons_a; DROP TABLE comparisons; DROP TABLE audio_measures; DROP TABLE self_checks; DROP INDEX phrase_uses_attempt; DROP TABLE phrase_uses; DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DELETE FROM app_settings WHERE key='engagement_backfill_v1'; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; PRAGMA user_version=14;").unwrap();
 }
 
 /// A-9 (besides populated_v1_database_upgrades_to_v2_with_a_snapshot and
@@ -579,7 +579,7 @@ fn a09_a_populated_older_profile_upgrades_and_a_failed_upgrade_recovers() {
         assert_eq!(db.attempt_transcript("old-take").unwrap()["correction"]["text"], "Indexes help.");
         assert!(db.list_coaching_runs("old-take").unwrap().is_empty(), "new tables exist and start empty");
         assert_eq!(kept(&read_only(&root.0)), before, "no row lost or changed by the upgrade");
-        let snapshots: Vec<PathBuf> = files(&root.0.join("database/snapshots")).into_iter().filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("before-v21-")).collect();
+        let snapshots: Vec<PathBuf> = files(&root.0.join("database/snapshots")).into_iter().filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("before-v22-")).collect();
         assert_eq!(snapshots.len(), if fail_first { 2 } else { 1 }, "a snapshot before every upgrade attempt");
         for snapshot in snapshots {
             let copy = Connection::open_with_flags(&snapshot, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
@@ -615,7 +615,9 @@ fn a11_every_http_client_is_counted_and_local_modules_name_no_network_code() {
         // Learning engine (M11): guesses, programmes and Catch it stay offline.
         "storage/learning.rs", "commands/learning.rs",
         // Confidence pack (M12, A-32): the ladder, the routine and the best-moments reel stay offline.
-        "storage/confidence.rs", "commands/confidence.rs"];
+        "storage/confidence.rs", "commands/confidence.rs",
+        // Conversation partner (M13): conversations and their checks are stored and built offline; only commands/partner.rs sends, after Send.
+        "storage/conversations.rs", "conversation.rs"];
     let banned = ["reqwest", "Client::", "TcpStream", "UdpSocket", "std::net", "ApiTransport", "local_llm::chat", "send_reserved", "download_tool", "whisper_setup::", "linkaudio::"];
     for file in local {
         let (_, code) = sources.iter().find(|(n, _)| n == file).unwrap_or_else(|| panic!("{file} not found"));
@@ -1014,6 +1016,183 @@ fn a17_a_changed_transcript_or_redaction_invalidates_the_preview_and_keeps_old_e
     let old = runs.iter().find(|r| r.id == "coach-1").unwrap();
     assert_eq!((old.revision_id.as_str(), old.transcript_text.as_str()), ("take--1", "So, uh, an index makes reads fast."));
     assert_eq!(db.attempt_transcript("take").unwrap()["revision"]["text"], "So, uh, an index makes reads fast.", "the machine text is unchanged");
+}
+
+// ── A-33 Partner approvals ──────────────────────────────────────────────────
+
+/// A conversation with a local stand-in model on 127.0.0.1 and one typed answer.
+fn local_partner(root: &TestRoot, reply: Value) -> (DatabaseOwner, String, Arc<Mutex<Vec<String>>>) {
+    use crate::preferences::{self, Preferences};
+    let db = DatabaseOwner::open(&root.0).unwrap();
+    let (base, seen) = local_model(reply);
+    let prefs = preferences::load(&db).unwrap();
+    preferences::save(&db, Preferences { local_endpoint: base, coaching_mode: "local".into(), ..prefs }).unwrap();
+    let mut input = crate::storage::database::conversations::tests::new_conversation("local");
+    input.auto_send_local = true;
+    let id = db.create_conversation(&input, None).unwrap().conversation.id;
+    db.add_learner_turn(&id, None, Some("I moved the reports first."), false).unwrap();
+    (db, id, seen)
+}
+
+fn partner_preview(db: &DatabaseOwner, owner: &PreviewOwner, id: &str) -> (crate::api::coaching::Preview, crate::storage::database::conversations::TurnContext) {
+    let context = db.partner_turn_context(id).unwrap();
+    let (request, model, local) = crate::commands::partner::turn_request(db, &context).unwrap();
+    (owner.preview_partner(request, model, local).unwrap(), context)
+}
+
+fn partner_reply() -> Value {
+    json!({"reply": "Why did you start with the reports?", "move": "follow_up", "endsConversation": false})
+}
+
+/// A-33: a partner approval is single-use and bound to its kind, its payload
+/// and your answers as they were previewed; anything else sends nothing.
+#[test]
+fn a33_approval_is_single_use_and_bound_to_learner_revisions() {
+    use crate::api::coaching::{Binding, PartnerKind};
+    let root = TestRoot::new();
+    let (db, id, seen) = local_partner(&root, partner_reply());
+    let owner = PreviewOwner::default();
+    let send = |p: &crate::api::coaching::Preview, hash: &str, kind: PartnerKind, binding: &Binding| tauri::async_runtime::block_on(owner.send_partner_local(&p.request_id, hash, kind, binding));
+    let bound = |context: &crate::storage::database::conversations::TurnContext| Binding { owner: id.clone(), revisions: context.binding.clone() };
+
+    let (p, context) = partner_preview(&db, &owner, &id);
+    assert!(p.selected_text.contains("Learner: I moved the reports first.") && p.instructions.starts_with(crate::conversation::PARTNER_INSTRUCTIONS));
+    assert_eq!(p.estimated_maximum_cost_micro_usd, 0, "a local model costs nothing");
+    let other = Binding { owner: "another-conversation".into(), revisions: context.binding.clone() };
+    assert!(send(&p, &p.payload_sha256, PartnerKind::Turn, &other).is_err(), "bound to its conversation");
+    assert!(send(&p, &p.payload_sha256, PartnerKind::Turn, &bound(&context)).is_err(), "and refused once, even then");
+    let (p, context) = partner_preview(&db, &owner, &id);
+    assert!(send(&p, &p.payload_sha256, PartnerKind::Upgrade, &bound(&context)).is_err(), "bound to its kind");
+    let (p, context) = partner_preview(&db, &owner, &id);
+    assert!(send(&p, &"0".repeat(64), PartnerKind::Turn, &bound(&context)).is_err(), "bound to its payload");
+    assert!(seen.lock().unwrap().is_empty(), "nothing was sent");
+
+    let (p, context) = partner_preview(&db, &owner, &id);
+    owner.ensure_binding(&p.request_id, &bound(&context)).unwrap();
+    let answer = send(&p, &p.payload_sha256, PartnerKind::Turn, &bound(&context)).unwrap();
+    assert_eq!(seen.lock().unwrap().len(), 1);
+    assert!(send(&p, &p.payload_sha256, PartnerKind::Turn, &bound(&context)).is_err(), "single use");
+    assert_eq!(seen.lock().unwrap().len(), 1);
+    let turn = crate::conversation::parse_partner_turn(&answer.text, context.conversation.pressure, context.out_of_time).unwrap();
+    let record = crate::storage::database::conversations::PartnerTurnRecord {
+        text: turn.reply, kind: Some(turn.kind), payload_sha256: Some(answer.payload_sha256.clone()), raw_response: Some(answer.raw.to_string()),
+        estimated_cost_micro_usd: Some(0), reserved_micro_usd: Some(0), ..Default::default()
+    };
+    let view = db.add_partner_turn(&id, &record, &context.binding).unwrap();
+    assert_eq!((view.turns[2].text.as_str(), view.turns[2].kind.as_deref(), view.next.as_str()), ("Why did you start with the reports?", Some("follow_up"), "learner"));
+    let conn = read_only(&root.0);
+    let stored: (Option<String>, Option<String>) = conn.query_row("SELECT payload_sha256,raw_response FROM conversation_turns WHERE ordinal=3", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    assert_eq!(stored.0.as_deref(), Some(p.payload_sha256.as_str()), "kept with what was sent");
+    assert!(stored.1.unwrap().contains("Why did you start"), "and the raw response");
+    // The approval for a turn that was already answered can't add a second one.
+    assert!(db.add_partner_turn(&id, &record, &context.binding).is_err());
+}
+
+/// A-33: your answer changed after the preview (a correction, or a new take):
+/// the old approval is refused and discarded; a fresh preview sends the new text.
+#[test]
+fn a33_a_changed_transcript_refuses_the_old_preview() {
+    use crate::api::coaching::{Binding, PartnerKind};
+    use crate::storage::database::conversations::tests::spoken;
+    let root = TestRoot::new();
+    let (db, id, seen) = local_partner(&root, partner_reply());
+    let owner = PreviewOwner::default();
+    // Answer by voice instead: the typed answer is replaced by a transcribed take.
+    let view = db.conversation(&id).unwrap();
+    spoken(&db, &root, &view, "turn-take", "I like to test early.");
+    db.add_learner_turn(&id, Some("turn-take"), None, false).unwrap();
+    let (stale, before) = partner_preview(&db, &owner, &id);
+    assert!(stale.selected_text.contains("Learner: I like to test early."));
+    let machine = db.conversation(&id).unwrap().turns[1].revision_id.clone().unwrap();
+    db.save_transcript_correction("turn-take", &machine, "I like to test things early.", recording::now_ms()).unwrap();
+    let (fresh, after) = partner_preview(&db, &owner, &id);
+    let binding = |c: &crate::storage::database::conversations::TurnContext| Binding { owner: id.clone(), revisions: c.binding.clone() };
+    assert_eq!(owner.ensure_binding(&stale.request_id, &binding(&after)).unwrap_err(), "Your answer changed since the preview. Preview again.");
+    assert!(tauri::async_runtime::block_on(owner.send_partner_local(&stale.request_id, &stale.payload_sha256, PartnerKind::Turn, &binding(&before))).is_err(), "the stale approval is gone");
+    assert!(seen.lock().unwrap().is_empty(), "nothing was sent");
+    assert!(fresh.selected_text.contains("Learner: I like to test things early."));
+    owner.ensure_binding(&fresh.request_id, &binding(&after)).unwrap();
+    tauri::async_runtime::block_on(owner.send_partner_local(&fresh.request_id, &fresh.payload_sha256, PartnerKind::Turn, &binding(&after))).unwrap();
+    let sent = seen.lock().unwrap();
+    assert_eq!(sent.len(), 1);
+    assert!(sent[0].contains("I like to test things early.") && !sent[0].contains("I like to test early."), "the corrected text was sent");
+    assert!(!sent[0].contains("reports first"), "the replaced answer is not part of the conversation");
+}
+
+/// A-33 and 13.1: auto-send needs a local model, the box and a server on this
+/// computer; an OpenAI conversation never sends by itself. A conversation's
+/// cost limit refuses a preview that would exceed it; scripted ones make no requests.
+#[test]
+fn conversation_cost_cap_refuses_a_preview_that_would_exceed_it() {
+    use crate::conversation::{auto_send_target, cost_cap_refusal};
+    use crate::storage::database::conversations::{tests::new_conversation, PartnerTurnRecord};
+    let root = TestRoot::new();
+    let db = DatabaseOwner::open(&root.0).unwrap();
+    let owner = PreviewOwner::default();
+    let mut input = new_conversation("api");
+    input.max_cost_micro_usd = Some(10_000);
+    let id = db.create_conversation(&input, None).unwrap().conversation.id;
+    db.add_learner_turn(&id, None, Some("We shipped the release a week late."), false).unwrap();
+    let (first, context) = partner_preview(&db, &owner, &id);
+    assert!(first.estimated_maximum_cost_micro_usd > 0 && first.recipient.starts_with("https://api.openai.com/"));
+    assert_eq!(cost_cap_refusal(context.spent_micro_usd, first.estimated_maximum_cost_micro_usd, Some(10_000)), None);
+    assert!(auto_send_target(&context.conversation.mode, true, "http://127.0.0.1:8080").is_err(), "never automatic for OpenAI");
+    // A turn whose usage was missing counts its whole reservation.
+    let record = PartnerTurnRecord { text: "Why was it late?".into(), kind: Some(crate::conversation::Move::FollowUp), reserved_micro_usd: Some(7_000), ..Default::default() };
+    db.add_partner_turn(&id, &record, &context.binding).unwrap();
+    db.add_learner_turn(&id, None, Some("The tests found a data bug."), false).unwrap();
+    let (second, context) = partner_preview(&db, &owner, &id);
+    assert_eq!(context.spent_micro_usd, 7_000);
+    let refusal = cost_cap_refusal(context.spent_micro_usd, second.estimated_maximum_cost_micro_usd, context.conversation.max_cost_micro_usd).unwrap();
+    assert_eq!(refusal, "This conversation reached its cost limit ($0.01). End it, or raise its limit.");
+    let raised = db.set_conversation_limit(&id, 50_000).unwrap();
+    assert_eq!(cost_cap_refusal(raised.spent_micro_usd, second.estimated_maximum_cost_micro_usd, raised.conversation.max_cost_micro_usd), None);
+    // Scripted conversations have prepared lines and no request at all.
+    let scripted = db.create_conversation(&new_conversation("scripted"), None).unwrap().conversation.id;
+    db.add_learner_turn(&scripted, None, Some("Hello."), false).unwrap();
+    let context = db.partner_turn_context(&scripted).unwrap();
+    assert!(crate::commands::partner::turn_request(&db, &context).is_err());
+    assert_eq!(db.next_scripted_turn(&scripted).unwrap().turns[2].text, "What did you do next?");
+}
+
+/// A-33 and 13.1: Stop waiting before dispatch bills nothing; after it the
+/// charge stays uncertain and is never resent. A stopped request saves no turn.
+#[test]
+fn stop_waiting_keeps_the_charge_uncertain_and_saves_nothing() {
+    use crate::api::coaching::{Binding, PartnerKind};
+    let root = TestRoot::new();
+    // A local model that accepts the request and never answers.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        let mut held = Vec::new();
+        for stream in listener.incoming().flatten() {
+            held.push(stream);
+        }
+    });
+    let (db, id, _) = local_partner(&root, partner_reply());
+    let prefs = crate::preferences::load(&db).unwrap();
+    crate::preferences::save(&db, crate::preferences::Preferences { local_endpoint: base, ..prefs }).unwrap();
+    let owner = Arc::new(PreviewOwner::default());
+    let (p, context) = partner_preview(&db, &owner, &id);
+    let binding = Binding { owner: id.clone(), revisions: context.binding.clone() };
+    let task = {
+        let (owner, p, binding) = (owner.clone(), p.clone(), binding.clone());
+        tauri::async_runtime::spawn(async move { owner.send_partner_local(&p.request_id, &p.payload_sha256, PartnerKind::Turn, &binding).await })
+    };
+    std::thread::sleep(Duration::from_millis(300));
+    task.abort();
+    assert!(tauri::async_runtime::block_on(task).is_err(), "stopped");
+    assert_eq!(db.conversation(&id).unwrap().turns.len(), 2, "no partner turn was saved");
+    assert!(tauri::async_runtime::block_on(owner.send_partner_local(&p.request_id, &p.payload_sha256, PartnerKind::Turn, &binding)).is_err(), "never resent");
+    // OpenAI requests share the budget: stopped before dispatch, nothing billed; after, uncertain.
+    let budget = BudgetOwner::open(&root.0).unwrap();
+    budget.reserve("partner-stop-early", Purpose::Coaching, &sha("early"), Some(quote(4_000))).unwrap();
+    assert!(audio::stopped(&budget, "partner-stop-early").contains("Nothing was billed"));
+    budget.reserve("partner-stop-late", Purpose::Coaching, &sha("late"), Some(quote(4_000))).unwrap();
+    budget.mark_dispatched("partner-stop-late", &sha("late")).unwrap();
+    assert!(audio::stopped(&budget, "partner-stop-late").contains("charge is uncertain"));
+    assert_eq!(budget.summary().unwrap().uncertain_micro_usd, 4_000);
 }
 
 // ── A-21 Prosody on the original timeline ───────────────────────────────────

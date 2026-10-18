@@ -19,6 +19,8 @@ export function RecordsList({ journey }: { journey: Journey }) {
     <ul className="divide-y">
       {rows.map(({ def, best, history }) => {
         const take = best.attemptId ? takes.get(best.attemptId) : undefined;
+        // The partner's record (M13) points at a conversation, not a take.
+        const conversation = def.conversation && best.sessionId ? journey.facts.conversations.find((c) => c.id === best.sessionId) : undefined;
         return (
           <li key={def.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2">
             <span className="min-w-0 flex-1">{def.title}</span>
@@ -27,7 +29,13 @@ export function RecordsList({ journey }: { journey: Journey }) {
               {formatDay(best.achievedAt.slice(0, 10))}
               {best.previous !== null && ` (previous ${def.format(best.previous)})`}
               {" · "}
-              {take ? <Link className="text-primary underline underline-offset-2" to={`/sessions/${take.sessionId}/attempt/${take.ordinal}`}>the take</Link> : "take deleted"}
+              {def.conversation ? (
+                conversation ? <Link className="text-primary underline underline-offset-2" to={`/partner/${conversation.id}`}>the conversation</Link> : "conversation deleted"
+              ) : take ? (
+                <Link className="text-primary underline underline-offset-2" to={`/sessions/${take.sessionId}/attempt/${take.ordinal}`}>the take</Link>
+              ) : (
+                "take deleted"
+              )}
             </span>
             <EvidenceLabel source={def.source} />
             {history.length > 1 && (

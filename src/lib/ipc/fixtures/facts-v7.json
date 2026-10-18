@@ -1,5 +1,5 @@
 {
-  "factsVersion": 6,
+  "factsVersion": 7,
   "generatedAt": "2026-10-16T18:00:00.000Z",
   "today": "2026-10-16",
   "transcriptionAvailable": true,
@@ -229,6 +229,18 @@
           "done": true
         }
       ]
+    }
+  ],
+  "conversations": [
+    {
+      "id": "conversation-1760600000000",
+      "scenarioId": "job-interview",
+      "pressure": 2,
+      "mode": "scripted",
+      "learnerTurns": 1,
+      "localDate": "2026-10-16",
+      "endedAt": null,
+      "bossId": null
     }
   ]
 }

@@ -40,6 +40,7 @@ import { ApiBudgetStatus } from "./ApiBudgetStatus";
 import { CoachingPrices } from "./CoachingPrices";
 import { COACHING_MODELS, CoachingSpike } from "./CoachingSpike";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
+import { PartnerSettings } from "@/features/partner/PartnerSettings";
 
 const SECTIONS = [
   { id: "audio", label: "Audio" },
@@ -47,6 +48,7 @@ const SECTIONS = [
   { id: "appearance", label: "Appearance" },
   { id: "transcription", label: "Transcription" },
   { id: "coaching", label: "Coaching" },
+  { id: "partner", label: "Partner" },
   { id: "data", label: "Data and backups" },
   { id: "about", label: "About" },
 ] as const;
@@ -84,6 +86,7 @@ export function SettingsPage() {
           {current === "appearance" && <AppearanceSettings />}
           {current === "transcription" && <TranscriptionSettings />}
           {current === "coaching" && <CoachingSettings />}
+          {current === "partner" && <PartnerSettings />}
           {current === "data" && <DataSettings />}
           {current === "about" && <AboutSettings />}
         </div>

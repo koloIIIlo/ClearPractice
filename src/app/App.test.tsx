@@ -44,7 +44,8 @@ describe("app shell", () => {
     await screen.findByRole("button", { name: "Start practice" });
 
     await user.keyboard("{Control>}k{/Control}");
-    const dialog = await screen.findByRole("dialog");
+    // The palette's code loads on first use; a busy test worker can take more than a second.
+    const dialog = await screen.findByRole("dialog", undefined, { timeout: 5_000 });
     await user.type(within(dialog).getByRole("combobox"), "track of time");
     expect(await within(dialog).findByText("I lost track of time")).toBeInTheDocument();
   });

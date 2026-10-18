@@ -7,6 +7,14 @@ import type {
   ActivityContext,
   ActivityResult,
   CatchRun,
+  ConversationFeedbackRun,
+  ConversationSummary,
+  ConversationView,
+  NewConversation,
+  PanelPersona,
+  PartnerPreview,
+  TakePartnerPreview,
+  UpgradeRun,
   ExposureAttempt,
   ExposureAttemptInput,
   ExposureStep,
@@ -402,6 +410,37 @@ export interface IpcClient {
   listSegmentMarks(attemptId: string): Promise<SegmentMark[]>;
   /** The week's best moments from `weekStart` (local date), with stored segment times only. */
   bestMoments(weekStart: string): Promise<Moment[]>;
+  /** Conversation partner (M13): starts a conversation, its session and the partner's opening. */
+  startConversation(input: NewConversation): Promise<ConversationView>;
+  getConversation(conversationId: string): Promise<ConversationView>;
+  listConversations(): Promise<ConversationSummary[]>;
+  /** Your answer: a transcribed take of the conversation, or typed text. An answer still waiting for the partner is replaced. */
+  addLearnerTurn(conversationId: string, answer: { attemptId?: string; typedText?: string; outOfTime?: boolean }): Promise<ConversationView>;
+  /** Previews the partner's next turn; nothing is sent. Refused when it would pass the conversation's cost limit. */
+  previewPartnerTurn(conversationId: string): Promise<PartnerPreview>;
+  /** Sends an approved turn: single-use and bound to your answers as they were previewed (A-33). */
+  requestPartnerTurn(conversationId: string, requestId: string, payloadSha256: string): Promise<ConversationView>;
+  /** A local model's turn without asking: only with auto-send ticked and a server on this computer. Stop it with `stopPartnerRequest(partnerAutoKey(id))`. */
+  sendPartnerTurnAuto(conversationId: string): Promise<ConversationView>;
+  /** Stops waiting for a partner, panel, upgrade or feedback request (before dispatch nothing is billed). */
+  stopPartnerRequest(key: string): Promise<void>;
+  /** The scripted partner's next line, or the panel's next question. No request is made. */
+  nextScriptedTurn(conversationId: string): Promise<ConversationView>;
+  /** Ends the conversation; three or more answers earn effort once. */
+  endConversation(conversationId: string): Promise<ConversationView>;
+  setConversationLimit(conversationId: string, maxCostMicroUsd: number): Promise<ConversationView>;
+  /** Previews questions from a panel of listeners about a transcribed take (13.9). */
+  previewQaPanel(attemptId: string, personas: PanelPersona[], model?: CoachingModel): Promise<TakePartnerPreview>;
+  /** Sends an approved panel preview and starts its conversation. */
+  startQaPanel(attemptId: string, personas: PanelPersona[], requestId: string, payloadSha256: string): Promise<ConversationView>;
+  /** Previews a clearer version of a transcribed take's answer (13.10). */
+  previewUpgrade(attemptId: string, model?: CoachingModel): Promise<TakePartnerPreview>;
+  requestUpgrade(attemptId: string, requestId: string, payloadSha256: string): Promise<UpgradeRun>;
+  listUpgradeRuns(attemptId: string): Promise<UpgradeRun[]>;
+  getUpgradeRun(runId: string): Promise<UpgradeRun>;
+  /** Previews AI feedback on a whole conversation (13.11): your turns, with the partner's lines as context. */
+  previewConversationFeedback(conversationId: string, model?: CoachingModel): Promise<CoachingPreview>;
+  requestConversationFeedback(conversationId: string, requestId: string, payloadSha256: string): Promise<ConversationFeedbackRun>;
   /** Insights (M8): where saved phrases turned up in takes (one phrase, or all). */
   listPhraseUses(phraseId?: string): Promise<PhraseUse[]>;
   /** Your yes/no note about a take; null clears it. */
@@ -423,6 +462,9 @@ export interface IpcClient {
   /** One swap a week, never for a finished quest. */
   swapWeeklyQuest(week: string, slot: number, quest: QuestInput): Promise<QuestRow>;
 }
+
+/** The key Stop waiting uses for a local conversation's automatic partner turn (D-33). */
+export const partnerAutoKey = (conversationId: string) => `partner-auto-${conversationId}`;
 
 /** A command failed in a way the UI should explain in context (§14). */
 export class IpcError extends Error {

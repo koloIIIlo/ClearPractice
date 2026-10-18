@@ -85,6 +85,18 @@ describe("achievements (9.6)", () => {
     expect(newAchievements(facts, already, [], ctx(facts), [], { weekStartsOn: "monday", weeklyGoalDays: 3 }).map((a) => a.id)).not.toContain("first-take");
   });
 
+  it("the partner's achievements, and a boss finished with the partner (M13)", () => {
+    const ids = (facts: PracticeFacts) => newAchievements(facts, empty, [], ctx(facts), [], { weekStartsOn: "monday", weeklyGoalDays: 3 }).map((a) => a.id);
+    expect(ids(factsBuilder().conversation({ learnerTurns: 2 }).build())).not.toContain("conversation-first");
+    expect(ids(factsBuilder().conversation({ learnerTurns: 5, endedAt: null }).build())).not.toContain("conversation-first");
+    const facts = factsBuilder().conversation({ learnerTurns: 3, pressure: 3, bossId: "meeting" }).build();
+    expect(ids(facts)).toEqual(expect.arrayContaining(["conversation-first", "conversation-pressure", "boss-meeting"]));
+    expect(ids(facts)).not.toContain("boss-interview");
+    const loop = (b: ReturnType<typeof factsBuilder>) => b.session({ exerciseType: "upgrade" }).take({ stepKey: "shadow" }).take({ stepKey: "retell" });
+    expect(ids(loop(loop(factsBuilder())).build())).not.toContain("upgrade-3");
+    expect(ids(loop(loop(loop(factsBuilder()))).build())).toContain("upgrade-3");
+  });
+
   it("Comeback needs fourteen days away", () => {
     const comeback = ACHIEVEMENTS.find((a) => a.id === "comeback")!;
     const facts = factsBuilder().build();
@@ -118,6 +130,13 @@ describe("personal records (9.7)", () => {
     expect(newRecords(facts, []).some((r) => r.record === "longest_run")).toBe(false);
     const tie = factsBuilder().session().take({ transcribed: true, longestRun: 11 }).build();
     expect(newRecords(tie, [row("longest_run", 11)]).some((r) => r.record === "longest_run")).toBe(false);
+  });
+
+  it("the longest conversation counts your answers in ended conversations (M13)", () => {
+    const facts = factsBuilder().conversation({ learnerTurns: 5 }).conversation({ learnerTurns: 7, endedAt: null }).conversation({ learnerTurns: 6 }).build();
+    const first = newRecords(facts, []).find((r) => r.record === "conversation_turns")!;
+    expect([first.value, first.attemptId, first.sessionId, first.unit]).toEqual([6, null, "conversation-3", "turns"]);
+    expect(newRecords(facts, [row("conversation_turns", 6)]).some((r) => r.record === "conversation_turns")).toBe(false);
   });
 
   it("the filler record needs a fully reviewed unfamiliar take of 60 seconds", () => {
@@ -160,6 +179,13 @@ describe("weekly quests (9.9)", () => {
     if (first.quest !== "phrases-10") expect(third.quest).toBe("phrases-10");
     const thisWeek = [{ week: monday, slot: 2, quest: "real-1", params: {}, swapped: false, createdAt: "x", completedAt: null }];
     expect(swapCandidate(1, thisWeek, facts, recent, monday)?.quest).toBe("phrases-10");
+  });
+
+  it("a practice conversation this week completes the partner quest (M13)", () => {
+    const f = factsBuilder("2026-10-14").onDay(8).conversation().onDay(1).conversation({ learnerTurns: 2 }).build();
+    expect(questProgress({ quest: "partner-1", week: monday }, f, [], ctx(f))).toEqual({ done: 0, needed: 1, met: false });
+    const g = factsBuilder("2026-10-14").onDay(1).conversation({ learnerTurns: 3 }).build();
+    expect(questProgress({ quest: "partner-1", week: monday }, g, [], ctx(g)).met).toBe(true);
   });
 
   it("detects completion from this week's facts only", () => {

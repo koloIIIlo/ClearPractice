@@ -6,6 +6,7 @@ import { addLocalDays, nextIntervalDays, toLocalDate } from "@/lib/phrase-schedu
 import { IpcError, type IpcClient, type PracticeContext } from "./client";
 import * as data from "./mock-data";
 import { EXPOSURE_TEMPLATES } from "@/content/exposure-templates";
+import type { MockPartnerHost } from "./mock-partner";
 import * as S from "./schemas";
 import { searchLibrary } from "../search";
 import { isWeekStart, RECORD_UNITS, validateUnlockInput } from "../engagement/validate";
@@ -46,6 +47,8 @@ export const MOCK_XP: Record<string, { xp: number; dailyCap?: number }> = {
   exposure_step: { xp: 30 },
   routine: { xp: 10 },
   after_action: { xp: 20 },
+  conversation: { xp: 30 },
+  upgrade: { xp: 20 },
 };
 /** Takes shorter than this earn nothing; only the first six takes of a session count. */
 const MIN_TAKE_MS = 10_000;
@@ -263,10 +266,31 @@ export function createMockClient(): IpcClient {
     awardTake(session, attempt);
     // Drills (M10): the first saved take of a drill session, whatever its length.
     if (S.isDrillType(session.exerciseType)) award("drill_round", session.id, session.localDate, { sessionId: session.id, attemptId });
+    // Upgrade loop (M13): the retell take completes it.
+    if (session.exerciseType === "upgrade" && ctx.step?.key === "retell") award("upgrade", session.id, session.localDate, { sessionId: session.id, attemptId });
   };
+  // Conversation partner (M13): sample takes read their sample transcript; simulated takes have none.
+  const sampleTakes = new Set(sessions.flatMap((s) => s.attempts.map((a) => a.id)));
+  const partnerHost: MockPartnerHost = {
+    sessions,
+    trashed: (sessionId) => trash.has(sessionId),
+    award: (kind, refId, localDate, ids) => award(kind, refId, localDate, ids),
+    preferences: () => preferences,
+    takeText: (attemptId) => (sampleTakes.has(attemptId) ? data.reviewForAttempt(attemptId).revisions[0].segments.map((s) => s.text).join(" ") : null),
+    sample: (() => {
+      const session = sessions.find((s) => s.attempts.length > 1);
+      return session ? { attemptId: session.attempts[0].id, sessionId: session.id, ordinal: session.attempts[0].ordinal } : undefined;
+    })(),
+  };
+  // Loaded on first use, so the preview's partner stays off the app's start-up path.
+  let partnerLoad: Promise<ReturnType<typeof import("./mock-partner").createMockPartner>> | null = null;
+  const partner = () => (partnerLoad ??= import("./mock-partner").then((m) => m.createMockPartner(partnerHost)));
+  type PartnerApi = Awaited<ReturnType<typeof partner>>["methods"];
+  const later = <K extends keyof PartnerApi>(name: K) =>
+    (async (...args: unknown[]) => ((await partner()).methods[name] as (...a: unknown[]) => unknown)(...args)) as PartnerApi[K];
 
   /** Facts from the sample history (7.6): takes count as transcribed in the order the sample says. */
-  const buildFacts = (): S.PracticeFacts => {
+  const buildFacts = (conversations: S.FactConversation[]): S.PracticeFacts => {
     const shown = sessions.filter((s) => !trash.has(s.id) && (s.attemptCount > 0 || s.status === "completed"));
     const filled = (text: string | undefined | null) => !!text && text.trim().length > 0;
     const exposure = exposureSteps.map((s) => ({
@@ -274,7 +298,7 @@ export function createMockClient(): IpcClient {
       attempts: exposureAttempts.filter((a) => a.stepId === s.id && !a.deleted).map((a) => ({ localDate: a.localDate, before: a.beforeRating, after: a.afterRating, outcome: a.outcome, done: OUTCOME_DONE.has(a.outcome) })),
     }));
     return S.PracticeFacts.parse({
-      factsVersion: 6,
+      factsVersion: 7,
       generatedAt: new Date().toISOString(),
       today: data.today(),
       transcriptionAvailable: false,
@@ -318,6 +342,7 @@ export function createMockClient(): IpcClient {
       blindComparisons: comparisons.filter((c) => c.blind).length,
       programme: activeProgramme(),
       exposure,
+      conversations,
     });
   };
 
@@ -353,7 +378,26 @@ export function createMockClient(): IpcClient {
       award("sequence_completed", refId, localDate, { sessionId: sessionIds[0] });
       return S.PracticeEvent.parse(structuredClone(events.find((e) => e.kind === "sequence_completed" && e.refId === refId)));
     },
-    getPracticeFacts: async () => buildFacts(),
+    getPracticeFacts: async () => buildFacts((await partner()).facts()),
+    startConversation: later("startConversation"),
+    getConversation: later("getConversation"),
+    listConversations: later("listConversations"),
+    addLearnerTurn: later("addLearnerTurn"),
+    previewPartnerTurn: later("previewPartnerTurn"),
+    requestPartnerTurn: later("requestPartnerTurn"),
+    sendPartnerTurnAuto: later("sendPartnerTurnAuto"),
+    stopPartnerRequest: later("stopPartnerRequest"),
+    nextScriptedTurn: later("nextScriptedTurn"),
+    endConversation: later("endConversation"),
+    setConversationLimit: later("setConversationLimit"),
+    previewQaPanel: later("previewQaPanel"),
+    startQaPanel: later("startQaPanel"),
+    previewUpgrade: later("previewUpgrade"),
+    requestUpgrade: later("requestUpgrade"),
+    listUpgradeRuns: later("listUpgradeRuns"),
+    getUpgradeRun: later("getUpgradeRun"),
+    previewConversationFeedback: later("previewConversationFeedback"),
+    requestConversationFeedback: later("requestConversationFeedback"),
     setPrediction: async (attemptId, kind, predicted) => {
       const found = attemptOf(attemptId);
       if (!found) throw new IpcError("not_found", "This take is unavailable.");

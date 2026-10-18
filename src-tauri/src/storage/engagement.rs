@@ -14,7 +14,7 @@ use std::collections::HashMap;
 /// app_settings key marking that history was turned into events once.
 const BACKFILL_KEY: &str = "engagement_backfill_v1";
 /// Bumped when facts gain fields, so the interface can tell what to expect.
-pub const FACTS_VERSION: u32 = 6;
+pub const FACTS_VERSION: u32 = 7;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -93,6 +93,25 @@ pub(crate) fn award_drill_round(conn: &Connection, attempt_id: &str, session_id:
         .flatten();
     if kind.as_deref().is_some_and(crate::exercise_types::is_drill) {
         award(conn, &NewEvent { kind: EventKind::DrillRound, ref_id: session_id, local_date, session_id: Some(session_id), attempt_id: Some(attempt_id), created_at_ms, backfilled })?;
+    }
+    Ok(())
+}
+
+/// `upgrade` once per upgrade loop (13.10), when its retell take is saved.
+pub(crate) fn award_upgrade(conn: &Connection, attempt_id: &str, session_id: &str, local_date: &str, created_at_ms: i64, backfilled: bool) -> Result<()> {
+    let found: Option<(Option<String>, Option<String>)> = conn
+        .query_row(
+            "SELECT e.type,tc.challenge FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN exercise_definitions e ON e.id=st.exercise_id AND e.version=st.exercise_version \
+             LEFT JOIN task_conditions tc ON tc.attempt_id=a.id WHERE a.id=?1",
+            [attempt_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(db_error)?;
+    let Some((Some(kind), step)) = found else { return Ok(()) };
+    let retell = step.and_then(|s| serde_json::from_str::<Value>(&s).ok()).is_some_and(|s| s["key"] == "retell");
+    if kind == "upgrade" && retell {
+        award(conn, &NewEvent { kind: EventKind::Upgrade, ref_id: session_id, local_date, session_id: Some(session_id), attempt_id: Some(attempt_id), created_at_ms, backfilled })?;
     }
     Ok(())
 }
@@ -326,6 +345,21 @@ pub struct FactExposureAttempt {
     pub done: bool,
 }
 
+/// Facts v7 (13.11): a practice conversation (not in Trash) and how many times you answered.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FactConversation {
+    pub id: String,
+    pub scenario_id: String,
+    pub pressure: u8,
+    pub mode: String,
+    pub learner_turns: u32,
+    pub local_date: String,
+    pub ended_at: Option<String>,
+    /// The boss this conversation played (13.6), so either version of a boss counts.
+    pub boss_id: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FactPhrase {
@@ -366,6 +400,8 @@ pub struct PracticeFacts {
     pub programme: Option<super::learning::ProgrammeRun>,
     /// Facts v6 (M12): your exposure ladder.
     pub exposure: Vec<FactExposureStep>,
+    /// Facts v7 (M13): your practice conversations.
+    pub conversations: Vec<FactConversation>,
 }
 
 fn count_rows(conn: &Connection, sql: &str) -> Result<u32> {
@@ -649,6 +685,29 @@ impl DatabaseOwner {
                 s.attempts.push(attempt);
             }
         }
+        let mut stmt = conn
+            .prepare(
+                "SELECT c.id,c.scenario_id,c.pressure,c.mode,(SELECT count(*) FROM conversation_turns t WHERE t.conversation_id=c.id AND t.role='learner'),s.local_date,c.ended_at_ms,c.scenario_snapshot \
+                 FROM conversations c JOIN sessions s ON s.id=c.session_id WHERE s.deleted_at_ms IS NULL ORDER BY c.started_at_ms,c.id",
+            )
+            .map_err(db_error)?;
+        let conversations = stmt
+            .query_map([], |r| {
+                let snapshot: Value = serde_json::from_str(&r.get::<_, String>(7)?).unwrap_or(Value::Null);
+                Ok(FactConversation {
+                    id: r.get(0)?,
+                    scenario_id: r.get(1)?,
+                    pressure: r.get(2)?,
+                    mode: r.get(3)?,
+                    learner_turns: r.get(4)?,
+                    local_date: r.get(5)?,
+                    ended_at: r.get::<_, Option<i64>>(6)?.map(iso),
+                    boss_id: snapshot["bossId"].as_str().map(String::from),
+                })
+            })
+            .map_err(db_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(db_error)?;
         let mut stmt = conn.prepare("SELECT id,created_at_ms,deleted_at_ms IS NOT NULL FROM phrase_cards ORDER BY created_at_ms,id").map_err(db_error)?;
         let phrases = stmt
             .query_map([], |r| {
@@ -679,6 +738,7 @@ impl DatabaseOwner {
             progression,
             programme,
             exposure,
+            conversations,
         })
     }
 }
@@ -690,7 +750,7 @@ pub(crate) mod tests {
     use crate::storage::recording::{tests::{manifest, TestRoot}, ChunkWriter, SavedRecording};
     use std::path::Path;
 
-    fn audio(root: &Path, id: &str, seconds: u32) -> SavedRecording {
+    pub(crate) fn audio(root: &Path, id: &str, seconds: u32) -> SavedRecording {
         let mut w = ChunkWriter::create(root, &manifest(id)).unwrap();
         for _ in 0..(48_000 * seconds) {
             w.push(1000).unwrap();
@@ -725,7 +785,7 @@ pub(crate) mod tests {
         events.iter().filter(|e| e.kind == kind).collect()
     }
 
-    fn transcribe(db: &DatabaseOwner, take: &str, text: &str) -> String {
+    pub(crate) fn transcribe(db: &DatabaseOwner, take: &str, text: &str) -> String {
         let transcript = crate::audio::whisper::Transcript {
             version: 1, run_id: format!("{take}--1"), asset_id: take.into(), provider: "whisper.cpp".into(),
             model_id: "base".into(), model_sha256: "a".repeat(64), runtime_version: "1.9.1".into(),
@@ -1059,7 +1119,7 @@ pub(crate) mod tests {
     }
 
     /// The interface parses facts with strict schemas; its fixture
-    /// (src/lib/ipc/fixtures/facts-v6.json) must have exactly these fields.
+    /// (src/lib/ipc/fixtures/facts-v7.json) must have exactly these fields.
     #[test]
     fn facts_serialize_with_the_same_fields_as_the_interface_fixture() {
         let root = TestRoot::new();
@@ -1077,11 +1137,13 @@ pub(crate) mod tests {
         db.record_progression("advance", "Three sessions").unwrap();
         let step = db.save_exposure_steps(&[super::super::confidence::StepInput { id: None, title: "Ask one question in a meeting".into(), template_id: None }]).unwrap().remove(0);
         db.add_exposure_attempt(&super::super::confidence::AttemptInput { step_id: step.id, local_date: "2026-10-15".into(), before_rating: Some(6), after_rating: Some(3), outcome: "yes".into(), note: String::new() }).unwrap();
+        let conversation = db.create_conversation(&super::super::conversations::tests::new_conversation("scripted"), None).unwrap();
+        db.add_learner_turn(&conversation.conversation.id, None, Some("I led a migration."), false).unwrap();
         let actual = serde_json::to_value(db.practice_facts("2026-10-16").unwrap()).unwrap();
-        let fixture: Value = serde_json::from_str(include_str!("../../../src/lib/ipc/fixtures/facts-v6.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../../src/lib/ipc/fixtures/facts-v7.json")).unwrap();
         let keys = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<std::collections::BTreeSet<_>>();
         assert_eq!(keys(&actual), keys(&fixture));
-        for list in ["sessions", "takes", "transferReviews", "phrases", "phraseReviews", "progression", "exposure"] {
+        for list in ["sessions", "takes", "transferReviews", "phrases", "phraseReviews", "progression", "exposure", "conversations"] {
             assert_eq!(keys(&actual[list][0]), keys(&fixture[list][0]), "{list}");
         }
         assert_eq!(keys(&actual["exposure"][0]["attempts"][0]), keys(&fixture["exposure"][0]["attempts"][0]));

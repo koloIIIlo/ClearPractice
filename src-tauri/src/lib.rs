@@ -15,6 +15,7 @@ pub mod mic_test;
 pub mod models;
 pub mod clips;
 pub mod clipsplit;
+pub mod conversation;
 pub mod linkaudio;
 pub mod preferences;
 pub mod prosody;
@@ -2653,6 +2654,24 @@ pub fn run() {
             commands::confidence::set_segment_mark,
             commands::confidence::list_segment_marks,
             commands::confidence::best_moments,
+            commands::partner::start_conversation,
+            commands::partner::get_conversation,
+            commands::partner::list_conversations,
+            commands::partner::add_learner_turn,
+            commands::partner::preview_partner_turn,
+            commands::partner::request_partner_turn,
+            commands::partner::send_partner_turn_auto,
+            commands::partner::next_scripted_turn,
+            commands::partner::end_conversation,
+            commands::partner::set_conversation_limit,
+            commands::partner::preview_qa_panel,
+            commands::partner::start_qa_panel,
+            commands::partner::preview_upgrade,
+            commands::partner::request_upgrade,
+            commands::partner::list_upgrade_runs,
+            commands::partner::get_upgrade_run,
+            commands::partner::preview_conversation_feedback,
+            commands::partner::request_conversation_feedback,
             commands::drills::add_take_events,
             commands::drills::list_take_events,
             commands::drills::get_activity_result,

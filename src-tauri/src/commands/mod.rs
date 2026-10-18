@@ -7,3 +7,4 @@ pub mod drills;
 pub mod engagement;
 pub mod insights;
 pub mod learning;
+pub mod partner;

@@ -20,6 +20,7 @@ import { PREDICT_TIP_AFTER, usualPace } from "@/lib/learning/predict";
 import { PredictCard, PredictionReveal, wasSkipped } from "@/features/learning/PredictCard";
 import type { AttemptTranscript, CoachingRun, EvidenceSource, TranscriptMeasures, WordCount } from "@/lib/ipc/schemas";
 import type { PlayerLink } from "./player-link";
+import { TakePartnerActions } from "@/features/partner/TakePartnerActions";
 
 /** Below this many words the measures say too little to summarise. */
 const MIN_WORDS = 15;
@@ -395,6 +396,8 @@ export function TakeSummary({ attemptId, reviewHref, link, durationMs, latest = 
           <div className="border-t pt-2">
             <SelfChecks attemptId={attemptId} opener={revision.measures.opener ?? null} ending={revision.measures.ending ?? null} durationMs={durationMs ?? revision.measures.speechSpanMs} />
           </div>
+          {/* The conversation partner (13.9, 13.10): a panel's questions about this answer, or a clearer version of it. */}
+          <TakePartnerActions attemptId={attemptId} />
         </div>
       )}
       {showTip && (

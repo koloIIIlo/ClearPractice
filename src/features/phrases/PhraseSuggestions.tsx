@@ -24,7 +24,7 @@ const money = (micro: number) => `$${(micro / 1_000_000).toFixed(micro < 10_000 
  * transcripts are sent, never audio, and only after Send; each suggestion
  * quotes words you actually said.
  */
-export function PhraseSuggestions({ onDone }: { onDone: () => void }) {
+export function PhraseSuggestions({ onDone, preselect }: { onDone: () => void; preselect?: string[] }) {
   const ipc = useIpc();
   const qc = useQueryClient();
   const { preferences } = usePreferences();
@@ -38,7 +38,8 @@ export function PhraseSuggestions({ onDone }: { onDone: () => void }) {
   );
   const latestDay = transcribed[0]?.localDate;
   const [picked, setPicked] = useState<Set<string> | null>(null);
-  const chosen = picked ?? new Set(transcribed.filter((s) => s.localDate === latestDay).map((s) => s.id));
+  const preselected = transcribed.filter((s) => preselect?.includes(s.id)).map((s) => s.id);
+  const chosen = picked ?? new Set(preselected.length > 0 ? preselected : transcribed.filter((s) => s.localDate === latestDay).map((s) => s.id));
   const [model, setModel] = useState<CoachingModel>(preferences.coachingModel);
   const [preview, setPreview] = useState<CoachingPreview | null>(null);
   const [results, setResults] = useState<{ items: PhraseSuggestion[]; sessions: SessionSummary[] } | null>(null);

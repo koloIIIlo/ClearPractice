@@ -24,7 +24,9 @@ export function PhrasesPage() {
   // ?review=1 (Ctrl+K "Review due phrases") opens the review straight away.
   const [practising, setPractising] = useState(params.get("review") === "1");
   const [adding, setAdding] = useState(false);
-  const [suggesting, setSuggesting] = useState(false);
+  // ?suggest=<session> (a conversation's "Save phrases", 13.11) opens suggestions with that session ticked.
+  const suggestFor = params.get("suggest");
+  const [suggesting, setSuggesting] = useState(!!suggestFor);
   const focus = params.get("focus");
   const localToday = toLocalDate(new Date());
 
@@ -60,7 +62,7 @@ export function PhrasesPage() {
                 <PhraseReview due={due} onDone={() => setPractising(false)} />
               ) : (
                 <>
-                  {suggesting && <PhraseSuggestions onDone={() => setSuggesting(false)} />}
+                  {suggesting && <PhraseSuggestions preselect={suggestFor ? [suggestFor] : undefined} onDone={() => setSuggesting(false)} />}
                   {adding && <PhraseForm onDone={() => setAdding(false)} />}
                   <PhraseList list={list} focus={focus} today={localToday} />
                 </>

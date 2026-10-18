@@ -12,17 +12,18 @@ type Snapshot = { current: QueueItem | null; waiting: QueueItem[]; done: number;
 const MAX_TRIES = 2;
 const EMPTY: Snapshot = { current: null, waiting: [], done: 0, failed: 0, total: 0 };
 
-interface Queue extends Snapshot {
+export interface Queue extends Snapshot {
   /** Local Whisper is set up and transcription isn't turned off. */
   available: boolean;
   unavailableReason: string | null;
-  /** Adds takes that aren't queued yet; returns how many were added. */
-  enqueue: (items: QueueItem[]) => number;
+  /** Adds takes that aren't queued yet; returns how many were added. `first` puts them ahead of waiting takes (a conversation's answer, 13.4). */
+  enqueue: (items: QueueItem[], opts?: { first?: boolean }) => number;
   cancel: () => void;
   busySession: (sessionId: string) => boolean;
 }
 
-const QueueContext = createContext<Queue | null>(null);
+/** Exported so tests can provide a queue of their own. */
+export const QueueContext = createContext<Queue | null>(null);
 
 /**
  * One queue for every local transcription the app starts by itself or in bulk
@@ -144,12 +145,13 @@ export function TranscriptionQueueProvider({ children }: { children: ReactNode }
     if (available) void pump.current();
   }, [available]);
 
-  const enqueue = useCallback((items: QueueItem[]) => {
+  const enqueue = useCallback((items: QueueItem[], opts?: { first?: boolean }) => {
     const s = state.current;
     const known = new Set([s.current?.attemptId, ...s.waiting.map((i) => i.attemptId)]);
     const fresh = items.filter((i) => !known.has(i.attemptId) && known.add(i.attemptId));
     if (!fresh.length) return 0;
-    s.waiting.push(...fresh);
+    if (opts?.first) s.waiting.unshift(...fresh);
+    else s.waiting.push(...fresh);
     s.total += fresh.length;
     publish();
     void pump.current();

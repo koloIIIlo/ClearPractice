@@ -87,13 +87,35 @@ describe("criteria DSL (9.2)", () => {
 
   it("reports unavailable criteria with the feature that brings them", () => {
     const facts = factsBuilder().build();
-    expect(run({ kind: "activity", label: "upgrade", type: "upgrade", atLeast: 1 }, facts).unavailable).toEqual({ reason: "Arrives with the conversation partner", fix: "partner" });
     expect(run({ kind: "activity", label: "talk", type: "rehearsal", atLeast: 1 }, facts).unavailable?.fix).toBe("events");
     expect(run({ kind: "activity", label: "jam", type: "jam", atLeast: 1 }, facts).unavailable).toBeNull();
-    expect(run({ kind: "conversation", label: "talk", minTurns: 5, atLeast: 1 }, facts).unavailable?.fix).toBe("partner");
+    // The conversation partner (M13) is here.
+    expect(run({ kind: "activity", label: "upgrade", type: "upgrade", atLeast: 1 }, facts).unavailable).toBeNull();
+    expect(run({ kind: "conversation", label: "talk", minTurns: 5, atLeast: 1 }, facts).unavailable).toBeNull();
     expect(run({ kind: "debrief", label: "event", atLeast: 1 }, facts).unavailable?.fix).toBe("events");
     const noTranscription = { ...factsBuilder().session().take().build(), transcriptionAvailable: false };
     expect(run(takes({ transcribed: true, fillersReviewed: true }, 3), noTranscription).unavailable).toEqual({ reason: "Needs local transcription", fix: "transcription" });
+  });
+
+  it("counts conversations you ended, with enough answers and pressure (M13)", () => {
+    const facts = factsBuilder()
+      .onDay(3).conversation({ learnerTurns: 6, pressure: 2 })
+      .onDay(2).conversation({ learnerTurns: 4, pressure: 3 })
+      .onDay(1).conversation({ learnerTurns: 8, pressure: 3, endedAt: null })
+      .build();
+    const six = run({ kind: "conversation", label: "6 turns", minTurns: 6, atLeast: 1 }, facts);
+    expect([six.done, six.met, six.evidence.map((e) => [e.kind, e.id])]).toEqual([1, true, [["conversation", "conversation-1"]]]);
+    expect(run({ kind: "conversation", label: "pressured", minTurns: 6, minPressure: 3, atLeast: 1 }, facts).met).toBe(false);
+    expect(run({ kind: "conversation", label: "any", minTurns: 3, atLeast: 3 }, facts).done).toBe(2);
+  });
+
+  it("counts upgrade loops by their retell take (M13)", () => {
+    const facts = factsBuilder()
+      .session({ exerciseType: "upgrade" }).take({ stepKey: "shadow" }).take({ stepKey: "retell" })
+      .session({ exerciseType: "upgrade" }).take({ stepKey: "shadow" })
+      .build();
+    const loops = run({ kind: "activity", label: "3 upgrade loops", type: "upgrade", atLeast: 3 }, facts);
+    expect([loops.done, loops.needed, loops.evidence.map((e) => e.id)]).toEqual([1, 3, ["session-1"]]);
   });
 
   it("counts ladder steps you did, including deleted ones, and the ones you rated high beforehand (M12)", () => {

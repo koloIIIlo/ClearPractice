@@ -174,6 +174,27 @@ export function createNativeClient(): IpcClient {
     setSegmentMark: async (revisionId, segment, liked) => { await command("set_segment_mark", z.null(), { revisionId, segment, liked }); },
     listSegmentMarks: (attemptId) => command("list_segment_marks", S.SegmentMark.array(), { attemptId }),
     bestMoments: (weekStart) => command("best_moments", S.Moment.array(), { weekStart }),
+    startConversation: (input) => command("start_conversation", S.ConversationView, { input }),
+    getConversation: (conversationId) => command("get_conversation", S.ConversationView, { conversationId }),
+    listConversations: () => command("list_conversations", S.ConversationSummary.array()),
+    addLearnerTurn: (conversationId, { attemptId, typedText, outOfTime }) =>
+      command("add_learner_turn", S.ConversationView, { conversationId, attemptId: attemptId ?? null, typedText: typedText ?? null, outOfTime: outOfTime ?? false }),
+    previewPartnerTurn: (conversationId) => command("preview_partner_turn", S.PartnerPreview, { conversationId }),
+    requestPartnerTurn: (conversationId, requestId, payloadSha256) => command("request_partner_turn", S.ConversationView, { conversationId, requestId, payloadSha256 }),
+    sendPartnerTurnAuto: (conversationId) => command("send_partner_turn_auto", S.ConversationView, { conversationId }),
+    stopPartnerRequest: async (key) => { await invoke("cancel_api_transcription", { requestId: key }); },
+    nextScriptedTurn: (conversationId) => command("next_scripted_turn", S.ConversationView, { conversationId }),
+    endConversation: (conversationId) => command("end_conversation", S.ConversationView, { conversationId }),
+    setConversationLimit: (conversationId, maxCostMicroUsd) => command("set_conversation_limit", S.ConversationView, { conversationId, maxCostMicroUsd }),
+    previewQaPanel: (attemptId, personas, model) => command("preview_qa_panel", S.TakePartnerPreview, { attemptId, personas, model: model ?? null }),
+    startQaPanel: (attemptId, personas, requestId, payloadSha256) => command("start_qa_panel", S.ConversationView, { attemptId, personas, requestId, payloadSha256 }),
+    previewUpgrade: (attemptId, model) => command("preview_upgrade", S.TakePartnerPreview, { attemptId, model: model ?? null }),
+    requestUpgrade: (attemptId, requestId, payloadSha256) => command("request_upgrade", S.UpgradeRun, { attemptId, requestId, payloadSha256 }),
+    listUpgradeRuns: (attemptId) => command("list_upgrade_runs", S.UpgradeRun.array(), { attemptId }),
+    getUpgradeRun: (runId) => command("get_upgrade_run", S.UpgradeRun, { runId }),
+    previewConversationFeedback: (conversationId, model) => command("preview_conversation_feedback", S.CoachingPreview, { conversationId, model: model ?? null }),
+    requestConversationFeedback: (conversationId, requestId, payloadSha256) =>
+      command("request_conversation_feedback", S.ConversationFeedbackRun, { conversationId, requestId, payloadSha256 }),
     listPhraseUses: (phraseId) => command("list_phrase_uses", S.PhraseUse.array(), { cardId: phraseId ?? null }),
     setSelfCheck: async (attemptId, checkId, value) => {
       await command("set_self_check", z.null(), { attemptId, checkId, value });

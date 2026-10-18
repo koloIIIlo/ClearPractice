@@ -48,6 +48,9 @@ function evidenceLink(e: EvidenceRef, journey: Journey): { to: string | null; te
   }
   if (e.kind === "transfer") return { to: "/progress?view=real", text: `Real conversation, ${date}` };
   if (e.kind === "exposure") return { to: "/confidence", text: `Ladder step, ${date}` };
+  if (e.kind === "conversation") {
+    return journey.facts.conversations.some((c) => c.id === e.id) ? { to: `/partner/${e.id}`, text: `Practice conversation, ${date}` } : { to: null, text: "From a deleted conversation" };
+  }
   return { to: "/phrases", text: `Phrase, ${date}` };
 }
 

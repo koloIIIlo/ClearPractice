@@ -62,6 +62,11 @@ export type Baselines = { first5ReviewedMedian: Partial<Record<NumericFactTakeKe
 export type EvalContext = { today: string; baselines: Baselines; promptTags: Record<string, readonly PromptTag[]> };
 
 const MAX_EVIDENCE = 10;
+
+/** Practice conversations you ended (13.11) with at least `minTurns` answers at `minPressure` or more. */
+export function finishedConversations(facts: PracticeFacts, minTurns: number, minPressure = 0) {
+  return facts.conversations.filter((c) => c.endedAt !== null && c.learnerTurns >= minTurns && c.pressure >= minPressure);
+}
 const BASELINE_TAKES = 5;
 const NUMERIC_KEYS: readonly NumericFactTakeKey[] = [
   "durationMs", "speechSpanMs", "words", "paceWpm", "fillerCandidates", "fillersConfirmed", "pausesOverThreshold", "meanRun", "longestRun",
@@ -230,11 +235,13 @@ export function progressOf(c: Criterion, facts: PracticeFacts, ctx: EvalContext)
       return progress(c.label, takes.length, c.takes ?? 1, evidence);
     }
     case "activity": {
-      if (!isDrillType(c.type)) {
-        return c.type === "upgrade"
-          ? unavailable(c.label, c.atLeast, "Arrives with the conversation partner", "partner")
-          : unavailable(c.label, c.atLeast, "Arrives with talks and events", "events");
+      if (c.type === "upgrade") {
+        // An upgrade loop (13.10) counts once its retell take is saved.
+        const loops = facts.sessions.filter((s) => s.exerciseType === "upgrade" && facts.takes.some((t) => t.sessionId === s.id && t.stepKey === "retell"));
+        const evidence = loops.slice(0, MAX_EVIDENCE).map((s): EvidenceRef => ({ kind: "session", id: s.id, date: s.localDate }));
+        return progress(c.label, loops.length, c.atLeast, evidence, c.distinctDays ? { done: distinctCount(loops.map((s) => s.localDate)), needed: c.distinctDays, unit: "days" } : null);
       }
+      if (!isDrillType(c.type)) return unavailable(c.label, c.atLeast, "Arrives with talks and events", "events");
       const result = c.result;
       const plays = drillPlays(facts, c.type).filter((p) => {
         if (!result) return true;
@@ -251,8 +258,12 @@ export function progressOf(c: Criterion, facts: PracticeFacts, ctx: EvalContext)
       const evidence = steps.map((s): EvidenceRef => ({ kind: "exposure", id: s.stepId, date: s.attempts.filter(qualifying).at(-1)!.localDate }));
       return progress(c.label, steps.length, c.steps, evidence);
     }
-    case "conversation":
-      return unavailable(c.label, c.atLeast, "Arrives with the conversation partner", "partner");
+    case "conversation": {
+      // Practice conversations you ended (13.11), with this many answers and at least this pressure.
+      const matches = finishedConversations(facts, c.minTurns, c.minPressure ?? 0);
+      const evidence = matches.slice(0, MAX_EVIDENCE).map((x): EvidenceRef => ({ kind: "conversation", id: x.id, date: x.localDate }));
+      return progress(c.label, matches.length, c.atLeast, evidence);
+    }
     case "listenerAnswers":
     case "debrief":
       return unavailable(c.label, c.atLeast, "Arrives with events and listener packs", "events");

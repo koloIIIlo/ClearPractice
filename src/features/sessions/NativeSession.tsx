@@ -15,7 +15,7 @@ import { MoveTakeToTrashButton, MoveToTrashButton } from "./TrashPage";
 import { TakeTranscript } from "@/features/review/TakeTranscript";
 import { TakeSummary } from "@/features/review/TakeSummary";
 import { IntonationTrack } from "@/features/review/IntonationTrack";
-import { BookmarkPlus, Columns2, Download, Mic } from "lucide-react";
+import { BookmarkPlus, Columns2, Download, MessagesSquare, Mic } from "lucide-react";
 import { PhraseForm } from "@/features/phrases/PhrasesPage";
 import { TakeCoaching } from "@/features/review/TakeCoaching";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -60,6 +60,9 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
             <Button asChild><Link to={continueUrl(session)!} state={{ section: "sessions" }}><Mic aria-hidden /> Continue in the Studio</Link></Button>
           )}
           {session.attempts.length > 1 && <Button variant="outline" asChild><Link to={`/sessions/${session.id}/compare`}><Columns2 aria-hidden /> Compare takes</Link></Button>}
+          {/* The partner (M13): a conversation's session is the conversation's; an upgrade loop's is "<run>-loop". */}
+          {session.exerciseType === "conversation" && <Button asChild><Link to={`/partner/${session.id}`}><MessagesSquare aria-hidden /> Open the conversation</Link></Button>}
+          {session.exerciseType === "upgrade" && session.id.endsWith("-loop") && <Button variant="outline" asChild><Link to={`/upgrade/${session.id.slice(0, -"-loop".length)}`}>Open the upgrade loop</Link></Button>}
         </div>
       }
     />
@@ -75,7 +78,9 @@ export function NativeSession({ session, selectedOrdinal }: { session: SessionDe
     )}
     {session.conditionsUnavailableReason && <p className="text-meta text-muted-foreground">Task conditions unavailable: {session.conditionsUnavailableReason}</p>}
     <p className="text-meta text-muted-foreground">Listen, transcribe a take, review fillers, pauses and intonation, and keep your own notes. AI feedback on a take is optional: you see the exact text before anything is sent, and audio never leaves this computer.</p>
-    {attempts.length === 0 && <p role="status">This take is unavailable.</p>}
+    {attempts.length === 0 && (session.exerciseType === "conversation" && selectedOrdinal === undefined
+      ? <p role="status">This conversation has no recorded answers. Open the conversation to read it.</p>
+      : <p role="status">This take is unavailable.</p>)}
     {attempts.map((a) => <Panel key={a.id} className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="font-semibold">Take {a.ordinal} · {formatClock(a.durationMs)} <span className="text-meta font-normal text-muted-foreground">Measured duration</span></h2>

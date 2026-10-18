@@ -33,8 +33,8 @@ export type ServiceStatus = z.infer<typeof ServiceStatus>;
 /** The drills of roadmap M10, each an exercise type of its own (D-30). */
 export const DRILL_TYPES = ["jam", "roulette", "word_bomb", "three_ways", "emphasis", "pace_ladder", "story_spine", "story_cubes", "pitch", "steelman", "daily", "gauntlet", "boss"] as const;
 export type DrillType = (typeof DRILL_TYPES)[number];
-/** Core exercises, drills, and saying a phrase aloud during review (M11). */
-export const ExerciseType = z.enum(["repeat", "thought_groups", "imitate", "expression", ...DRILL_TYPES, "phrase_say_it"]);
+/** Core exercises, drills, saying a phrase aloud during review (M11), and the partner's conversations and upgrade loops (M13). */
+export const ExerciseType = z.enum(["repeat", "thought_groups", "imitate", "expression", ...DRILL_TYPES, "phrase_say_it", "conversation", "upgrade"]);
 export type ExerciseType = z.infer<typeof ExerciseType>;
 export const isDrillType = (type: string | null | undefined): type is DrillType => !!type && (DRILL_TYPES as readonly string[]).includes(type);
 
@@ -851,6 +851,14 @@ export const Preferences = z
     predictTipSeen: z.boolean(),
     /** The name the pre-talk routine encourages you with (12.3); empty says "you". */
     displayName: z.string().max(40),
+    /** The partner's offline voice (13.7), by name; null picks one for the persona. */
+    partnerVoice: z.string().min(1).max(200).nullable(),
+    /** The partner's speaking speed (13.7). */
+    partnerRate: z.number().min(0.8).max(1.2),
+    /** New local-model conversations send turns without asking (13.3, D-33). */
+    partnerAutoSendLocal: z.boolean(),
+    /** The cost limit a new OpenAI conversation starts with (13.1). */
+    partnerMaxCostMicroUsd: z.number().int().min(10_000).max(5_000_000),
   })
   .strict();
 export type Preferences = z.infer<typeof Preferences>;
@@ -864,6 +872,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   weeklyGoalDays: 3, weekStartsOn: "monday", companion: true, accent: "green",
   challengeBias: 0, warmUp: false, measuresTiming: "always", predictFirst: false, predictTipSeen: false,
   displayName: "",
+  partnerVoice: null, partnerRate: 1, partnerAutoSendLocal: false, partnerMaxCostMicroUsd: 50_000,
 };
 
 export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api", "off"]), provider: AudioProvider }).strict();
@@ -1172,6 +1181,107 @@ export const Moment = z
   .strict();
 export type Moment = z.infer<typeof Moment>;
 
+// ── Conversation partner (roadmap M13) ──────────────────────────────────────
+/** What a partner turn does (13.1); the opening comes from the scenario. */
+export const PartnerMove = z.enum(["opening", "follow_up", "challenge", "clarify", "interrupt", "wrap_up"]);
+export type PartnerMove = z.infer<typeof PartnerMove>;
+/** Your OpenAI account (every turn previewed and sent on Send), a local model on this computer, or prepared lines offline (13.3). */
+export const ConversationMode = z.enum(["api", "local", "scripted"]);
+export type ConversationMode = z.infer<typeof ConversationMode>;
+/** Listeners the Q&A panel may include (13.9). */
+export const PanelPersona = z.enum(["newcomer", "skeptic", "expert"]);
+export type PanelPersona = z.infer<typeof PanelPersona>;
+/** A scenario as it was played (13.2), kept with the conversation. */
+export const ScenarioText = z
+  .object({
+    title: z.string().min(1).max(120), partnerRole: z.string().min(1).max(1000), learnerGoal: z.string().min(1).max(1000), opening: z.string().min(1).max(1000),
+    personaTitle: z.string().min(1).max(60), personaStyle: z.string().min(1).max(1000), maxTurns: z.number().int().min(1).max(12),
+    /** Prepared partner lines: the scripted partner's (13.8) or the panel's questions (13.9). */
+    script: z.array(z.object({ text: z.string().min(1).max(600), move: PartnerMove }).strict()).max(24),
+    /** A boss's questions as guidance for the partner (13.6). */
+    guidance: z.string().max(1000).nullable(),
+    bossId: z.string().nullable(),
+    /** A short note per prepared line, opening first: the panel's "why". */
+    hints: z.array(z.string().max(200)).max(25),
+  })
+  .strict();
+export type ScenarioText = z.infer<typeof ScenarioText>;
+export const Conversation = z
+  .object({
+    id: Id, sessionId: Id, scenarioId: z.string().min(1), personaId: z.string().min(1), pressure: z.number().int().min(0).max(3), mode: ConversationMode,
+    modelId: z.string().nullable(), autoSendLocal: z.boolean(), maxCostMicroUsd: z.number().int().nonnegative().nullable(), status: z.enum(["active", "ended"]),
+    scenario: ScenarioText,
+    /** Every take of the conversation is recorded with exactly this prompt. */
+    sessionPrompt: z.string(),
+    sourceAttemptId: Id.nullable(), startedAt: z.string(), endedAt: z.string().nullable(),
+  })
+  .strict();
+export type Conversation = z.infer<typeof Conversation>;
+export const ConversationTurn = z
+  .object({
+    id: Id, ordinal: z.number().int().positive(), role: z.enum(["partner", "learner"]),
+    /** A partner line, or your answer as it was sent (your transcript or what you typed). */
+    text: z.string(),
+    move: PartnerMove.nullable(), endsConversation: z.boolean(), typed: z.boolean(), outOfTime: z.boolean(),
+    attemptId: Id.nullable(), revisionId: z.string().nullable(),
+    /** The take exists and is not in Trash. */
+    takeAvailable: z.boolean(),
+    /** A spoken turn whose take was deleted for good; its text stays. */
+    takeDeleted: z.boolean(),
+    durationMs: z.number().int().nonnegative().nullable(), estimatedCostMicroUsd: z.number().int().nonnegative().nullable(), createdAt: z.string(),
+  })
+  .strict();
+export type ConversationTurn = z.infer<typeof ConversationTurn>;
+/** AI feedback on a whole conversation (13.11), an AI suggestion. */
+export const ConversationFeedbackRun = z
+  .object({ id: Id, provider: z.enum(["OpenAI", "Local LLM"]), model: z.string().min(1), sentText: z.string(), feedback: TakeFeedback, estimatedCostMicroUsd: z.number().int().nonnegative().nullable(), createdAt: z.string() })
+  .strict();
+export type ConversationFeedbackRun = z.infer<typeof ConversationFeedbackRun>;
+/** Your turn, waiting for the partner, over (End shows the summary), or ended. */
+export const ConversationNext = z.enum(["learner", "partner", "closing", "ended"]);
+export type ConversationNext = z.infer<typeof ConversationNext>;
+export const ConversationView = z
+  .object({
+    conversation: Conversation, turns: z.array(ConversationTurn), learnerTurns: z.number().int().nonnegative(),
+    /** Settled estimates of the partner's turns; a turn without usage counts its preview's maximum. */
+    spentMicroUsd: z.number().int().nonnegative(),
+    next: ConversationNext, feedback: z.array(ConversationFeedbackRun),
+  })
+  .strict();
+export type ConversationView = z.infer<typeof ConversationView>;
+export const ConversationSummary = z
+  .object({
+    id: Id, sessionId: Id, scenarioId: z.string(), title: z.string(), personaId: z.string(), personaTitle: z.string(), pressure: z.number().int().min(0).max(3),
+    mode: ConversationMode, status: z.enum(["active", "ended"]), learnerTurns: z.number().int().nonnegative(), speakingMs: z.number().int().nonnegative(),
+    localDate: z.string(), startedAt: z.string(), endedAt: z.string().nullable(),
+  })
+  .strict();
+export type ConversationSummary = z.infer<typeof ConversationSummary>;
+export type NewConversation = {
+  scenarioId: string; personaId: string; pressure: number; mode: ConversationMode; modelId?: CoachingModel | null; autoSendLocal?: boolean;
+  maxCostMicroUsd?: number | null; scenario: ScenarioText; sourceAttemptId?: string | null;
+};
+/** A partner turn's preview and what the conversation has spent (13.1). */
+export const PartnerPreview = CoachingPreview.extend({ conversationSpentMicroUsd: z.number().int().nonnegative(), capMicroUsd: z.number().int().nonnegative().nullable() }).strict();
+export type PartnerPreview = z.infer<typeof PartnerPreview>;
+/** A take's request (the panel or an upgrade) and the transcript revision it was built from. */
+export const TakePartnerPreview = z.object({ preview: CoachingPreview, revisionId: z.string().min(1) }).strict();
+export type TakePartnerPreview = z.infer<typeof TakePartnerPreview>;
+export const UpgradeChange = z.object({ from: z.string().min(1), to: z.string().min(1), why: z.string() }).strict();
+export type UpgradeChange = z.infer<typeof UpgradeChange>;
+/** A clearer version of one take's answer (13.10), an AI suggestion; it goes with its take. */
+export const UpgradeRun = z
+  .object({
+    id: Id, attemptId: Id, sessionId: Id, takeOrdinal: z.number().int().positive(), revisionId: z.string().min(1), provider: z.enum(["OpenAI", "Local LLM"]),
+    model: z.string().min(1), sentText: z.string(), transcriptText: z.string(), upgraded: z.string().min(1), changes: z.array(UpgradeChange).max(6),
+    estimatedCostMicroUsd: z.number().int().nonnegative().nullable(),
+    /** The session the shadow and retell takes are recorded in. */
+    loopSessionId: Id,
+    createdAt: z.string(),
+  })
+  .strict();
+export type UpgradeRun = z.infer<typeof UpgradeRun>;
+
 // ── Drills (roadmap M10) ─────────────────────────────────────────────────────
 /** A mark made during a take (10.1): the time into the take, a kind, and keys or numbers. Never words you said. */
 export const TakeMarkKind = z.enum(["word_shown", "self_flag", "card_advanced", "cue_shown"]);
@@ -1281,6 +1391,11 @@ export const FactExposureAttempt = z
 export type FactExposureAttempt = z.infer<typeof FactExposureAttempt>;
 export const FactExposureStep = z.object({ stepId: Id, position: z.number().int().min(1).max(30), deleted: z.boolean(), attempts: z.array(FactExposureAttempt) }).strict();
 export type FactExposureStep = z.infer<typeof FactExposureStep>;
+/** Facts v7 (13.11): a practice conversation (not in Trash) and how many times you answered. */
+export const FactConversation = z
+  .object({ id: Id, scenarioId: z.string(), pressure: z.number().int().min(0).max(3), mode: ConversationMode, learnerTurns: z.number().int().nonnegative(), localDate: z.string(), endedAt: z.string().nullable(), bossId: z.string().nullable() })
+  .strict();
+export type FactConversation = z.infer<typeof FactConversation>;
 export const FactPhrase = z.object({ id: Id, createdAt: z.string(), starter: z.boolean(), deleted: z.boolean() }).strict();
 export type FactPhrase = z.infer<typeof FactPhrase>;
 export const FactPhraseReview = z.object({ cardId: Id, localDate: z.string(), rating: PhraseRating }).strict();
@@ -1306,6 +1421,8 @@ export const PracticeFacts = z
     programme: ProgrammeRun.nullable(),
     /** Facts v6 (M12): your exposure ladder. */
     exposure: z.array(FactExposureStep),
+    /** Facts v7 (M13): your practice conversations. */
+    conversations: z.array(FactConversation),
   })
   .strict();
 export type PracticeFacts = z.infer<typeof PracticeFacts>;

@@ -38,10 +38,13 @@ pub enum EventKind {
     ExposureStep,
     Routine,
     AfterAction,
+    // Conversation partner (M13).
+    Conversation,
+    Upgrade,
 }
 
 impl EventKind {
-    pub const ALL: [EventKind; 22] = [
+    pub const ALL: [EventKind; 24] = [
         EventKind::TakeSaved,
         EventKind::Retake,
         EventKind::SequenceCompleted,
@@ -64,6 +67,8 @@ impl EventKind {
         EventKind::ExposureStep,
         EventKind::Routine,
         EventKind::AfterAction,
+        EventKind::Conversation,
+        EventKind::Upgrade,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -90,6 +95,8 @@ impl EventKind {
             EventKind::ExposureStep => "exposure_step",
             EventKind::Routine => "routine",
             EventKind::AfterAction => "after_action",
+            EventKind::Conversation => "conversation",
+            EventKind::Upgrade => "upgrade",
         }
     }
 
@@ -124,6 +131,10 @@ impl EventKind {
             EventKind::ExposureStep => 30,
             EventKind::Routine => 10,
             EventKind::AfterAction => 20,
+            // A practice conversation with three or more of your answers, and an
+            // upgrade loop's retell take (appendix B).
+            EventKind::Conversation => 30,
+            EventKind::Upgrade => 20,
         }
     }
 
@@ -170,7 +181,7 @@ mod tests {
         assert_eq!(EventKind::parse("mission"), None, "added with M14");
         assert_eq!(EventKind::parse("level_reached").map(|k| k.xp()), Some(50));
         let total: u32 = EventKind::ALL.iter().map(|k| k.xp()).sum();
-        assert_eq!(total, 387, "update appendix B when amounts change");
+        assert_eq!(total, 437, "update appendix B when amounts change");
     }
 
     #[test]

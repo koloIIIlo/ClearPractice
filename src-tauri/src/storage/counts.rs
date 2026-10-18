@@ -5,9 +5,11 @@ use serde_json::{json, Map, Value};
 type Result<T> = std::result::Result<T, String>;
 
 /// Tables whose row counts help diagnose problems. Counts only, never contents.
-const COUNTED: [&str; 16] = [
+const COUNTED: [&str; 19] = [
     "sessions", "attempts", "audio_assets", "jobs", "transcript_revisions", "annotations", "prosody_tracks", "api_runs",
     "coaching_runs", "reference_clips", "clip_sources", "phrase_cards", "phrase_reviews", "user_prompts", "transfer_reviews", "progression_events",
+    // The conversation partner (M13).
+    "conversations", "conversation_turns", "upgrade_runs",
 ];
 
 impl DatabaseOwner {
