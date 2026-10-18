@@ -288,10 +288,10 @@ mod planner_tests {
                 vec!["s", "a", "st"],
             ),
             (
-                engagement::fact_takes_sql(),
-                vec!["a", "st", "s", "r", "ar"],
+                engagement::FACT_TAKES_SQL.to_string(),
+                vec!["a", "aa", "tc"],
             ),
-            (engagement::FACT_METRICS_SQL.to_string(), vec!["ar", "mv"]),
+            (engagement::FACT_MEASURE_RUNS_SQL.to_string(), vec!["analysis_runs"]),
             (game::journey_levels(), vec!["skill_levels"]),
             (game::journey_achievements(), vec!["achievements"]),
             (game::journey_records(), vec!["personal_records"]),
@@ -320,6 +320,40 @@ mod planner_tests {
                         && !d.contains("USING COVERING INDEX")),
                     "{table}: {details:?}\n{sql}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn practice_facts_bulk_reads_do_not_repeat_probes_per_take() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        engagement::tests::seed_history(&db, 60, 4);
+        let conn = db.connection.lock().unwrap();
+        // These reads deliberately visit the whole input once. In particular,
+        // a sequential metric-table read avoids a table lookup per indexed
+        // metric, and revisions are ordered once rather than once per take.
+        for sql in [
+            engagement::FACT_METRICS_SQL,
+            engagement::FACT_REVISIONS_SQL,
+            engagement::FACT_TAKES_SQL,
+            engagement::FACT_PROSODY_SQL,
+            engagement::FACT_COACHING_SQL,
+            engagement::FACT_AUDIO_SQL,
+            engagement::FACT_RESULTS_SQL,
+        ] {
+            let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
+            for i in 1..=stmt.parameter_count() {
+                stmt.raw_bind_parameter(i, 1).unwrap();
+            }
+            let mut rows = stmt.raw_query();
+            let mut details = Vec::new();
+            while let Some(row) = rows.next().unwrap() {
+                details.push(row.get::<_, String>(3).unwrap());
+            }
+            assert!(!details.iter().any(|d| d.contains("CORRELATED")), "{details:?}\n{sql}");
+            if sql == engagement::FACT_METRICS_SQL {
+                assert_eq!(details, ["SCAN metric_values"]);
             }
         }
     }

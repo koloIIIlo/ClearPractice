@@ -16,10 +16,12 @@ const BACKFILL_KEY: &str = "engagement_backfill_v1";
 /// Bumped when facts gain fields, so the interface can tell what to expect.
 pub const FACTS_VERSION: u32 = 8;
 
-// Stream revisions in index order so Rust allocates each revision ID only once.
-pub(crate) const FACT_METRICS_SQL: &str = "SELECT ar.revision_id,mv.metric,mv.value \
-    FROM analysis_runs ar JOIN metric_values mv ON mv.run_id=ar.id \
-    WHERE ar.kind='transcript-measures' AND ar.definition_version=?1 ORDER BY ar.revision_id";
+// Read run identities once, then stream the metric table in storage order. A
+// facts snapshot needs all current runs; probing the metric index for every
+// run causes repeated table lookups for the same small groups of values.
+pub(crate) const FACT_MEASURE_RUNS_SQL: &str = "SELECT id,revision_id FROM analysis_runs \
+    WHERE kind='transcript-measures' AND definition_version=?1";
+pub(crate) const FACT_METRICS_SQL: &str = "SELECT run_id,metric,value FROM metric_values";
 
 #[derive(Clone, Copy, Default)]
 struct StoredMeasures {
@@ -39,23 +41,25 @@ struct StoredMeasures {
 
 // Shared with the seeded EXPLAIN QUERY PLAN review in maintenance.rs.
 pub(crate) const FACT_SESSIONS_SQL: &str = "SELECT s.id,s.local_date,s.started_at_ms,e.type,s.content_id,s.tags,s.ease,s.focus,s.takeaway,s.status,s.outline_snapshot,s.preferred_take,\
-             (SELECT COUNT(*) FROM attempts a WHERE a.step_id=st.id AND a.capture_state='saved' AND a.deleted_at_ms IS NULL),\
-             (SELECT COALESCE(SUM(aa.duration_ms),0) FROM attempts a JOIN audio_assets aa ON aa.id=a.asset_id WHERE a.step_id=st.id AND a.capture_state='saved' AND a.deleted_at_ms IS NULL),\
-             tc.familiarity,tc.preparation_seconds,tc.target_seconds,tc.audience,tc.follow_up,s.activity_snapshot \
+             tc.familiarity,tc.preparation_seconds,tc.target_seconds,tc.audience,tc.follow_up,s.activity_snapshot,st.id \
              FROM sessions s JOIN session_steps st ON st.session_id=s.id JOIN exercise_definitions e ON e.id=st.exercise_id AND e.version=st.exercise_version \
              LEFT JOIN task_conditions tc ON tc.attempt_id=(SELECT a.id FROM attempts a WHERE a.step_id=st.id ORDER BY a.ordinal LIMIT 1) \
              WHERE s.deleted_at_ms IS NULL ORDER BY s.started_at_ms,s.id";
 
-pub(crate) fn fact_takes_sql() -> String { format!("SELECT a.id,st.session_id,a.ordinal,s.local_date,a.created_at_ms,aa.duration_ms,tc.challenge,\
-             (SELECT r.id FROM transcript_revisions r WHERE r.attempt_id=a.id AND r.source<>'user' ORDER BY r.created_at_ms DESC,r.id DESC LIMIT 1),\
-             EXISTS(SELECT 1 FROM prosody_tracks p WHERE p.attempt_id=a.id),EXISTS(SELECT 1 FROM coaching_runs c WHERE c.attempt_id=a.id),\
-             (SELECT p.range_semitones FROM prosody_tracks p WHERE p.attempt_id=a.id AND p.algorithm=?1 AND p.definition_version=?2),\
-             (SELECT m.rate_sps FROM audio_measures m WHERE m.attempt_id=a.id AND m.method=?3 AND m.definition_version=?4),\
-             (SELECT ar.result FROM activity_results ar WHERE ar.attempt_id=a.id AND ar.definition_version=?5 AND ar.revision_id IS {}) \
-             FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id JOIN audio_assets aa ON aa.id=a.asset_id \
-             LEFT JOIN task_conditions tc ON tc.attempt_id=a.id \
-             WHERE a.capture_state='saved' AND a.deleted_at_ms IS NULL AND s.deleted_at_ms IS NULL ORDER BY a.created_at_ms,a.id", super::insights::CURRENT_REVISION) }
+// One ordered metadata pass selects the latest machine revision per take and
+// the latest correction per parent, including the ID tie-break at equal times.
+pub(crate) const FACT_REVISIONS_SQL: &str = "SELECT attempt_id,id,parent_id,source \
+    FROM transcript_revisions ORDER BY created_at_ms,id";
 
+pub(crate) const FACT_TAKES_SQL: &str = "SELECT a.id,a.step_id,a.ordinal,a.created_at_ms,aa.duration_ms,tc.challenge \
+             FROM attempts a JOIN audio_assets aa ON aa.id=a.asset_id LEFT JOIN task_conditions tc ON tc.attempt_id=a.id \
+             WHERE a.capture_state='saved' AND a.deleted_at_ms IS NULL ORDER BY a.created_at_ms,a.id";
+
+pub(crate) const FACT_PROSODY_SQL: &str = "SELECT attempt_id,MAX(range_semitones) FILTER (WHERE algorithm=?1 AND definition_version=?2) \
+    FROM prosody_tracks GROUP BY attempt_id";
+pub(crate) const FACT_COACHING_SQL: &str = "SELECT DISTINCT attempt_id FROM coaching_runs";
+pub(crate) const FACT_AUDIO_SQL: &str = "SELECT attempt_id,rate_sps FROM audio_measures WHERE method=?1 AND definition_version=?2";
+pub(crate) const FACT_RESULTS_SQL: &str = "SELECT attempt_id,revision_id,result FROM activity_results WHERE definition_version=?1";
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -557,7 +561,8 @@ impl DatabaseOwner {
         Ok(event)
     }
 
-    /// The facts snapshot (7.6). About six single-pass queries.
+    /// The facts snapshot (7.6). Bulk reads assemble take facts and each
+    /// step's session totals without repeated per-take queries.
     pub fn practice_facts(&self, today: &str) -> Result<PracticeFacts> {
         let progression = self.list_progression_events()?;
         let programme = self.programme_state()?.filter(|r| r.completed_at.is_none() && r.stopped_at.is_none());
@@ -566,16 +571,20 @@ impl DatabaseOwner {
             .query_row("SELECT EXISTS(SELECT 1 FROM app_settings WHERE key=?1)", [crate::transcribe::CONFIG_KEY], |r| r.get(0))
             .map_err(db_error)?;
 
+        // Keep empty steps until takes have supplied their counts and durations.
+        // Conditions still come from the first attempt, including an unsaved one.
+        let mut step_sessions = HashMap::<String, usize>::new();
         let mut stmt = conn.prepare(
             FACT_SESSIONS_SQL,
         ).map_err(db_error)?;
-        let sessions: Vec<FactSession> = stmt
+        let mut sessions: Vec<FactSession> = stmt
             .query_map([], |r| {
                 let outline: Option<String> = r.get(10)?;
                 let outline = outline.and_then(|o| serde_json::from_str::<Value>(&o).ok()).unwrap_or(Value::Null);
                 let part = |k: &str| outline[k].as_str().is_some_and(|t| !t.trim().is_empty());
                 let tags: String = r.get(5)?;
-                let audience: Option<String> = r.get(17)?;
+                let audience: Option<String> = r.get(15)?;
+                step_sessions.insert(r.get(18)?, step_sessions.len());
                 Ok(FactSession {
                     id: r.get(0)?,
                     local_date: r.get(1)?,
@@ -589,41 +598,34 @@ impl DatabaseOwner {
                     status: r.get(9)?,
                     outline: [part("point"), part("reason"), part("example")],
                     preferred_take: r.get(11)?,
-                    take_count: r.get(12)?,
-                    duration_ms: u64::try_from(r.get::<_, i64>(13)?).unwrap_or(0),
-                    familiarity: r.get(14)?,
-                    preparation_seconds: r.get(15)?,
-                    target_seconds: r.get(16)?,
+                    take_count: 0,
+                    duration_ms: 0,
+                    familiarity: r.get(12)?,
+                    preparation_seconds: r.get(13)?,
+                    target_seconds: r.get(14)?,
                     audience: audience.is_some_and(|a| !a.trim().is_empty()),
-                    follow_up: r.get::<_, Option<bool>>(18)?.unwrap_or(false),
-                    activity: r.get::<_, Option<String>>(19)?.and_then(|s| serde_json::from_str(&s).ok()),
+                    follow_up: r.get::<_, Option<bool>>(16)?.unwrap_or(false),
+                    activity: r.get::<_, Option<String>>(17)?.and_then(|s| serde_json::from_str(&s).ok()),
                 })
             })
             .map_err(db_error)?
             .collect::<rusqlite::Result<Vec<_>>>()
-            .map_err(db_error)?
-            .into_iter()
-            .filter(|s| s.take_count > 0 || s.status == "completed")
-            .collect();
+            .map_err(db_error)?;
 
         // Measures of every take's newest machine revision, by revision.
-        let mut metrics: HashMap<String, StoredMeasures> = HashMap::new();
+        let mut runs: HashMap<String, (String, StoredMeasures)> = {
+            let mut stmt = conn.prepare(FACT_MEASURE_RUNS_SQL).map_err(db_error)?;
+            let rows = stmt.query_map([crate::analysis::DEFINITION_VERSION], |r| {
+                Ok((r.get(0)?, (r.get(1)?, StoredMeasures::default())))
+            }).map_err(db_error)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(db_error)?
+        };
         {
-            let mut stmt = conn
-                .prepare(FACT_METRICS_SQL)
-                .map_err(db_error)?;
-            let mut rows = stmt.query([crate::analysis::DEFINITION_VERSION]).map_err(db_error)?;
-            let mut previous = String::new();
-            let mut values = StoredMeasures::default();
+            let mut stmt = conn.prepare(FACT_METRICS_SQL).map_err(db_error)?;
+            let mut rows = stmt.query([]).map_err(db_error)?;
             while let Some(row) = rows.next().map_err(db_error)? {
-                let revision = row.get_ref(0).map_err(db_error)?.as_str().map_err(|_| "Invalid measure revision.")?;
-                if previous != revision {
-                    if !previous.is_empty() { metrics.insert(std::mem::take(&mut previous), values); }
-                    previous = revision.to_owned();
-                    values = StoredMeasures::default();
-                }
-                // Borrow metric keys from SQLite; only fields used by facts are
-                // retained. NULL and absent values both stay None.
+                let run = row.get_ref(0).map_err(db_error)?.as_str().map_err(|_| "Invalid measure run.")?;
+                let Some((_, values)) = runs.get_mut(run) else { continue };
                 let metric = row.get_ref(1).map_err(db_error)?.as_str().map_err(|_| "Invalid measure key.")?;
                 let field = match metric {
                     "word_count" => &mut values.word_count,
@@ -642,8 +644,8 @@ impl DatabaseOwner {
                 };
                 *field = row.get(2).map_err(db_error)?;
             }
-            if !previous.is_empty() { metrics.insert(previous, values); }
         }
+        let metrics: HashMap<String, StoredMeasures> = runs.into_values().collect();
         let mut decisions: HashMap<String, (u32, u32)> = HashMap::new();
         {
             let mut stmt = conn
@@ -657,18 +659,33 @@ impl DatabaseOwner {
                 decisions.insert(revision, (confirmed, total));
             }
         }
+        let mut revisions: HashMap<String, String> = HashMap::new();
+        let mut corrections: HashMap<String, String> = HashMap::new();
+        {
+            let mut stmt = conn.prepare(FACT_REVISIONS_SQL).map_err(db_error)?;
+            let mut rows = stmt.query([]).map_err(db_error)?;
+            while let Some(row) = rows.next().map_err(db_error)? {
+                if row.get_ref(3).map_err(db_error)?.as_str().map_err(|_| "Invalid revision source.")? == "user" {
+                    if let Some(parent) = row.get::<_, Option<String>>(2).map_err(db_error)? {
+                        corrections.insert(parent, row.get(1).map_err(db_error)?);
+                    }
+                } else {
+                    revisions.insert(row.get(0).map_err(db_error)?, row.get(1).map_err(db_error)?);
+                }
+            }
+        }
+        let current_revision = |attempt: &str| revisions.get(attempt).map(|r| corrections.get(r).unwrap_or(r));
         let mut phrase_uses: HashMap<String, Vec<String>> = HashMap::new();
         {
             let mut stmt = conn
-                .prepare(&format!(
-                    "SELECT u.attempt_id,u.phrase_id FROM phrase_uses u JOIN attempts a ON a.id=u.attempt_id JOIN phrase_cards p ON p.id=u.phrase_id \
-                     WHERE p.deleted_at_ms IS NULL AND u.revision_id={} ORDER BY u.attempt_id,u.phrase_id",
-                    super::insights::CURRENT_REVISION
-                ))
+                .prepare("SELECT u.attempt_id,u.phrase_id,u.revision_id FROM phrase_uses u JOIN phrase_cards p ON p.id=u.phrase_id \
+                     WHERE p.deleted_at_ms IS NULL ORDER BY u.attempt_id,u.phrase_id")
                 .map_err(db_error)?;
-            for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(db_error)? {
-                let (attempt, phrase) = row.map_err(db_error)?;
-                phrase_uses.entry(attempt).or_default().push(phrase);
+            for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))).map_err(db_error)? {
+                let (attempt, phrase, revision) = row.map_err(db_error)?;
+                if current_revision(&attempt) == Some(&revision) {
+                    phrase_uses.entry(attempt).or_default().push(phrase);
+                }
             }
         }
         let mut checks: HashMap<String, std::collections::BTreeMap<String, bool>> = HashMap::new();
@@ -695,16 +712,50 @@ impl DatabaseOwner {
                 catch_runs.entry(attempt).or_default().push(FactCatchRun { caught, total, local_date: local_date(created) });
             }
         }
-        let mut stmt = conn.prepare(&fact_takes_sql()).map_err(db_error)?;
+        let prosody: HashMap<String, Option<f64>> = {
+            let mut stmt = conn.prepare(FACT_PROSODY_SQL).map_err(db_error)?;
+            let rows = stmt.query_map(params![crate::prosody::ALGORITHM, crate::prosody::DEFINITION_VERSION], |r| Ok((r.get(0)?, r.get(1)?))).map_err(db_error)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(db_error)?
+        };
+        let coaching: std::collections::HashSet<String> = {
+            let mut stmt = conn.prepare(FACT_COACHING_SQL).map_err(db_error)?;
+            let rows = stmt.query_map([], |r| r.get(0)).map_err(db_error)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(db_error)?
+        };
+        let rates: HashMap<String, Option<f64>> = {
+            let mut stmt = conn.prepare(FACT_AUDIO_SQL).map_err(db_error)?;
+            let rows = stmt.query_map(params![crate::audio::syllables::METHOD, crate::audio::syllables::DEFINITION_VERSION], |r| Ok((r.get(0)?, r.get(1)?))).map_err(db_error)?;
+            rows.collect::<rusqlite::Result<_>>().map_err(db_error)?
+        };
+        let mut results = HashMap::new();
+        {
+            let mut stmt = conn.prepare(FACT_RESULTS_SQL).map_err(db_error)?;
+            let mut rows = stmt.query([crate::activity_results::DEFINITION_VERSION]).map_err(db_error)?;
+            while let Some(row) = rows.next().map_err(db_error)? {
+                let attempt: String = row.get(0).map_err(db_error)?;
+                if row.get::<_, Option<String>>(1).map_err(db_error)?.as_ref() == current_revision(&attempt) {
+                    if let Ok(value) = serde_json::from_str::<Value>(&row.get::<_, String>(2).map_err(db_error)?) {
+                        results.insert(attempt, crate::activity_results::numbers(&value));
+                    }
+                }
+            }
+        }
+        let mut stmt = conn.prepare(FACT_TAKES_SQL).map_err(db_error)?;
         let takes = stmt
-            .query_map(params![crate::prosody::ALGORITHM, crate::prosody::DEFINITION_VERSION, crate::audio::syllables::METHOD, crate::audio::syllables::DEFINITION_VERSION, crate::activity_results::DEFINITION_VERSION], |r| {
+            .query_map([], |r| {
                 let id: String = r.get(0)?;
-                let challenge: Option<String> = r.get(6)?;
-                let revision: Option<String> = r.get(7)?;
+                let step = r.get_ref(1)?.as_str().map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let Some(&session_index) = step_sessions.get(step) else { return Ok(None) };
+                let session = &mut sessions[session_index];
+                let duration_ms = u64::try_from(r.get::<_, i64>(4)?).unwrap_or(0);
+                session.take_count += 1;
+                session.duration_ms += duration_ms;
+                let challenge: Option<String> = r.get(5)?;
+                let revision = revisions.get(&id).cloned();
                 let measures = revision.as_ref().and_then(|id| metrics.get(id)).copied().unwrap_or_default();
                 let candidates = count(measures.filler_candidates);
                 let (confirmed, decided) = revision.as_ref().and_then(|id| decisions.get(id).copied()).unwrap_or((0, 0));
-                Ok(FactTake {
+                Ok(Some(FactTake {
                     mean_run: measures.mean_run_words,
                     longest_run: count(measures.longest_run_words),
                     mid_clause_pauses: count(measures.mid_clause_pauses),
@@ -712,19 +763,18 @@ impl DatabaseOwner {
                     watch_per_100: measures.watch_words_per_100,
                     hedges_per_100: measures.hedges_per_100,
                     different_per_50: measures.different_words_per_50,
-                    phrase_ids: phrase_uses.get(&id).cloned().unwrap_or_default(),
-                    checks: checks.get(&id).cloned().unwrap_or_default(),
-                    pitch_range_st: r.get(10)?,
-                    rate_sps: r.get(11)?,
-                    result: r.get::<_, Option<String>>(12)?.and_then(|s| serde_json::from_str::<Value>(&s).ok()).map(|v| crate::activity_results::numbers(&v)),
-                    predictions: predictions.get(&id).cloned().unwrap_or_default(),
-                    catch_runs: catch_runs.get(&id).cloned().unwrap_or_default(),
-                    id,
-                    session_id: r.get(1)?,
+                    phrase_ids: phrase_uses.remove(&id).unwrap_or_default(),
+                    checks: checks.remove(&id).unwrap_or_default(),
+                    pitch_range_st: prosody.get(&id).copied().flatten(),
+                    rate_sps: rates.get(&id).copied().flatten(),
+                    result: results.remove(&id),
+                    predictions: predictions.remove(&id).unwrap_or_default(),
+                    catch_runs: catch_runs.remove(&id).unwrap_or_default(),
+                    session_id: session.id.clone(),
                     ordinal: r.get(2)?,
-                    local_date: r.get(3)?,
-                    created_at: iso(r.get(4)?),
-                    duration_ms: u64::try_from(r.get::<_, i64>(5)?).unwrap_or(0),
+                    local_date: session.local_date.clone(),
+                    created_at: iso(r.get(3)?),
+                    duration_ms,
                     step_key: challenge.and_then(|c| serde_json::from_str::<Value>(&c).ok()).and_then(|c| c["key"].as_str().map(String::from)),
                     transcribed: revision.is_some(),
                     words: count(measures.word_count),
@@ -735,14 +785,16 @@ impl DatabaseOwner {
                     fillers_reviewed: revision.is_some() && candidates.is_some_and(|c| decided >= c),
                     pauses_over_threshold: count(measures.pauses_over_threshold),
                     revision_id: revision,
-                    prosody_viewed: r.get(8)?,
-                    has_ai_feedback: r.get(9)?,
-                })
+                    prosody_viewed: prosody.contains_key(&id),
+                    has_ai_feedback: coaching.contains(&id),
+                    id,
+                }))
             })
             .map_err(db_error)?
+            .filter_map(|row| row.transpose())
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(db_error)?;
-
+        sessions.retain(|s| s.take_count > 0 || s.status == "completed");
         let mut stmt = conn
             .prepare("SELECT id,local_date,listener_text,clarification,success,next_focus,flow,tags,kind,json_extract(extra,'$.nextTime'),mission_id,event_id FROM transfer_reviews WHERE deleted_at_ms IS NULL ORDER BY local_date,created_at_ms")
             .map_err(db_error)?;
@@ -1255,6 +1307,88 @@ pub(crate) mod tests {
         let facts = db.practice_facts("2026-10-12").unwrap();
         assert_eq!((facts.takes[0].pace_wpm, facts.takes[0].mean_run), (None, None));
         assert_eq!((facts.takes[1].pace_wpm, facts.takes[1].mean_run), (Some(134.5), Some(7.5)));
+    }
+
+    #[test]
+    fn bulk_facts_keep_revision_ties_current_results_and_definition_versions() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        seed_history(&db, 2, 2);
+        {
+            let conn = db.connection.lock().unwrap();
+            conn.execute_batch(r#"INSERT INTO transcript_revisions(id,attempt_id,parent_id,source,text,created_at_ms) VALUES
+                ('machine-a','seed-0-1',NULL,'api','',2000000000000),
+                ('machine-z','seed-0-1',NULL,'local','',2000000000000),
+                ('edit-a','seed-0-1','machine-z','user','',2000000000001),
+                ('edit-z','seed-0-1','machine-z','user','',2000000000001),
+                ('old-parent-edit','seed-0-1','seed-0-1--1','user','',2000000000002);
+                INSERT INTO analysis_runs(id,attempt_id,revision_id,kind,definition_version,settings,created_at_ms) VALUES
+                ('current-run','seed-0-1','machine-z','transcript-measures',2,'{}',1),
+                ('old-run','seed-0-1','machine-z','transcript-measures',1,'{}',1),
+                ('correction-run','seed-0-1','edit-z','transcript-measures',2,'{}',1);
+                INSERT INTO metric_values(run_id,metric,value,unit,source,unavailable_reason) VALUES
+                ('current-run','word_count',83.6,'words','Estimated',NULL),
+                ('current-run','filler_candidates',0,'words','Estimated',NULL),
+                ('current-run','pace_wpm',NULL,'words/min','Estimated','Missing'),
+                ('old-run','word_count',999,'words','Estimated',NULL),
+                ('correction-run','word_count',777,'words','Estimated',NULL);
+                INSERT INTO activity_results(attempt_id,definition_version,revision_id,result,created_at_ms) VALUES
+                ('seed-0-1',1,'edit-z','{"rounds":2,"done":true,"text":"ignored"}',1),
+                ('seed-0-2',1,NULL,'{"rounds":3}',1),
+                ('seed-1-1',1,'stale','{"rounds":999}',1);
+                DELETE FROM metric_values WHERE run_id IN (SELECT id FROM analysis_runs WHERE attempt_id='seed-0-2');
+                DELETE FROM analysis_runs WHERE attempt_id='seed-0-2';
+                DELETE FROM transcript_revisions WHERE attempt_id='seed-0-2';
+                INSERT INTO phrase_uses(phrase_id,attempt_id,revision_id,segment,start_token,end_token,created_at_ms) VALUES
+                ('phrase-starter-1','seed-0-1','machine-z',0,0,1,1),
+                ('phrase-starter-1','seed-0-1','edit-a',0,0,1,1),
+                ('phrase-starter-1','seed-0-1','edit-z',0,0,1,1),
+                ('phrase-starter-2','seed-0-1','edit-z',0,0,1,1),
+                ('phrase-starter-3','seed-0-1','old-parent-edit',0,0,1,1);
+                UPDATE phrase_cards SET deleted_at_ms=1 WHERE id='phrase-starter-2';"#).unwrap();
+            let hash = "a".repeat(64);
+            conn.execute("INSERT INTO prosody_tracks(id,attempt_id,run_id,algorithm,settings,hop_ms,definition_version,source_sha256,artifact_path,artifact_sha256,frame_count,range_semitones,created_at_ms)
+                VALUES ('old','seed-0-1','old','old-algorithm','{}',10,1,?1,'unused',?1,0,99,1),
+                ('current','seed-0-1','current',?2,'{}',10,?3,?1,'unused',?1,0,4.5,1),
+                ('old-only','seed-0-2','old','old-algorithm','{}',10,1,?1,'unused',?1,0,99,1)",
+                params![hash, crate::prosody::ALGORITHM, crate::prosody::DEFINITION_VERSION]).unwrap();
+            conn.execute("INSERT INTO audio_measures(attempt_id,method,definition_version,rate_sps,created_at_ms)
+                VALUES ('seed-0-1',?1,?2,4.2,1),('seed-0-1','old-method',1,99,1)",
+                params![crate::audio::syllables::METHOD, crate::audio::syllables::DEFINITION_VERSION]).unwrap();
+        }
+        let facts = db.practice_facts("2026-10-12").unwrap();
+        let take = &facts.takes[0];
+        assert_eq!(take.revision_id.as_deref(), Some("machine-z"));
+        assert_eq!((take.words, take.pace_wpm, take.mean_run), (Some(84), None, None));
+        assert_eq!((take.filler_candidates, take.fillers_confirmed, take.fillers_reviewed), (Some(0), Some(0), true));
+        assert_eq!(take.phrase_ids, ["phrase-starter-1"]);
+        assert_eq!(take.result, Some(std::collections::BTreeMap::from([("done".into(), 1.0), ("rounds".into(), 2.0)])));
+        assert_eq!((take.prosody_viewed, take.pitch_range_st, take.rate_sps), (true, Some(4.5), Some(4.2)));
+        let audio_only = &facts.takes[1];
+        assert_eq!((audio_only.revision_id.as_deref(), audio_only.words, audio_only.fillers_confirmed), (None, None, None));
+        assert!(!audio_only.transcribed && !audio_only.fillers_reviewed);
+        assert_eq!((audio_only.prosody_viewed, audio_only.pitch_range_st), (true, None));
+        assert_eq!(audio_only.result.as_ref().unwrap()["rounds"], 3.0);
+        assert_eq!(facts.takes[2].result, None, "a stale cached result is omitted");
+        assert_eq!(facts.takes[2].words, Some(130), "other runs keep their own measures");
+    }
+
+    #[test]
+    fn bulk_facts_count_each_step_and_keep_the_first_attempts_conditions() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        seed_history(&db, 3, 3);
+        db.connection.lock().unwrap().execute_batch("UPDATE attempts SET capture_state='preparing' WHERE id='seed-0-1';
+            UPDATE attempts SET deleted_at_ms=1 WHERE id='seed-0-2' OR step_id IN ('step-seed-1','step-seed-2');
+            UPDATE sessions SET status='in_progress' WHERE id='seed-1';
+            INSERT INTO session_steps(id,session_id,exercise_id,exercise_version,position,status) VALUES ('second-step','seed-0','ex-repeat',1,2,'completed');
+            UPDATE attempts SET step_id='second-step',ordinal=1 WHERE id='seed-0-3';
+            UPDATE task_conditions SET familiarity='familiar' WHERE attempt_id='seed-0-3';").unwrap();
+        let facts = db.practice_facts("2026-10-12").unwrap();
+        let totals: Vec<_> = facts.sessions.iter().map(|s| (s.id.as_str(), s.familiarity.as_deref(), s.take_count, s.duration_ms)).collect();
+        assert_eq!(totals, [("seed-0", Some("unfamiliar"), 0, 0), ("seed-0", Some("familiar"), 1, 60_000), ("seed-2", Some("familiar"), 0, 0)]);
+        assert_eq!(facts.takes.len(), 1);
+        assert_eq!((facts.takes[0].id.as_str(), facts.takes[0].session_id.as_str()), ("seed-0-3", "seed-0"));
     }
 
     /// A-36 / roadmap §8.8: 1,500 sessions and 4,000 takes over two years.
