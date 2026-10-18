@@ -1,3 +1,4 @@
+import { DEBATE_FOLLOW_UPS } from "./new-prompts";
 /**
  * Written follow-up questions for prompts with a follow-up (plan 5.11, §7
  * interaction practice). Shown after the first answer as a simulation of a
@@ -5,6 +6,7 @@
  * general questions. Curriculum version 1.
  */
 export const FOLLOW_UPS: Record<string, string[]> = {
+  ...DEBATE_FOLLOW_UPS,
   "p-decision": ["What other option did you consider, and why didn't you choose it?", "What would make you change this decision later?"],
   "p-disagree": ["But translation apps keep getting better. Why spend years on a language?", "Have you ever had a moment where an app wasn't enough?"],
   "p-prog-bug": ["How would you stop this kind of bug from happening again?", "What did you try first that didn't work?"],

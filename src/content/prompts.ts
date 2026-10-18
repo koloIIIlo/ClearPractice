@@ -1,3 +1,4 @@
+import { STORYTELLING_PROMPTS, EVERYDAY_PROMPTS, DEBATE_PROMPTS, INTERVIEW_PROMPTS } from "./new-prompts";
 import type { PracticePrompt, TaskConditions } from "@/lib/ipc/schemas";
 
 /**
@@ -6,7 +7,7 @@ import type { PracticePrompt, TaskConditions } from "@/lib/ipc/schemas";
  * Subjects follow D-19: explaining complex topics, debating and teaching across
  * sport, economics, religion, crypto, programming, anime and books.
  */
-export const CURRICULUM_VERSION = 1;
+export const CURRICULUM_VERSION = 2;
 
 const cond = (
   familiarity: TaskConditions["familiarity"],
@@ -89,4 +90,5 @@ export const PROMPTS: PracticePrompt[] = [
   bundled("p-teach-skill", "Teach a skill you know well in three clear steps.", ["explanations"], cond("familiar", 30, 90, "A beginner", true)),
   bundled("p-unexpected-alien", "Explain what the internet is to a visitor from another planet.", ["unexpected", "explanations"], cond("unfamiliar", 0, 60, "A visitor with no context")),
   bundled("p-unexpected-object", "Pick an object near you and argue that it is the most important invention.", ["unexpected", "opinions"], cond("unfamiliar", 0, 60)),
+  ...STORYTELLING_PROMPTS, ...EVERYDAY_PROMPTS, ...DEBATE_PROMPTS, ...INTERVIEW_PROMPTS,
 ];

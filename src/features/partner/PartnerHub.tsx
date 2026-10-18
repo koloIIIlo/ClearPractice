@@ -1,3 +1,4 @@
+import { scenarios } from "@/lib/content-runtime";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { Check, CircleSlash, MessagesSquare } from "lucide-react";
@@ -7,7 +8,7 @@ import type { BossId } from "@/content/bosses";
 import { BOSS_PARTNERS, SCENARIOS, scenarioById, type Scenario } from "@/content/scenarios";
 import { areaDef } from "@/lib/engagement/skills";
 import { formatClock, formatDay } from "@/lib/format";
-import { useConversations } from "@/lib/ipc/queries";
+import { useConversations, usePrompts } from "@/lib/ipc/queries";
 import { MODE_LABELS, usePartnerModes } from "./modes";
 import { pressureDef } from "./pressure";
 import { StartDialog, type StartPreset } from "./StartDialog";
@@ -31,13 +32,14 @@ function ModeChip({ label, available, reason }: { label: string; available: bool
  */
 export function PartnerHubPage() {
   const [search, setSearch] = useSearchParams();
+  const content = usePrompts();
   const modes = usePartnerModes();
   const conversations = useConversations();
   const [starting, setStarting] = useState<{ scenario: Scenario; preset?: StartPreset } | null>(null);
   const bossId = search.get("boss");
   const scenarioId = search.get("scenario");
   useEffect(() => {
-    if (!bossId && !scenarioId) return;
+    if (content.isPending || (!bossId && !scenarioId)) return;
     const mapping = bossId ? BOSS_PARTNERS[bossId as BossId] : undefined;
     const scenario = mapping ? scenarioById(mapping.scenarioId) : scenarioId ? scenarioById(scenarioId) : undefined;
     if (mapping && scenario) setStarting({ scenario, preset: { persona: mapping.persona, pressure: mapping.pressure, guidance: mapping.guidance, bossId: bossId! } });
@@ -50,7 +52,7 @@ export function PartnerHubPage() {
       },
       { replace: true },
     );
-  }, [bossId, scenarioId, setSearch]);
+  }, [bossId, scenarioId, setSearch, content.isPending]);
 
   return (
     <Page>
@@ -76,7 +78,7 @@ export function PartnerHubPage() {
         <section aria-labelledby="scenarios-heading">
           <SectionTitle id="scenarios-heading">Scenarios</SectionTitle>
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {SCENARIOS.map((s) => (
+            {scenarios(SCENARIOS).map((s) => (
               <li key={s.id}>
                 <Panel className="flex h-full flex-col gap-2 p-4">
                   <h3 className="font-semibold">{s.title}</h3>

@@ -2,10 +2,10 @@ import { expect, it } from "vitest";
 import { PracticePrompt } from "@/lib/ipc/schemas";
 import { CURRICULUM_VERSION, PROMPTS } from "./prompts";
 
-it("bundles 40 valid prompts with unique ids and a version (4.1, 4.5)", () => {
-  expect(CURRICULUM_VERSION).toBeGreaterThanOrEqual(1);
-  expect(PROMPTS).toHaveLength(40);
-  expect(new Set(PROMPTS.map((p) => p.id)).size).toBe(40);
+it("bundles 160 valid prompts with unique ids and a version (4.1, 4.5)", () => {
+  expect(CURRICULUM_VERSION).toBe(2);
+  expect(PROMPTS).toHaveLength(160);
+  expect(new Set(PROMPTS.map((p) => p.id)).size).toBe(160);
   for (const p of PROMPTS) {
     expect(() => PracticePrompt.parse(p), p.id).not.toThrow();
     expect(p.source).toBe("bundled");

@@ -1,0 +1,47 @@
+import { expect, it, vi } from "vitest";
+import { PROMPTS } from "@/content/prompts";
+import { SCENARIOS } from "@/content/scenarios";
+import { MISSIONS } from "@/content/missions";
+const native = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke, convertFileSrc: (s: string) => s, isTauri: () => true }));
+const json = () => JSON.stringify({ format: "clearpractice-content-pack", version: 1, id: "test", title: "Test pack", prompts: [PROMPTS[0]], drillTopics: { jam: [{ id: "extra", text: "A shop" }] }, scenarios: [SCENARIOS[0]], missions: [MISSIONS[0]] });
+
+it("validates the chosen native file before storing and registers every runtime list", async () => {
+  vi.resetModules();
+  const { nativeContent } = await import("./content-client");
+  const { jamTopics } = await import("../content-runtime");
+  const { scenarioById } = await import("@/content/scenarios");
+  const { missionById } = await import("@/content/missions");
+  const raw = json();
+  const row = { json: raw, importedAtMs: 1 };
+  native.invoke.mockReset();
+  native.invoke.mockResolvedValueOnce(raw).mockResolvedValueOnce(raw).mockResolvedValueOnce([row]);
+  expect(await nativeContent.importContentPack()).toEqual(row);
+  expect(native.invoke.mock.calls[0]).toEqual(["import_content_pack", { json: null }]);
+  expect(native.invoke.mock.calls[1]).toEqual(["import_content_pack", { json: raw }]);
+  expect(jamTopics([])[0].id).toBe("pack-test--extra");
+  expect(scenarioById(`pack-test--${SCENARIOS[0].id}`)?.title).toBe(SCENARIOS[0].title);
+  expect(missionById(`pack-test--${MISSIONS[0].id}`)?.title).toBe(MISSIONS[0].title);
+  native.invoke.mockResolvedValueOnce(null).mockResolvedValueOnce([]);
+  await nativeContent.removeContentPack("test");
+  expect(jamTopics([])).toEqual([]);
+  expect(scenarioById(`pack-test--${SCENARIOS[0].id}`)).toBeUndefined();
+  expect(missionById(`pack-test--${MISSIONS[0].id}`)).toBeUndefined();
+});
+it("cancels without writing and refuses invalid selected content", async () => {
+  vi.resetModules();
+  const { nativeContent } = await import("./content-client");
+  const { setRuntimePacks } = await import("../content-runtime");
+  native.invoke.mockReset();
+  native.invoke.mockResolvedValueOnce(null);
+  expect(await nativeContent.importContentPack()).toBeNull();
+  expect(native.invoke).toHaveBeenCalledTimes(1);
+  native.invoke.mockReset();
+  native.invoke.mockResolvedValueOnce(json().replace('"version":1', '"version":2'));
+  await expect(nativeContent.importContentPack()).rejects.toThrow();
+  expect(native.invoke).toHaveBeenCalledTimes(1);
+  native.invoke.mockReset();
+  native.invoke.mockRejectedValueOnce("Finish the recording first.");
+  await expect(nativeContent.compactDatabase()).rejects.toThrow("Finish the recording first.");
+  setRuntimePacks([]);
+});

@@ -23,7 +23,7 @@ import { AAR_QUESTIONS, FLOWS, KINDS, RECENT_DAYS } from "./reflection-options";
 import { AfterActionForm } from "@/features/confidence/AfterActionForm";
 import { ImportListenerAnswers, ListenerAnswers } from "@/features/events/ListenerAnswers";
 import { missionById } from "@/content/missions";
-import { useEvent, usePracticeFacts } from "@/lib/ipc/queries";
+import { useEvent, usePracticeFacts, usePrompts } from "@/lib/ipc/queries";
 import { capsuleMonths } from "@/lib/capsule";
 import { CapsuleChips } from "@/features/events/TimeCapsule";
 import { Trends } from "@/features/insights/Trends";
@@ -252,6 +252,13 @@ const EMPTY_REFLECTION = { situation: "", preparation: "", listenerText: "", cla
  * conversation, and nothing is combined into a score.
  */
 function RealConversations() {
+  const content = usePrompts();
+  return <QueryView query={content} loading={<LoadingBlock rows={3} label="Loading practice content" />}>
+    {() => <RealConversationForm />}
+  </QueryView>;
+}
+
+function RealConversationForm() {
   const ipc = useIpc();
   const qc = useQueryClient();
   const [params, setParams] = useSearchParams();

@@ -29,7 +29,7 @@
 | 16.8 | Updates and code signing | M |
 | 16.9 | Performance and storage pass | M |
 
-**As built so far (18 Oct): 16.2, 16.4, 16.5, 16.6, 16.7.** 16.1 waits for its feasibility gate (a phone), 16.3 and 16.9 are next, and 16.8 waits for a certificate and an updater key.
+**As built so far (18 Oct): 16.2 to 16.7 and the code parts of 16.9.** 16.1 is deferred by the user (D-39), 16.8 waits for a certificate and an updater key, and 16.9's measurements on the release build remain.
 - **16.2 Surprise prompts.**
   - **Preferences:** `surpriseEnabled` (off), `surpriseStart` and `surpriseEnd` (09:00 to 18:00, 30-minute steps), `surpriseDays` (Monday to Friday) and `surpriseNotifications` (off). Missing fields in an older profile take these defaults.
   - **Scheduling:** `src/app/SurpriseScheduler.tsx` checks once a minute only while the prompt is switched on, and loads the prompt's screen only when one is due. The day's time comes from `surpriseMinute(date, …)`. "Already practised" means a practice event or a session with a take that day.
@@ -44,6 +44,17 @@
 - **16.7 User docs, changelog and What's new.**
   - **Docs:** `README.md` is now for users (what the app is, install, privacy, features, keyboard shortcuts, where data lives, backups). The developer notes are in `docs/DEVELOPING.md`, and `CHANGELOG.md` uses Keep a Changelog.
   - **What's new:** `src/content/whats-new.ts` has six highlights for 0.1.0. The dialog opens after an update and from Help → What's new. A new profile's `lastSeenVersion` is the current version, so a fresh install doesn't show it. An older profile has none, so it shows once after the update.
+- **16.3 Content packs and new content.**
+  - **New bundled prompts:** in `src/content/new-prompts.ts`: 30 storytelling, 40 everyday situations and 20 debate prompts. The 30 STAR questions from 10.13 are reused as interview prompts, not copied. `CURRICULUM_VERSION` is now 2.
+  - **Debate follow-ups:** each debate prompt is one question. Its two follow-ups are in `DEBATE_FOLLOW_UPS`, merged into `FOLLOW_UPS`: the natural next question, then one that pushes back. They show after the first take.
+  - **Import:** Settings → Content → **Import a content pack…** opens the native open dialog for `*.cppack.json` and reads at most 1 MB. Rust checks the format, version, ID and title. TypeScript validates strictly with Zod (`src/lib/content-pack.ts`; unknown fields are refused).
+  - **Storage and use:** packs are stored in schema v25's `content_packs` (removal is soft). Their prompts, Just a Minute and roulette topics, scenarios and missions are merged at run time with IDs `pack-<pack id>--<item id>`. Remove hides them; sessions keep their snapshots. The list shows each pack's counts. The browser preview's mock has a sample pack.
+  - **Not done:** the optional imitation speech pack download. It needs verified public-domain recordings and pinned URLs and hashes.
+- **16.9, code parts.**
+  - **Optimise:** `PRAGMA optimize` runs when the database closes and through `optimize_database`.
+  - **Compaction:** Settings → Data offers **Compact the database** (VACUUM, then optimize) when free pages exceed 20% of the file. Not this month hides the offer for 31 days. It runs only on the button and waits for the recording lock, never during a recording.
+  - **Indexes:** v25 adds twelve partial and covering indexes for the practice facts and the Journey timelines. `practice_facts_and_journey_use_indexes_on_growing_tables` checks with `EXPLAIN QUERY PLAN` on a seeded database that those queries don't scan the growing tables.
+  - **Space used:** now lists the tables added since M7 (drills, learning, confidence, conversations, events and listener packs, club meetings, content packs).
 - **Start-up:** the waveform player now loads when a saved recording is opened rather than with Today, so start-up JS fell from 318.8 to about 289 kB gzip.
 
 ---

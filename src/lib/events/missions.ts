@@ -1,3 +1,4 @@
+import { missions } from "@/lib/content-runtime";
 import { MISSIONS, type Mission } from "@/content/missions";
 import { seededRandom } from "@/lib/engagement/random";
 import { AREA_IDS, type AreaId } from "@/lib/engagement/types";
@@ -27,7 +28,7 @@ function offerRound(week: string, lean: AreaId | null, round: number, seen: Read
   const pick = <T,>(list: readonly T[]) => list[Math.floor(random() * list.length)];
   // Missions not offered yet, or all of that difficulty once every one has been.
   const pool = (d: 1 | 2 | 3) => {
-    const all = MISSIONS.filter((m) => m.difficulty === d);
+    const all = missions(MISSIONS).filter((m) => m.difficulty === d);
     const fresh = all.filter((m) => !seen.has(m.id));
     return fresh.length > 0 ? fresh : all;
   };

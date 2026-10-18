@@ -1555,6 +1555,7 @@ fn spawn_auto_backup(app: tauri::AppHandle, storage: Arc<SessionStorage>, captur
             std::thread::sleep(std::time::Duration::from_secs(90));
             loop {
                 if !capture.is_active() {
+                    let _ = storage.with(|owner| owner.optimize_database());
                     match storage.with(|owner| backup::run_if_due(owner, storage::recording::now_ms())) {
                         Ok(Some(summary)) => {
                             let _ = app.emit("backup_completed", &summary);
@@ -1860,10 +1861,11 @@ async fn request_follow_up(
 /// Storage by category (6.6).
 #[tauri::command]
 async fn get_storage_usage(storage: State<'_, Arc<SessionStorage>>) -> Result<Vec<storage_usage::Category>, String> {
-    let root = storage.with(|db| Ok(db.root().to_path_buf()))?;
-    tauri::async_runtime::spawn_blocking(move || Ok(storage_usage::usage(&root)))
-        .await
-        .map_err(|_| "Measuring storage failed.".to_string())?
+    with_storage(&storage, |db| {
+        let mut usage = storage_usage::usage(db.root());
+        db.database_usage(&mut usage)?;
+        Ok(usage)
+    }).await.map_err(|_| "Storage measurement failed.".to_string())?
 }
 
 /// Removes only the rebuildable cache (6.6); refused while recording or transcribing.
@@ -2836,6 +2838,12 @@ pub fn run() {
             preview_take_coaching,
             request_take_coaching,
             list_take_coaching,
+            commands::content::import_content_pack,
+            commands::content::list_content_packs,
+            commands::content::remove_content_pack,
+            commands::content::get_database_health,
+            commands::content::dismiss_database_compaction,
+            commands::content::compact_database,
             get_storage_usage,
             app_uptime_ms,
             record_timing,
@@ -2868,6 +2876,13 @@ pub fn run() {
             cancel_transcription,
             close_after_recording
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(storage) = app.try_state::<Arc<SessionStorage>>() {
+                    let _ = storage.with(|db| db.optimize_database());
+                }
+            }
+        });
 }

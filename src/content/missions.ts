@@ -1,3 +1,4 @@
+import { missions } from "@/lib/content-runtime";
 import type { TransferTag } from "@/lib/ipc/schemas";
 import type { AreaId } from "@/lib/engagement/types";
 
@@ -54,4 +55,4 @@ export const MISSIONS: readonly Mission[] = [
   { id: "thank-specifically", title: "Thank someone and say specifically what helped", how: "Name the thing they did and the difference it made for you.", area: "vocabulary", difficulty: 1, tags: ["other"] },
 ];
 
-export const missionById = (id: string | null | undefined) => (id ? MISSIONS.find((m) => m.id === id) : undefined);
+export const missionById = (id: string | null | undefined) => (id ? missions(MISSIONS).find((m) => m.id === id) : undefined);

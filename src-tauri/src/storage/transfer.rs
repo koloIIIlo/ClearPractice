@@ -112,7 +112,7 @@ impl TransferInput {
             ("reflection", Some(_)) => return Err("Only an after-action review has these answers.".into()),
             _ => return Err("Unknown kind of reflection.".into()),
         }
-        let key = |id: &str| !id.is_empty() && id.len() <= 64 && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_');
+        let key = |id: &str| !id.is_empty() && id.len() <= 96 && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_');
         if self.mission_id.as_deref().is_some_and(|m| !key(m)) {
             return Err("Choose a mission from the list.".into());
         }

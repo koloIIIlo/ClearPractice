@@ -197,7 +197,7 @@ pub struct NewAnswerRun<'a> {
 const MODES: [&str; 3] = ["api", "local", "scripted"];
 
 fn key_id(value: &str) -> bool {
-    !value.is_empty() && value.len() <= 64 && value.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
+    !value.is_empty() && value.len() <= 96 && value.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
 }
 
 fn opt_u64(value: Option<i64>) -> Option<u64> {

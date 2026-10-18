@@ -1,3 +1,4 @@
+import { jamTopics } from "@/lib/content-runtime";
 import { useEffect, useState } from "react";
 import { Flag } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ import { Figure, NeedsTranscript, ResultPanel, TakeLink, resultOf, useActivityRe
 const drill = drillForType("jam");
 
 export function plan(seed: string, params: DrillParams): DrillPlan {
-  const topic = JAM_TOPICS.find((t) => t.id === params.topic) ?? pick(rng(seed, "topic"), JAM_TOPICS);
+  const topic = jamTopics(JAM_TOPICS).find((t) => t.id === params.topic) ?? pick(rng(seed, "topic"), jamTopics(JAM_TOPICS));
   return {
     drill, seed, groupId: null, contentId: topic.id,
     params: { topic: topic.id },

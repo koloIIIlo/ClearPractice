@@ -530,7 +530,7 @@ fn sha256_bytes(bytes: &[u8]) -> String {
 /// Turns a current (v18) profile back into a populated v14 one.
 fn downgrade_to_v14(root: &Path) {
     let conn = Connection::open(root.join("database/app.sqlite")).unwrap();
-    conn.execute_batch("DROP TABLE club_speeches; DROP TABLE club_meetings; DROP TABLE capsule_months; DROP TABLE listener_feedback; DROP TABLE listener_packs; DROP TABLE rehearsals; DROP TABLE talk_sections; DROP TABLE talks; DROP TABLE event_plan_items; DROP TABLE events; ALTER TABLE transfer_reviews DROP COLUMN event_id; ALTER TABLE transfer_reviews DROP COLUMN mission_id; DROP TABLE mission_picks; DROP TABLE conversation_feedback; DROP TABLE upgrade_runs; DROP TABLE conversation_turns; DROP TABLE conversations; DROP TABLE routine_runs; DROP TABLE segment_marks; DROP INDEX exposure_attempts_step; DROP TABLE exposure_attempts; DROP TABLE exposure_steps; ALTER TABLE transfer_reviews DROP COLUMN extra; ALTER TABLE transfer_reviews DROP COLUMN kind; DROP TABLE catch_runs; DROP TABLE programme_steps; DROP TABLE programmes; DROP TABLE self_predictions; DROP INDEX take_events_attempt; DROP TABLE take_events; DROP TABLE activity_results; DROP TABLE weekly_quests; DROP INDEX personal_records_record; DROP TABLE personal_records; DROP TABLE achievements; DROP TABLE skill_levels; ALTER TABLE transfer_reviews DROP COLUMN tags; ALTER TABLE transfer_reviews DROP COLUMN flow; DROP INDEX comparisons_b; DROP INDEX comparisons_a; DROP TABLE comparisons; DROP TABLE audio_measures; DROP TABLE self_checks; DROP INDEX phrase_uses_attempt; DROP TABLE phrase_uses; DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DELETE FROM app_settings WHERE key='engagement_backfill_v1'; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; PRAGMA user_version=14;").unwrap();
+    conn.execute_batch("DROP TABLE content_packs; DROP INDEX sessions_facts_active; DROP INDEX attempts_facts_active; DROP INDEX annotations_facts_fillers; DROP INDEX analysis_runs_facts; DROP INDEX transfer_reviews_facts; DROP INDEX transfer_reviews_event; DROP INDEX exposure_attempts_facts; DROP INDEX events_facts; DROP INDEX conversation_turns_role; DROP INDEX skill_levels_timeline; DROP INDEX achievements_timeline; DROP INDEX personal_records_timeline; DROP TABLE club_speeches; DROP TABLE club_meetings; DROP TABLE capsule_months; DROP TABLE listener_feedback; DROP TABLE listener_packs; DROP TABLE rehearsals; DROP TABLE talk_sections; DROP TABLE talks; DROP TABLE event_plan_items; DROP TABLE events; ALTER TABLE transfer_reviews DROP COLUMN event_id; ALTER TABLE transfer_reviews DROP COLUMN mission_id; DROP TABLE mission_picks; DROP TABLE conversation_feedback; DROP TABLE upgrade_runs; DROP TABLE conversation_turns; DROP TABLE conversations; DROP TABLE routine_runs; DROP TABLE segment_marks; DROP INDEX exposure_attempts_step; DROP TABLE exposure_attempts; DROP TABLE exposure_steps; ALTER TABLE transfer_reviews DROP COLUMN extra; ALTER TABLE transfer_reviews DROP COLUMN kind; DROP TABLE catch_runs; DROP TABLE programme_steps; DROP TABLE programmes; DROP TABLE self_predictions; DROP INDEX take_events_attempt; DROP TABLE take_events; DROP TABLE activity_results; DROP TABLE weekly_quests; DROP INDEX personal_records_record; DROP TABLE personal_records; DROP TABLE achievements; DROP TABLE skill_levels; ALTER TABLE transfer_reviews DROP COLUMN tags; ALTER TABLE transfer_reviews DROP COLUMN flow; DROP INDEX comparisons_b; DROP INDEX comparisons_a; DROP TABLE comparisons; DROP TABLE audio_measures; DROP TABLE self_checks; DROP INDEX phrase_uses_attempt; DROP TABLE phrase_uses; DROP INDEX practice_events_date; DROP TABLE practice_events; ALTER TABLE sessions DROP COLUMN activity_snapshot; DELETE FROM app_settings WHERE key='engagement_backfill_v1'; DROP TABLE progression_events; DROP TABLE transfer_reviews; DROP TABLE prompt_favorites; DROP TABLE user_prompts; ALTER TABLE sessions DROP COLUMN preferred_take; DROP INDEX coaching_runs_payload; DROP INDEX coaching_runs_attempt; DROP TABLE coaching_runs; PRAGMA user_version=14;").unwrap();
 }
 
 /// A-9 (besides populated_v1_database_upgrades_to_v2_with_a_snapshot and
@@ -579,7 +579,7 @@ fn a09_a_populated_older_profile_upgrades_and_a_failed_upgrade_recovers() {
         assert_eq!(db.attempt_transcript("old-take").unwrap()["correction"]["text"], "Indexes help.");
         assert!(db.list_coaching_runs("old-take").unwrap().is_empty(), "new tables exist and start empty");
         assert_eq!(kept(&read_only(&root.0)), before, "no row lost or changed by the upgrade");
-        let snapshots: Vec<PathBuf> = files(&root.0.join("database/snapshots")).into_iter().filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("before-v24-")).collect();
+        let snapshots: Vec<PathBuf> = files(&root.0.join("database/snapshots")).into_iter().filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("before-v25-")).collect();
         assert_eq!(snapshots.len(), if fail_first { 2 } else { 1 }, "a snapshot before every upgrade attempt");
         for snapshot in snapshots {
             let copy = Connection::open_with_flags(&snapshot, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
@@ -621,7 +621,7 @@ fn a11_every_http_client_is_counted_and_local_modules_name_no_network_code() {
         // Real world (M14, A-32): missions, events, talks, rehearsal reports, listener packs and answers stay offline.
         "storage/events.rs", "storage/listener.rs", "listener_pack.rs", "commands/events.rs",
         // Social (M15, A-32): club meetings and their summaries stay offline.
-        "storage/social.rs", "commands/social.rs"];
+        "storage/social.rs", "commands/social.rs", "storage/content_packs.rs", "storage/maintenance.rs", "commands/content.rs"];
     let banned = ["reqwest", "Client::", "TcpStream", "UdpSocket", "std::net", "ApiTransport", "local_llm::chat", "send_reserved", "download_tool", "whisper_setup::", "linkaudio::"];
     for file in local {
         let (_, code) = sources.iter().find(|(n, _)| n == file).unwrap_or_else(|| panic!("{file} not found"));
@@ -732,6 +732,13 @@ fn a11_child_local_paths() {
     // Backup, restore check, session export, storage view and diagnostic report.
     let out = TestRoot::new();
     let summary = backup::create(&db, &out.0, recording::now_ms()).unwrap();
+    db.import_content_pack(r#"{"format":"clearpractice-content-pack","version":1,"id":"offline","title":"Offline","prompts":[],"drillTopics":{},"scenarios":[],"missions":[]}"#).unwrap();
+    assert_eq!(db.list_content_packs().unwrap().len(), 1);
+    db.remove_content_pack("offline").unwrap();
+    assert!(db.list_content_packs().unwrap().is_empty());
+    db.database_health().unwrap();
+    db.optimize_database().unwrap();
+    db.compact_database().unwrap();
     backup::inspect(&root.0, &out.0.join(&summary.file_name), "stage-a11").unwrap();
     backup::discard_staging(&root.0, "stage-a11").unwrap();
     backup::export::export_session(&db, "take-1", &out.0.join("export.zip"), 0).unwrap();

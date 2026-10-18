@@ -1,3 +1,4 @@
+import { packPrompts } from "../content-runtime";
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -31,6 +32,13 @@ export function createNativeClient(): IpcClient {
   const client: IpcClient = {
     ...preview,
     recordingMode: "native",
+    importContentPack: async () => (await import("./content-client")).nativeContent.importContentPack(),
+    listContentPacks: async () => (await import("./content-client")).nativeContent.listContentPacks(),
+    removeContentPack: async (id) => (await import("./content-client")).nativeContent.removeContentPack(id),
+    getDatabaseHealth: async () => (await import("./content-client")).nativeContent.getDatabaseHealth(),
+    dismissDatabaseCompaction: async () => (await import("./content-client")).nativeContent.dismissDatabaseCompaction(),
+    compactDatabase: async () => (await import("./content-client")).nativeContent.compactDatabase(),
+
     saveClubMeeting: async (input) => {
       const s = await social();
       return command("save_club_meeting", s.ClubMeetingView, { input: s.ClubMeetingInput.parse(input) });
@@ -146,10 +154,11 @@ export function createNativeClient(): IpcClient {
     getPreferences: () => command("get_preferences", S.Preferences),
     // Bundled prompts with your favourite marks, then your own prompts (4.13).
     listPrompts: async () => {
+      await client.listContentPacks();
       const state = await command("get_prompt_state", S.PromptState);
       const marks = new Map(state.favorites.map((f) => [f.promptId, f.favorite]));
       const mine: S.PracticePrompt[] = state.userPrompts.map((p) => ({ ...p, favorite: marks.get(p.id) ?? false, source: "user" }));
-      return [...mine, ...PROMPTS.map((p) => ({ ...p, favorite: marks.get(p.id) ?? p.favorite }))];
+      return [...mine, ...[...PROMPTS, ...packPrompts()].map((p) => ({ ...p, favorite: marks.get(p.id) ?? p.favorite }))];
     },
     setPromptFavorite: async (promptId, favorite) => { await command("set_prompt_favorite", z.null(), { promptId, favorite }); },
     addPrompt: async (prompt) => ({ ...(await command("add_user_prompt", S.PromptState.shape.userPrompts.element, { prompt })), favorite: false, source: "user" as const }),

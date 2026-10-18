@@ -1,3 +1,5 @@
+import { ContentSettings } from "./ContentSettings";
+import { DatabaseHealth } from "./DatabaseHealth";
 import { useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
@@ -51,6 +53,7 @@ const SECTIONS = [
   { id: "transcription", label: "Transcription" },
   { id: "coaching", label: "Coaching" },
   { id: "partner", label: "Partner" },
+  { id: "content", label: "Content" },
   { id: "data", label: "Data and backups" },
   { id: "about", label: "About" },
 ] as const;
@@ -83,6 +86,7 @@ export function SettingsPage() {
           </ul>
         </nav>
         <div className="min-w-0 max-w-2xl space-y-6">
+          {current === "content" && <ContentSettings />}
           {current === "audio" && <AudioSettings />}
           {current === "practice" && <PracticeSettings />}
           {current === "appearance" && <AppearanceSettings />}
@@ -691,6 +695,7 @@ function DataSettings() {
       </Section>
       <Section title="Space used" description="What the data folder holds. Clearing the cache never removes recordings or anything you saved.">
         <StorageUsage />
+        <DatabaseHealth />
       </Section>
       <Section
         title="Backups"

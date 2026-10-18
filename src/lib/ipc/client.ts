@@ -1,3 +1,5 @@
+import type { StoredContentPack } from "../content-pack";
+import type { DatabaseHealth } from "./schemas-content";
 /**
  * The UI's only door to the native core. Method names mirror the Rust
  * commands in blueprint §15; the frontend sends IDs and small values and
@@ -162,6 +164,12 @@ export interface IpcClient {
   getTodayPlan(length: SessionLength): Promise<TodayPlan>;
 
   listExercises(): Promise<ExerciseDefinition[]>;
+  importContentPack(): Promise<StoredContentPack | null>;
+  listContentPacks(): Promise<StoredContentPack[]>;
+  removeContentPack(id: string): Promise<void>;
+  getDatabaseHealth(): Promise<DatabaseHealth>;
+  dismissDatabaseCompaction(): Promise<void>;
+  compactDatabase(): Promise<void>;
   listPrompts(): Promise<PracticePrompt[]>;
   listGuides(): Promise<Guide[]>;
   setPromptFavorite(promptId: string, favorite: boolean): Promise<void>;

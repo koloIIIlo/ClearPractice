@@ -36,7 +36,7 @@ ROUTES = [
     "/club", "/club?meeting=club-sample", "/club?meeting=club-finished", "/club/light",
     "/progress?view=real&mission=dinner-story", "/progress?view=real&form=aar&event=event-sample",
     "/settings/audio", "/settings/practice", "/settings/appearance", "/settings/transcription",
-    "/settings/coaching", "/settings/data", "/settings/about", "/nope",
+    "/settings/coaching", "/settings/data", "/settings/content", "/settings/about", "/nope",
 ]
 TAGS = ["wcag2a", "wcag2aa", "wcag21aa", "best-practice"]
 

@@ -62,6 +62,10 @@ fn staging_is_empty(root: &Path) -> bool {
 #[test]
 fn backup_round_trips_sessions_trash_and_verified_audio() {
     let (root, owner) = profile_with_two_takes();
+    let live = r#"{"format":"clearpractice-content-pack","version":1,"id":"kept","title":"Kept pack","prompts":[],"drillTopics":{},"scenarios":[],"missions":[]}"#;
+    owner.import_content_pack(live).unwrap();
+    owner.import_content_pack(&live.replace("kept", "removed")).unwrap();
+    owner.remove_content_pack("removed").unwrap();
     let destination = TestRoot::new();
     let folder = destination.0.join("backups");
     fs::create_dir(&folder).unwrap();
@@ -88,6 +92,8 @@ fn backup_round_trips_sessions_trash_and_verified_audio() {
         .query_row("SELECT title FROM sessions WHERE id='take-a'", [], |r| r.get(0))
         .unwrap();
     assert_eq!(title, "Explaining indexes");
+    assert_eq!(restored.query_row("SELECT count(*) FROM content_packs", [], |r| r.get::<_,i64>(0)).unwrap(), 2);
+    assert_eq!(restored.query_row("SELECT removed_at_ms IS NOT NULL FROM content_packs WHERE id='removed'", [], |r| r.get::<_,bool>(0)).unwrap(), true);
 }
 
 #[test]

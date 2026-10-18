@@ -11,3 +11,5 @@ pub mod learning;
 pub mod partner;
 pub mod social;
 pub mod small_text;
+
+pub mod content;

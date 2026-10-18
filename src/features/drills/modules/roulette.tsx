@@ -1,3 +1,4 @@
+import { rouletteTopics } from "@/lib/content-runtime";
 import { useId, useState } from "react";
 import { Dices, RotateCw } from "lucide-react";
 import { Panel } from "@/components/page";
@@ -26,7 +27,7 @@ export function plan(seed: string, params: DrillParams): DrillPlan {
   const respun = params.respun === true || params.respun === "true";
   const rand = rng(seed, respun ? "respin" : "spin");
   const category = (ROULETTE_CATEGORIES.find((c) => c.id === params.category) ?? pick(rand, ROULETTE_CATEGORIES)).id as RouletteCategory;
-  const topic = ROULETTE_TOPICS[category].find((t) => t.id === params.topic) ?? pick(rand, ROULETTE_TOPICS[category]);
+  const topic = rouletteTopics(ROULETTE_TOPICS[category], category).find((t) => t.id === params.topic) ?? pick(rand, rouletteTopics(ROULETTE_TOPICS[category], category));
   const speak = SPEAK_CHOICES.find((s) => s === Number(params.speak)) ?? 60;
   return {
     drill, seed, groupId: null, contentId: topic.id,

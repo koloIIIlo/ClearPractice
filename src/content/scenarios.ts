@@ -1,3 +1,4 @@
+import { scenarios } from "@/lib/content-runtime";
 import { INTERRUPTIONS, SKEPTICAL_QUESTIONS, type BossId } from "@/content/bosses";
 import { STAR_QUESTIONS } from "@/content/star-questions";
 import type { AreaId } from "@/lib/engagement/types";
@@ -237,7 +238,7 @@ export const BOSS_SCENARIOS: Scenario[] = [
 ];
 
 export function scenarioById(id: string): Scenario | undefined {
-  return SCENARIOS.find((s) => s.id === id) ?? BOSS_SCENARIOS.find((s) => s.id === id);
+  return scenarios(SCENARIOS).find((s) => s.id === id) ?? BOSS_SCENARIOS.find((s) => s.id === id);
 }
 
 /** General follow-ups the scripted partner mixes in, one per conversation (13.8). */

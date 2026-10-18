@@ -1,3 +1,4 @@
+import { rouletteTopics } from "@/lib/content-runtime";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
@@ -10,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useIpc } from "@/lib/ipc";
-import { keys, useClubMeeting, useClubMeetings } from "@/lib/ipc/queries";
+import { keys, useClubMeeting, useClubMeetings, usePrompts } from "@/lib/ipc/queries";
 import type { ClubCounter, ClubKind, ClubLightState, ClubMeetingView, ClubSpeech } from "@/lib/ipc/schemas";
 import { ClubMeetingInput } from "@/lib/ipc/schemas-social";
 import { clubClock, COUNTERS, DEFAULT_WINDOWS, KIND_LABELS, lightAt } from "@/lib/social/club";
@@ -19,7 +20,7 @@ import { ROULETTE_TOPICS } from "@/content/roulette-topics";
 import { TimingLight } from "./ClubLight";
 
 type AgendaRow = { key: number; speaker: string; kind: ClubKind; min: string; max: string };
-const TOPICS = Object.values(ROULETTE_TOPICS).flat();
+const topics = () => Object.entries(ROULETTE_TOPICS).flatMap(([category, list]) => rouletteTopics(list, category as keyof typeof ROULETTE_TOPICS));
 const MAX_MS = 21600000;
 const windowText = (s: ClubSpeech) => s.targetMinSeconds === null || s.targetMaxSeconds === null ? "no time window" : `${clubClock(s.targetMinSeconds * 1000)}–${clubClock(s.targetMaxSeconds * 1000)}`;
 
@@ -167,7 +168,7 @@ function SpeakerRun({ view, index, onSaved }: { view: ClubMeetingView; index: nu
       <SectionTitle>Table topic</SectionTitle>
       {topic && <p aria-live="polite" className="text-3xl font-semibold">{topic}</p>}
       <Button variant="outline" disabled={busy} onClick={() => {
-        const choices = TOPICS.filter((t) => t.text !== topic);
+        const choices = topics().filter((t) => t.text !== topic);
         setTopic(choices[Math.floor(Math.random() * choices.length)]!.text);
       }}>New topic</Button>
     </Panel>}
@@ -235,6 +236,7 @@ function Meeting({ initial }: { initial: ClubMeetingView }) {
 }
 
 export function ClubPage() {
+  usePrompts();
   const ipc = useIpc();
   const qc = useQueryClient();
   const meetings = useClubMeetings();

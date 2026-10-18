@@ -128,6 +128,18 @@ impl CaptureService {
             .is_some_and(|s| matches!(s.phase.as_str(), "preparing" | "recording" | "finalizing"))
     }
 
+    /// Holds the same mutex as start(), so capture cannot begin during VACUUM.
+    pub fn while_idle<T>(&self, work: impl FnOnce() -> Result<T>) -> Result<T> {
+        let active = self.active.lock().map_err(|_| "Capture state is unavailable.")?;
+        if let Some(capture) = active.as_ref() {
+            let status = capture.status.lock().map_err(|_| "Capture state is unavailable.")?;
+            if matches!(status.phase.as_str(), "preparing" | "recording" | "finalizing") {
+                return Err("Finish the recording before compacting the database.".into());
+            }
+        }
+        work()
+    }
+
     pub fn start(&self, request: StartRequest) -> Result<RecordingStatus> {
         recording::validate_id(&request.attempt_id)?;
         recording::validate_id(&request.idempotency_key)?;
@@ -573,6 +585,25 @@ fn run_capture(
 mod tests {
     use super::*;
     use crate::storage::recording::tests::{manifest, TestRoot};
+
+    #[test]
+    fn database_maintenance_holds_the_start_lock_and_refuses_capture() {
+        let root = TestRoot::new();
+        let service = CaptureService::new(root.0.clone(), Arc::new(|_, _| {}));
+        service.while_idle(|| {
+            assert!(service.active.try_lock().is_err(), "start stays locked for the whole operation");
+            Ok(())
+        }).unwrap();
+        let request = StartRequest { attempt_id: "test".into(), idempotency_key: "test-op".into(), device_id: None, title: "Test".into(), live_pace: false };
+        let status = Arc::new(Mutex::new(RecordingStatus::preparing("test")));
+        *service.active.lock().unwrap() = Some(ActiveCapture { request, stop: Arc::new(AtomicBool::new(false)), status: status.clone(), worker: None });
+        for phase in ["preparing", "recording", "finalizing"] {
+            status.lock().unwrap().phase = phase.into();
+            assert!(service.while_idle(|| -> Result<()> { panic!("maintenance ran during capture") }).is_err());
+        }
+        status.lock().unwrap().phase = "saved".into();
+        service.while_idle(|| Ok(())).unwrap();
+    }
 
     #[test]
     #[ignore = "child process that opens the microphone for forced-kill testing"]

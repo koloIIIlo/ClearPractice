@@ -16,6 +16,26 @@ const BACKFILL_KEY: &str = "engagement_backfill_v1";
 /// Bumped when facts gain fields, so the interface can tell what to expect.
 pub const FACTS_VERSION: u32 = 8;
 
+// Shared with the seeded EXPLAIN QUERY PLAN review in maintenance.rs.
+pub(crate) const FACT_SESSIONS_SQL: &str = "SELECT s.id,s.local_date,s.started_at_ms,e.type,s.content_id,s.tags,s.ease,s.focus,s.takeaway,s.status,s.outline_snapshot,s.preferred_take,\
+             (SELECT COUNT(*) FROM attempts a WHERE a.step_id=st.id AND a.capture_state='saved' AND a.deleted_at_ms IS NULL),\
+             (SELECT COALESCE(SUM(aa.duration_ms),0) FROM attempts a JOIN audio_assets aa ON aa.id=a.asset_id WHERE a.step_id=st.id AND a.capture_state='saved' AND a.deleted_at_ms IS NULL),\
+             tc.familiarity,tc.preparation_seconds,tc.target_seconds,tc.audience,tc.follow_up,s.activity_snapshot \
+             FROM sessions s JOIN session_steps st ON st.session_id=s.id JOIN exercise_definitions e ON e.id=st.exercise_id AND e.version=st.exercise_version \
+             LEFT JOIN task_conditions tc ON tc.attempt_id=(SELECT a.id FROM attempts a WHERE a.step_id=st.id ORDER BY a.ordinal LIMIT 1) \
+             WHERE s.deleted_at_ms IS NULL ORDER BY s.started_at_ms,s.id";
+
+pub(crate) fn fact_takes_sql() -> String { format!("SELECT a.id,st.session_id,a.ordinal,s.local_date,a.created_at_ms,aa.duration_ms,tc.challenge,\
+             (SELECT r.id FROM transcript_revisions r WHERE r.attempt_id=a.id AND r.source<>'user' ORDER BY r.created_at_ms DESC,r.id DESC LIMIT 1),\
+             EXISTS(SELECT 1 FROM prosody_tracks p WHERE p.attempt_id=a.id),EXISTS(SELECT 1 FROM coaching_runs c WHERE c.attempt_id=a.id),\
+             (SELECT p.range_semitones FROM prosody_tracks p WHERE p.attempt_id=a.id AND p.algorithm=?1 AND p.definition_version=?2),\
+             (SELECT m.rate_sps FROM audio_measures m WHERE m.attempt_id=a.id AND m.method=?3 AND m.definition_version=?4),\
+             (SELECT ar.result FROM activity_results ar WHERE ar.attempt_id=a.id AND ar.definition_version=?5 AND ar.revision_id IS {}) \
+             FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id JOIN audio_assets aa ON aa.id=a.asset_id \
+             LEFT JOIN task_conditions tc ON tc.attempt_id=a.id \
+             WHERE a.capture_state='saved' AND a.deleted_at_ms IS NULL AND s.deleted_at_ms IS NULL ORDER BY a.created_at_ms,a.id", super::insights::CURRENT_REVISION) }
+
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PracticeEvent {
@@ -526,13 +546,7 @@ impl DatabaseOwner {
             .map_err(db_error)?;
 
         let mut stmt = conn.prepare(
-            "SELECT s.id,s.local_date,s.started_at_ms,e.type,s.content_id,s.tags,s.ease,s.focus,s.takeaway,s.status,s.outline_snapshot,s.preferred_take,\
-             (SELECT COUNT(*) FROM attempts a WHERE a.step_id=st.id AND a.capture_state='saved' AND a.deleted_at_ms IS NULL),\
-             (SELECT COALESCE(SUM(aa.duration_ms),0) FROM attempts a JOIN audio_assets aa ON aa.id=a.asset_id WHERE a.step_id=st.id AND a.capture_state='saved' AND a.deleted_at_ms IS NULL),\
-             tc.familiarity,tc.preparation_seconds,tc.target_seconds,tc.audience,tc.follow_up,s.activity_snapshot \
-             FROM sessions s JOIN session_steps st ON st.session_id=s.id JOIN exercise_definitions e ON e.id=st.exercise_id AND e.version=st.exercise_version \
-             LEFT JOIN task_conditions tc ON tc.attempt_id=(SELECT a.id FROM attempts a WHERE a.step_id=st.id ORDER BY a.ordinal LIMIT 1) \
-             WHERE s.deleted_at_ms IS NULL ORDER BY s.started_at_ms,s.id",
+            FACT_SESSIONS_SQL,
         ).map_err(db_error)?;
         let sessions: Vec<FactSession> = stmt
             .query_map([], |r| {
@@ -636,18 +650,7 @@ impl DatabaseOwner {
                 catch_runs.entry(attempt).or_default().push(FactCatchRun { caught, total, local_date: local_date(created) });
             }
         }
-        let mut stmt = conn.prepare(&format!(
-            "SELECT a.id,st.session_id,a.ordinal,s.local_date,a.created_at_ms,aa.duration_ms,tc.challenge,\
-             (SELECT r.id FROM transcript_revisions r WHERE r.attempt_id=a.id AND r.source<>'user' ORDER BY r.created_at_ms DESC,r.id DESC LIMIT 1),\
-             EXISTS(SELECT 1 FROM prosody_tracks p WHERE p.attempt_id=a.id),EXISTS(SELECT 1 FROM coaching_runs c WHERE c.attempt_id=a.id),\
-             (SELECT p.range_semitones FROM prosody_tracks p WHERE p.attempt_id=a.id AND p.algorithm=?1 AND p.definition_version=?2),\
-             (SELECT m.rate_sps FROM audio_measures m WHERE m.attempt_id=a.id AND m.method=?3 AND m.definition_version=?4),\
-             (SELECT ar.result FROM activity_results ar WHERE ar.attempt_id=a.id AND ar.definition_version=?5 AND ar.revision_id IS {}) \
-             FROM attempts a JOIN session_steps st ON st.id=a.step_id JOIN sessions s ON s.id=st.session_id JOIN audio_assets aa ON aa.id=a.asset_id \
-             LEFT JOIN task_conditions tc ON tc.attempt_id=a.id \
-             WHERE a.capture_state='saved' AND a.deleted_at_ms IS NULL AND s.deleted_at_ms IS NULL ORDER BY a.created_at_ms,a.id",
-            super::insights::CURRENT_REVISION
-        )).map_err(db_error)?;
+        let mut stmt = conn.prepare(&fact_takes_sql()).map_err(db_error)?;
         let takes = stmt
             .query_map(params![crate::prosody::ALGORITHM, crate::prosody::DEFINITION_VERSION, crate::audio::syllables::METHOD, crate::audio::syllables::DEFINITION_VERSION, crate::activity_results::DEFINITION_VERSION], |r| {
                 let id: String = r.get(0)?;

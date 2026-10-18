@@ -228,6 +228,13 @@ const ACHIEVEMENT_COLUMNS: &str = "id,definition_version,evidence,unlocked_at_ms
 const RECORD_COLUMNS: &str = "id,record,value,unit,previous,attempt_id,session_id,definition_version,achieved_at_ms";
 const QUEST_COLUMNS: &str = "week,slot,quest,params,swapped,created_at_ms,completed_at_ms";
 
+// Use the production statements in the seeded planner review.
+pub(crate) fn journey_levels() -> String { format!("SELECT {LEVEL_COLUMNS} FROM skill_levels ORDER BY achieved_at_ms,area,level") }
+pub(crate) fn journey_achievements() -> String { format!("SELECT {ACHIEVEMENT_COLUMNS} FROM achievements ORDER BY unlocked_at_ms,id") }
+pub(crate) fn journey_records() -> String { format!("SELECT {RECORD_COLUMNS} FROM personal_records ORDER BY achieved_at_ms,id") }
+pub(crate) fn journey_quests() -> String { format!("SELECT {QUEST_COLUMNS} FROM weekly_quests WHERE week>=?1 AND week<=?2 ORDER BY week,slot") }
+
+
 fn quests_of(conn: &Connection, week: &str) -> Result<Vec<QuestRow>> {
     let mut stmt = conn.prepare(&format!("SELECT {QUEST_COLUMNS} FROM weekly_quests WHERE week=?1 ORDER BY slot")).map_err(db_error)?;
     let rows = stmt.query_map([week], quest_row).map_err(db_error)?;
@@ -240,14 +247,14 @@ impl DatabaseOwner {
         let start = valid_week(week)?;
         let since = (start - chrono::Duration::days(QUEST_HISTORY_DAYS)).format("%Y-%m-%d").to_string();
         let conn = self.connection.lock().map_err(|_| "Session storage owner is unavailable.")?;
-        let mut stmt = conn.prepare(&format!("SELECT {LEVEL_COLUMNS} FROM skill_levels ORDER BY achieved_at_ms,area,level")).map_err(db_error)?;
+        let mut stmt = conn.prepare(&journey_levels()).map_err(db_error)?;
         let levels = stmt.query_map([], level_row).map_err(db_error)?.collect::<rusqlite::Result<_>>().map_err(db_error)?;
-        let mut stmt = conn.prepare(&format!("SELECT {ACHIEVEMENT_COLUMNS} FROM achievements ORDER BY unlocked_at_ms,id")).map_err(db_error)?;
+        let mut stmt = conn.prepare(&journey_achievements()).map_err(db_error)?;
         let achievements = stmt.query_map([], achievement_row).map_err(db_error)?.collect::<rusqlite::Result<_>>().map_err(db_error)?;
-        let mut stmt = conn.prepare(&format!("SELECT {RECORD_COLUMNS} FROM personal_records ORDER BY achieved_at_ms,id")).map_err(db_error)?;
+        let mut stmt = conn.prepare(&journey_records()).map_err(db_error)?;
         let records = stmt.query_map([], record_row).map_err(db_error)?.collect::<rusqlite::Result<_>>().map_err(db_error)?;
         let mut stmt = conn
-            .prepare(&format!("SELECT {QUEST_COLUMNS} FROM weekly_quests WHERE week>=?1 AND week<=?2 ORDER BY week,slot"))
+            .prepare(&journey_quests())
             .map_err(db_error)?;
         let quests = stmt.query_map(params![since, week], quest_row).map_err(db_error)?.collect::<rusqlite::Result<_>>().map_err(db_error)?;
         let mut stmt = conn.prepare("SELECT ref_id FROM practice_events WHERE kind='weekly_goal' ORDER BY ref_id").map_err(db_error)?;

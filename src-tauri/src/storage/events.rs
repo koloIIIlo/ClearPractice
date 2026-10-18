@@ -28,7 +28,7 @@ fn date(value: &str) -> Result<chrono::NaiveDate> {
 }
 
 fn key_id(value: &str) -> bool {
-    !value.is_empty() && value.len() <= 64 && value.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
+    !value.is_empty() && value.len() <= 96 && value.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
 }
 
 fn one_line(text: &str, max: usize) -> Option<String> {

@@ -1,3 +1,4 @@
+import { packPrompts } from "../content-runtime";
 /**
  * In-memory IpcClient used for UI development (M1) and component tests.
  * Replaced by the Tauri `invoke` client once the native commands exist (M2).
@@ -79,6 +80,7 @@ function cleanPhrase(input: S.PhraseInput) {
 export function createMockClient(): IpcClient {
   const phrases = structuredClone(data.phrases);
   const prompts = structuredClone(data.prompts);
+  const packFavorites = new Map<string, boolean>();
   const sessions = structuredClone(data.sessions);
   const transferReviews: S.TransferReview[] = [];
   const events: S.PracticeEvent[] = [];
@@ -311,6 +313,8 @@ export function createMockClient(): IpcClient {
   type EventsApi = Awaited<ReturnType<typeof realWorld>>["methods"];
   const soon = <K extends keyof EventsApi>(name: K) =>
     (async (...args: unknown[]) => ((await realWorld()).methods[name] as (...a: unknown[]) => unknown)(...args)) as EventsApi[K];
+  let contentLoad: Promise<ReturnType<typeof import("./mock-content").createMockContent>> | null = null;
+  const content = () => (contentLoad ??= import("./mock-content").then((m) => m.createMockContent()));
   let socialLoad: Promise<ReturnType<typeof import("./mock-social").createMockSocial>> | null = null;
   const social = () => (socialLoad ??= import("./mock-social").then((m) => m.createMockSocial()));
   type SocialApi = Awaited<ReturnType<typeof social>>;
@@ -412,6 +416,15 @@ export function createMockClient(): IpcClient {
     },
     getPracticeFacts: async () => buildFacts((await partner()).facts(), (await realWorld()).facts()),
     saveClubMeeting: socialSoon("saveClubMeeting"),
+    importContentPack: async () => (await content()).importContentPack(),
+    listContentPacks: async () => (await content()).listContentPacks(),
+    removeContentPack: async (id) => (await content()).removeContentPack(id),
+    getDatabaseHealth: async () => (await content()).getDatabaseHealth(),
+    dismissDatabaseCompaction: async () => (await content()).dismissDatabaseCompaction(),
+    compactDatabase: async () => {
+      if (recording && ["preparing", "recording", "finalizing"].includes(recording.phase)) throw new Error("Finish the recording before compacting the database.");
+      await (await content()).compactDatabase();
+    },
     listClubMeetings: socialSoon("listClubMeetings"),
     getClubMeeting: socialSoon("getClubMeeting"),
     deleteClubMeeting: socialSoon("deleteClubMeeting"),
@@ -797,11 +810,14 @@ export function createMockClient(): IpcClient {
     },
 
     listExercises: () => respond(S.ExerciseDefinition.array(), data.exercises),
-    listPrompts: () => respond(S.PracticePrompt.array(), prompts),
+    listPrompts: async () => { await (await content()).listContentPacks(); return respond(S.PracticePrompt.array(), [...prompts, ...packPrompts().map((p) => ({ ...p, favorite: packFavorites.get(p.id) ?? p.favorite }))]); },
     listGuides: () => respond(S.Guide.array(), data.guides),
     setPromptFavorite: async (promptId, favorite) => {
       const p = prompts.find((x) => x.id === promptId);
-      if (!p) throw new IpcError("not_found", "Prompt not found");
+      if (!p) {
+        if (packPrompts().some((item) => item.id === promptId)) { packFavorites.set(promptId, favorite); return; }
+        throw new IpcError("not_found", "Prompt not found");
+      }
       p.favorite = favorite;
     },
     recordProgression: async () => { throw new IpcError("desktop_required", "Stages are kept in the desktop app."); },
