@@ -37,6 +37,12 @@ export const keys = {
   // Learning engine (M11); under "engagement", so saved practice refreshes them too.
   programme: ["engagement", "programme"] as const,
   predictions: ["engagement", "predictions"] as const,
+  // Confidence pack (M12); under "engagement", so saved practice refreshes them too.
+  exposureSteps: ["engagement", "exposure", "steps"] as const,
+  exposureAttempts: ["engagement", "exposure", "attempts"] as const,
+  routineRuns: ["engagement", "routines"] as const,
+  segmentMarks: (attemptId: string) => ["engagement", "segment-marks", attemptId] as const,
+  bestMoments: (weekStart: string) => ["engagement", "best-moments", weekStart] as const,
 };
 
 /** Saved preferences; until they load, the defaults apply. */
@@ -172,6 +178,14 @@ export function useProgrammeState() {
 export function usePredictions() {
   const ipc = useIpc();
   return useQuery({ queryKey: keys.predictions, queryFn: () => ipc.listPredictions() });
+}
+
+/** Your exposure ladder and every attempt on it (12.2). */
+export function useExposure() {
+  const ipc = useIpc();
+  const steps = useQuery({ queryKey: keys.exposureSteps, queryFn: () => ipc.listExposureSteps() });
+  const attempts = useQuery({ queryKey: keys.exposureAttempts, queryFn: () => ipc.listExposureAttempts() });
+  return { steps, attempts };
 }
 
 /** Where saved phrases turned up in your takes (8.2): one phrase, or all of them. */

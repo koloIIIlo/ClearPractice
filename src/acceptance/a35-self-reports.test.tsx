@@ -4,7 +4,8 @@
  * note" label in the take summary belongs to the self-check section, and that
  * section is not part of the Flow or Words measures. Predictions (11.5) are
  * self-reports too: each guess is Your note, each value from the take is
- * Estimated, and neither sits inside a measure fold.
+ * Estimated, and neither sits inside a measure fold. The confidence pack (M12)
+ * is all self-report: the ladder's ratings and chart, and after-action reviews.
  */
 import { screen } from "@testing-library/react";
 import { expect, it } from "vitest";
@@ -12,6 +13,9 @@ import { createMockClient } from "@/lib/ipc/mock-client";
 import type { IpcClient } from "@/lib/ipc";
 import { DEFAULT_PREFERENCES, type AttemptTranscript } from "@/lib/ipc/schemas";
 import { TakeSummary } from "@/features/review/TakeSummary";
+import { ExposureLadder } from "@/features/confidence/ExposureLadder";
+import { ProgressPage } from "@/features/progress/ProgressPage";
+import { expectNoScores } from "@/test/no-scores";
 import { renderWithApp } from "@/test/render";
 
 const transcript: AttemptTranscript = {
@@ -69,4 +73,27 @@ it("A-35 predictions: the guess is Your note, the take's value Estimated, and ne
   expect(guesses.closest("details")).toBeNull();
   // A guess is compared with the value, never turned into a verdict on your voice.
   expect(guesses).not.toHaveTextContent(/wrong|correct|score|%/i);
+});
+
+it("A-35 the exposure ladder: ratings and chart are your note, with no measure label or score beside them", async () => {
+  renderWithApp(<ExposureLadder />);
+  const ladder = await screen.findByRole("list", { name: "Your ladder" });
+  expect(screen.getAllByText("Your note").length).toBeGreaterThan(0);
+  expect(screen.queryByText("Estimated")).toBeNull();
+  expect(screen.queryByText("Measured")).toBeNull();
+  expect(ladder).toHaveTextContent(/discomfort \d+ → \d+/);
+  expect(screen.getByText(/Discomfort is your own rating \(Your note\)/)).toBeInTheDocument();
+  expectNoScores();
+});
+
+it("A-35 after-action reviews are your note in Real conversations", async () => {
+  const client = createMockClient();
+  await client.addTransferReview({
+    localDate: "2026-10-16", situation: "Weekly update", preparation: "", listenerText: "", clarification: "", success: "", selfReport: "", nextFocus: "",
+    kind: "aar", extra: { planned: "Lead with the decision", happened: "I did", why: "", nextTime: "Same again" },
+  });
+  renderWithApp(<ProgressPage />, { client, path: "/progress?view=real" });
+  const item = (await screen.findByText("Weekly update")).closest("li")!;
+  expect(item).toHaveTextContent("Your note");
+  expect(item).not.toHaveTextContent(/Estimated|Measured/);
 });

@@ -102,6 +102,8 @@ it("A-27 calm style hides every game element and loses nothing", async () => {
   await new Promise((r) => setTimeout(r, 800));
   const sidebar = screen.getAllByRole("navigation").find((n) => within(n).queryByRole("link", { name: /Progress/ }))!;
   expect(within(sidebar).queryByRole("link", { name: /Journey/ })).not.toBeInTheDocument();
+  // Confidence isn't part of the game layer: it stays in Calm (12.1).
+  expect(within(sidebar).getByRole("link", { name: /Confidence/ })).toBeInTheDocument();
   expect(screen.queryByRole("region", { name: "Journey this week" })).not.toBeInTheDocument();
   expect(document.body.textContent).not.toMatch(/\bXP\b/);
   view.unmount();

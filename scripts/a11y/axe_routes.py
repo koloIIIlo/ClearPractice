@@ -29,6 +29,7 @@ ROUTES = [
     "/journey", "/journey?area=fluency", "/journey/achievements",
     "/exercises?tab=drills", "/drill/jam", "/drill/roulette", "/drill/emphasis", "/drill/three-ways", "/drill/story-cubes", "/drill/boss", "/drill/daily",
     "/exercises?tab=programmes", "/exercises?tab=prompts&due=1", "/catch-it", "/practice/ex-repeat?reanswer=s-01-a1",
+    "/confidence", "/confidence/routine", "/progress?view=real&form=aar",
     "/settings/audio", "/settings/practice", "/settings/appearance", "/settings/transcription",
     "/settings/coaching", "/settings/data", "/settings/about", "/nope",
 ]

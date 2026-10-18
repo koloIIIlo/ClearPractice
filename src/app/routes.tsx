@@ -93,6 +93,14 @@ export const routes: RouteObject[] = [
             ],
           },
           { path: "phrases", lazy: page(() => import("@/features/phrases/PhrasesPage"), "PhrasesPage"), handle: crumb("Phrases") },
+          {
+            path: "confidence",
+            handle: crumb("Confidence"),
+            children: [
+              { index: true, lazy: page(() => import("@/features/confidence/ConfidencePage"), "ConfidencePage") },
+              { path: "routine", lazy: page(() => import("@/features/confidence/RoutinePage"), "RoutinePage"), handle: crumb("Before a real talk") },
+            ],
+          },
           { path: "progress", lazy: page(() => import("@/features/progress/ProgressPage"), "ProgressPage"), handle: crumb("Progress") },
           { path: "settings/:section?", lazy: page(() => import("@/features/settings/SettingsPage"), "SettingsPage"), handle: crumb("Settings") },
           { path: "welcome", lazy: page(() => import("@/features/onboarding/WelcomePage"), "WelcomePage"), handle: crumb("Welcome") },

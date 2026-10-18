@@ -76,6 +76,8 @@ pub struct Preferences {
     pub predict_first: bool,
     /// The one-time tip offering predict-first has been shown.
     pub predict_tip_seen: bool,
+    /// The name the pre-talk routine uses to encourage you (12.3); empty says "you".
+    pub display_name: String,
 }
 
 pub const ACCENTS: [&str; 6] = ["green", "ocean", "amber", "violet", "rose", "graphite"];
@@ -88,7 +90,7 @@ impl Default for Preferences {
             local_endpoint: "http://127.0.0.1:8080".into(), local_model: String::new(), budget_warning_micro_usd: 4_000_000, reminder_time: None,
             coaching_prices: Default::default(), practice_style: "playful".into(), style_chosen: false, celebrations: "full".into(), celebration_sounds: false,
             live_pace: false, watch_words: Vec::new(), weekly_goal_days: 3, week_starts_on: "monday".into(), companion: true, accent: "green".into(),
-            challenge_bias: 0, warm_up: false, measures_timing: "always".into(), predict_first: false, predict_tip_seen: false }
+            challenge_bias: 0, warm_up: false, measures_timing: "always".into(), predict_first: false, predict_tip_seen: false, display_name: String::new() }
     }
 }
 
@@ -162,6 +164,10 @@ fn validate(mut p: Preferences) -> Result<Preferences, String> {
     if !matches!(p.measures_timing.as_str(), "always" | "on_request" | "fade") {
         return Err("Choose when to show measures from the list.".into());
     }
+    p.display_name = p.display_name.trim().to_string();
+    if p.display_name.chars().count() > 40 || p.display_name.chars().any(char::is_control) {
+        return Err("Keep your name under 40 characters, on one line.".into());
+    }
     p.input_device_id = p.input_device_id.filter(|id| !id.trim().is_empty());
     if p.input_device_id.as_ref().is_some_and(|id| id.len() > 512) {
         return Err("The microphone ID is too long.".into());
@@ -227,6 +233,17 @@ mod tests {
         assert_eq!(load(&db).unwrap(), chosen);
         assert!(save(&db, Preferences { challenge_bias: 2, ..defaults.clone() }).is_err());
         assert!(save(&db, Preferences { measures_timing: "never".into(), ..defaults }).is_err());
+    }
+
+    #[test]
+    fn the_display_name_is_trimmed_and_kept_short() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        let defaults = load(&db).unwrap();
+        assert_eq!(defaults.display_name, "");
+        assert_eq!(save(&db, Preferences { display_name: "  Alex ".into(), ..defaults.clone() }).unwrap().display_name, "Alex");
+        assert!(save(&db, Preferences { display_name: "x".repeat(41), ..defaults.clone() }).is_err());
+        assert!(save(&db, Preferences { display_name: "Al\nex".into(), ..defaults }).is_err());
     }
 
     #[test]

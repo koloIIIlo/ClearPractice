@@ -1,3 +1,4 @@
+import { LikeButton, useLikedSentences } from "@/features/confidence/LikeSentence";
 import { Fragment, useState } from "react";
 import { Check, Volume2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,12 +37,16 @@ export function Transcript({
   positionMs,
   onSeek,
   onPlayRange,
+  attemptId,
 }: {
   revision: TranscriptRevision;
   positionMs: number;
   onSeek: (ms: number) => void;
   onPlayRange: (startMs: number) => void;
+  /** With it, each sentence can be liked (12.5). */
+  attemptId?: string;
 }) {
+  const likes = useLikedSentences(attemptId ?? "", !!attemptId);
   // M1: review decisions are kept in memory. From M3 they're saved so a dismissed candidate stays dismissed.
   const [decisions, setDecisions] = useState<Record<string, ReviewState>>({});
   const [selected, setSelected] = useState<string | null>(null);
@@ -49,8 +54,9 @@ export function Transcript({
 
   return (
     <div className="space-y-1">
-      {revision.segments.map((seg) => {
+      {revision.segments.map((seg, index) => {
         const active = positionMs >= seg.startMs && positionMs < seg.endMs;
+        const liked = likes.liked.has(`${revision.id}:${index}`);
         const selectedAnn = revision.annotations.find((a) => a.id === selected && a.segmentId === seg.id);
         return (
           <div key={seg.id} className={cn("group rounded-lg px-3 py-2 transition-quiet", active && "bg-secondary")}>
@@ -64,7 +70,7 @@ export function Transcript({
               >
                 {formatClock(seg.startMs)}
               </button>
-              <p className="text-transcript">
+              <p className="min-w-0 flex-1 text-transcript">
                 {pieces(seg, revision.annotations).map((p, i) => {
                   if (!p.annotation) return <Fragment key={i}>{p.text}</Fragment>;
                   const st = stateOf(p.annotation);
@@ -88,6 +94,14 @@ export function Transcript({
                   );
                 })}
               </p>
+              {attemptId && (
+                <LikeButton
+                  liked={liked}
+                  sentence={seg.text}
+                  disabled={!likes.ready || likes.toggle.isPending}
+                  onToggle={() => likes.toggle.mutate({ revisionId: revision.id, segment: index, liked: !liked })}
+                />
+              )}
             </div>
 
             {selectedAnn && (

@@ -1,5 +1,5 @@
 {
- "factsVersion": 5,
+ "factsVersion": 6,
  "generatedAt": "2026-10-12T12:00:00.000Z",
  "today": "2026-10-12",
  "transcriptionAvailable": true,
@@ -1584,7 +1584,8 @@
    "flow": "smooth",
    "tags": [
     "story"
-   ]
+   ],
+   "kind": "reflection"
   },
   {
    "id": "transfer-16",
@@ -1596,7 +1597,8 @@
    "flow": "smooth",
    "tags": [
     "story"
-   ]
+   ],
+   "kind": "reflection"
   },
   {
    "id": "transfer-28",
@@ -1608,7 +1610,8 @@
    "flow": "smooth",
    "tags": [
     "story"
-   ]
+   ],
+   "kind": "reflection"
   },
   {
    "id": "transfer-41",
@@ -1620,7 +1623,8 @@
    "flow": "smooth",
    "tags": [
     "story"
-   ]
+   ],
+   "kind": "reflection"
   },
   {
    "id": "transfer-53",
@@ -1632,7 +1636,8 @@
    "flow": "smooth",
    "tags": [
     "story"
-   ]
+   ],
+   "kind": "reflection"
   }
  ],
  "phrases": [
@@ -1708,5 +1713,6 @@
  "progression": [],
  "userPrompts": 0,
  "blindComparisons": 0,
- "programme": null
+ "programme": null,
+ "exposure": []
 }

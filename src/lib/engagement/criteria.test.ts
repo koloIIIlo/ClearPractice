@@ -87,14 +87,31 @@ describe("criteria DSL (9.2)", () => {
 
   it("reports unavailable criteria with the feature that brings them", () => {
     const facts = factsBuilder().build();
-    expect(run({ kind: "activity", label: "upgrade", type: "upgrade", atLeast: 1 }, facts).unavailable).toEqual({ reason: "Arrives with the learning engine", fix: "learning" });
+    expect(run({ kind: "activity", label: "upgrade", type: "upgrade", atLeast: 1 }, facts).unavailable).toEqual({ reason: "Arrives with the conversation partner", fix: "partner" });
     expect(run({ kind: "activity", label: "talk", type: "rehearsal", atLeast: 1 }, facts).unavailable?.fix).toBe("events");
     expect(run({ kind: "activity", label: "jam", type: "jam", atLeast: 1 }, facts).unavailable).toBeNull();
-    expect(run({ kind: "exposure", label: "ladder", steps: 3 }, facts).unavailable?.fix).toBe("confidence");
     expect(run({ kind: "conversation", label: "talk", minTurns: 5, atLeast: 1 }, facts).unavailable?.fix).toBe("partner");
     expect(run({ kind: "debrief", label: "event", atLeast: 1 }, facts).unavailable?.fix).toBe("events");
     const noTranscription = { ...factsBuilder().session().take().build(), transcriptionAvailable: false };
     expect(run(takes({ transcribed: true, fillersReviewed: true }, 3), noTranscription).unavailable).toEqual({ reason: "Needs local transcription", fix: "transcription" });
+  });
+
+  it("counts ladder steps you did, including deleted ones, and the ones you rated high beforehand (M12)", () => {
+    const attempt = (localDate: string, before: number | null, after: number | null, outcome: "yes" | "partly" | "planned" | "not_this_time") =>
+      ({ localDate, before, after, outcome, done: outcome === "yes" || outcome === "partly" });
+    const facts = {
+      ...factsBuilder().build(),
+      exposure: [
+        { stepId: "step-a", position: 1, deleted: false, attempts: [attempt("2026-10-09", 4, 3, "not_this_time"), attempt("2026-10-10", 7, 3, "yes")] },
+        { stepId: "step-b", position: 2, deleted: true, attempts: [attempt("2026-10-11", 4, 2, "partly")] },
+        { stepId: "step-c", position: 3, deleted: false, attempts: [attempt("2026-10-12", 8, null, "planned")] },
+      ],
+    };
+    expect(run({ kind: "exposure", label: "ladder", steps: 3 }, factsBuilder().build())).toMatchObject({ done: 0, needed: 3, met: false, unavailable: null });
+    const ladder = run({ kind: "exposure", label: "ladder", steps: 3 }, facts);
+    expect([ladder.done, ladder.met]).toEqual([2, false]);
+    expect(ladder.evidence).toEqual([{ kind: "exposure", id: "step-a", date: "2026-10-10" }, { kind: "exposure", id: "step-b", date: "2026-10-11" }]);
+    expect(run({ kind: "exposure", label: "stretch", steps: 1, minBefore: 6 }, facts)).toMatchObject({ done: 1, met: true });
   });
 
   it("never reads AI feedback", () => {

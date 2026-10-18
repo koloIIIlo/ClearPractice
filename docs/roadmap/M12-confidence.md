@@ -82,6 +82,13 @@ Both behave like the existing reflection text: they are kept in backups and sear
 - `segment_marks` are deleted with their revision in `purge_take_rows`, next to the annotations.
 - Exposure and routine rows are user content. Each has its own delete, a soft delete with Undo.
 
+**As built (18 Oct)**
+- An attempt has an `outcome` instead of `done`: `planned` (a before rating only), `yes`, `partly` or `not_this_time`. Partly is kept apart from Yes, and facts carry both `outcome` and `done` (yes or partly). A plan is completed by updating the same attempt, so its before rating stays with it.
+- New native code: `storage/confidence.rs` and `commands/confidence.rs` (11 commands); events `exposure_step` (30), `routine` (10) and `after_action` (20); facts v6 add `exposure` (every step, deleted ones flagged, with its attempts) and each reflection's `kind`; preferences gain `displayName` (up to 40 characters, one line).
+- Search covers sessions only, as it did for reflections, so ladder notes and kept routine notes are kept in backups but not searchable (the spec said "searchable").
+- Attempts and routine runs are deleted softly: each step has a folded Attempts list with Remove, and Confidence lists Notes you kept with Remove. Both ask "Remove…?" first instead of offering Undo. `routine_runs` gained `deleted_at_ms` and `delete_routine_run` for this; effort earned stays (A-28).
+- Also from appendix B, now that their data exists: achievements `ladder-3`, `stretch` and `aar`, the quest `ladder-1`, and the Courage criteria with `exposure`. Three M11 achievements that were missing were added at the same time: `prediction-10`, `say-it-10` and `catch-it`. The "upgrade" activity now says it arrives with the conversation partner (13.10), not the learning engine.
+
 ---
 
 ## 12.1 Confidence page and navigation
@@ -115,6 +122,11 @@ Both behave like the existing reflection text: they are kept in backups and sear
 **Tests** (`ConfidencePage.test.tsx`):
 - `it("shows ladder, routine, review and reel sections")`
 - `it("is in the sidebar in calm style too")`
+
+**As built (18 Oct)**
+- The page has two columns on wide windows: the ladder and the best moments on the left; Before a real talk and After a real talk on the right. After a real talk opens the after-action form on Progress → Real conversations (`?view=real&form=aar`), where reflections live.
+- "Is in the sidebar in calm style too" is an assertion in A-27 (`a26-a27-game-layer.test.tsx`).
+- Today's This week list has the row "Before a real talk?" with Start the routine.
 
 ---
 
@@ -172,6 +184,13 @@ Both behave like the existing reflection text: they are kept in backups and sear
 - `DiscomfortScale.test.tsx`: `it("reads as N of 10, never N/10")`.
 - A-35: `a35-self-reports.test.tsx` adds the ladder chart and rows.
 
+**As built (18 Oct)**
+- Reordering is by Move up and Move down buttons (keyboard and pointer); there is no drag.
+- **I did it** completes an open plan (showing "You expected N of 10 beforehand"); without a plan it asks for both ratings. It also asks the day (the last week) and an optional note.
+- The rules are in `src/lib/confidence/ladder.ts`: a step is manageable when its last two attempts with an after rating are 3 or less; the highlighted next step is the first step after a manageable one that isn't manageable itself.
+- Each row reads "done 3× · discomfort 7 → 1" (first rating before, latest after). The ladder has one Your note label for all its ratings, and the chart shows one step at a time with a step picker and a table for screen readers.
+- The preview's mock has a sample Meetings ladder with four attempts. `DiscomfortScale.test.tsx` is part of `ExposureLadder.test.tsx`.
+
 ---
 
 ## 12.3 Pre-talk routine
@@ -209,6 +228,13 @@ Both behave like the existing reflection text: they are kept in backups and sear
 
 Manual: run the routine with the network off and Narrator on. **Observe:** the cues are read once per phase, not every second.
 
+**As built (18 Oct)**
+- The voice warm-up has no recording: the routine stays offline and adds nothing to your history. The tongue twister changes daily (ten in `src/content/routine.ts`).
+- Breathing starts with **Start breathing** and runs five rounds of 2 s, 1 s and 6 s; the step's Next and Skip work at any time.
+- The unload minute starts when the step opens. Discard is the default; the text is cleared when the routine finishes unless you chose Keep this note.
+- The name is asked on the first routine only (when no run is saved yet), and can be changed in Settings → Practice → How you practise → Name for encouragement. Without a name the line is "You've got this. You've prepared."
+- A routine where every step was skipped saves nothing. The end page also links to the after-action review.
+
 ---
 
 ## 12.4 After-action review
@@ -235,6 +261,10 @@ Manual: run the routine with the network off and Narrator on. **Observe:** the c
 **Tests:**
 - Rust: `aar_reviews_store_extra_fields_and_award_both_events`.
 - Vitest: `AfterActionForm.test.tsx` `it("saves the four answers and the listener's words separately")`.
+
+**As built (18 Oct)**
+- The four answers are required to be non-empty only as a whole: at least one must be answered. An after-action review's "What will you do next time?" counts as a next focus for levels and the filler programme's week 4.
+- Progress → Real conversations has a Reflection / After-action review switch; the list shows an After-action badge and the four answers, with Your note.
 
 ---
 
@@ -273,3 +303,9 @@ Picked by simple rules: complete sentences without hesitation candidates; senten
   - `segment_marks_are_purged_with_the_revision`
 - Vitest: `BestMoments.test.tsx` `it("plays the reel in order and explains how sentences were picked")`.
 - net_guard: `best_moments_builds_no_http_client` (A-32).
+
+**As built (18 Oct)**
+- The ♡ Like toggle is on each transcript row in the Studio and the session review (`TakeTranscript`), and in the browser preview's sample review (`Transcript`). It is labelled with the sentence and pressed state for screen readers.
+- `best_moments` reads the newest machine revision of each take in the week, measures it as the transcript view does, and skips hesitation candidates you dismissed. A-32 is covered by the A-11 offline list (`storage/confidence.rs`, `commands/confidence.rs`), as for M8 to M11, rather than a separate net_guard test.
+- The reel plays the sentences back to back with one hidden player (each from its stored segment start to end) and highlights the one playing; each sentence also has Listen and Open take. It shows on Confidence and on Journey.
+

@@ -43,6 +43,8 @@ const DRILL_PATHS: Record<string, string> = {
 };
 const drill = (label: string): PractiseLink => ({ label, to: `/drill/${DRILL_PATHS[label]}` });
 const later = (label: string, arrives: string): PractiseLink => ({ label, to: "/", arrives });
+const ladder: PractiseLink = { label: "Exposure ladder", to: "/confidence" };
+const bosses: PractiseLink = { label: "Boss levels", to: "/drill/boss" };
 
 const MIN = 60_000;
 const firstUnknown = { familiarity: "unfamiliar" as const, firstTakeOnly: true };
@@ -179,13 +181,13 @@ export const LEVELS: Readonly<Record<AreaId, readonly LevelDef[]>> = {
         { kind: "exposure", label: "3 steps of your exposure ladder", steps: 3 },
         { kind: "transfers", label: "3 missions", mission: true, atLeast: 3 },
         { kind: "transfers", label: "5 real-conversation reflections", atLeast: 5 },
-      ] }], practise: [real, later("Exposure ladder", "the confidence pack")] },
+      ] }], practise: [real, ladder] },
     { level: 4, name: "Stretch", description: "Do one thing that felt like a real stretch.",
       criteria: [{ kind: "anyOf", label: "Do one thing that felt like a real stretch", options: [
         { kind: "exposure", label: "A ladder step you rated 6 or more before", steps: 1, minBefore: 6 },
         { kind: "activity", label: "A boss level", type: "boss", atLeast: 1 },
         { kind: "conversation", label: "A pressured practice conversation of 6 turns", minTurns: 6, minPressure: 2, atLeast: 1 },
-      ] }], practise: [later("Exposure ladder", "the confidence pack")] },
+      ] }], practise: [ladder, bosses] },
     { level: 5, name: "Event", description: "Prepare for a real event and look back on it.",
       criteria: [{ kind: "anyOf", label: "10 reflections in 6 different weeks, or an event with its debrief", options: [
         { kind: "debrief", label: "An event with its debrief", atLeast: 1 },

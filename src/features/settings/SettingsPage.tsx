@@ -242,6 +242,7 @@ export function LearningSettings() {
           ))}
         </RadioGroup>
       </fieldset>
+      <DisplayNameRow />
       <SwitchRow
         id="predict-first"
         label="Guess before you see the measures"
@@ -250,6 +251,30 @@ export function LearningSettings() {
         onCheckedChange={(on) => update({ predictFirst: on, predictTipSeen: true })}
       />
     </Section>
+  );
+}
+
+/** The name the pre-talk routine encourages you with (12.3); saved when you leave the field. */
+function DisplayNameRow() {
+  const { preferences, update, loaded } = usePreferences();
+  const [name, setName] = useState<string | null>(null);
+  const value = name ?? preferences.displayName;
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <Label htmlFor="display-name">Name for encouragement</Label>
+        <p className="text-meta text-muted-foreground">The pre-talk routine says it back to you. Leave it empty to hear “you”.</p>
+      </div>
+      <Input
+        id="display-name"
+        className="h-10 w-56"
+        maxLength={40}
+        disabled={!loaded}
+        value={value}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={() => value.trim() !== preferences.displayName && update({ displayName: value.trim() })}
+      />
+    </div>
   );
 }
 

@@ -17,4 +17,8 @@ it("saves the warm-up, when measures show and guessing first (11.3 to 11.5)", as
   await waitFor(() => expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ measuresTiming: "on_request" })));
   await user.click(screen.getByRole("switch", { name: "Guess before you see the measures" }));
   await waitFor(() => expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ predictFirst: true, predictTipSeen: true })));
+  const name = screen.getByRole("textbox", { name: "Name for encouragement" });
+  await user.type(name, " Alex ");
+  await user.tab();
+  await waitFor(() => expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ displayName: "Alex" })));
 });

@@ -5,6 +5,7 @@
 import { addLocalDays, nextIntervalDays, toLocalDate } from "@/lib/phrase-schedule";
 import { IpcError, type IpcClient, type PracticeContext } from "./client";
 import * as data from "./mock-data";
+import { EXPOSURE_TEMPLATES } from "@/content/exposure-templates";
 import * as S from "./schemas";
 import { searchLibrary } from "../search";
 import { isWeekStart, RECORD_UNITS, validateUnlockInput } from "../engagement/validate";
@@ -42,6 +43,9 @@ export const MOCK_XP: Record<string, { xp: number; dailyCap?: number }> = {
   programme_step: { xp: 10 },
   catch_run: { xp: 10 },
   reanswer_skipped: { xp: 0 },
+  exposure_step: { xp: 30 },
+  routine: { xp: 10 },
+  after_action: { xp: 20 },
 };
 /** Takes shorter than this earn nothing; only the first six takes of a session count. */
 const MIN_TAKE_MS = 10_000;
@@ -190,6 +194,26 @@ export function createMockClient(): IpcClient {
   const predictions: S.Prediction[] = [];
   const programmes: S.ProgrammeRun[] = [];
   const catchRuns: S.CatchRun[] = [];
+  // Confidence pack (M12): a sample ladder from the Meetings template, with a few attempts.
+  const ladderStart = Date.now() - 20 * 86_400_000;
+  const exposureSteps: (S.ExposureStep & { deleted: boolean })[] = EXPOSURE_TEMPLATES[0].steps.map((title, i) => ({
+    id: `step-sample-${i + 1}`, position: i + 1, title, templateId: EXPOSURE_TEMPLATES[0].id, createdAt: new Date(ladderStart).toISOString(), deleted: false,
+  }));
+  const sampleAttempt = (step: number, daysAgo: number, before: number, after: number): S.ExposureAttempt => ({
+    id: `exposure-sample-${step}-${daysAgo}`, stepId: `step-sample-${step}`, localDate: addLocalDays(toLocalDate(new Date()), -daysAgo),
+    beforeRating: before, afterRating: after, outcome: "yes", note: "", createdAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString(),
+  });
+  const exposureAttempts: (S.ExposureAttempt & { deleted?: boolean })[] = [sampleAttempt(1, 12, 7, 4), sampleAttempt(1, 6, 5, 3), sampleAttempt(1, 2, 3, 1), sampleAttempt(2, 1, 7, 4)];
+  for (const a of exposureAttempts) award("exposure_step", a.id, a.localDate, {}, true);
+  const routineRuns: S.RoutineRun[] = [];
+  const segmentMarks = new Map<string, Set<number>>();
+  const OUTCOME_DONE = new Set(["yes", "partly"]);
+  const checkAttempt = (input: S.ExposureAttemptInput) => {
+    if (!S.ExposureOutcome.options.includes(input.outcome)) throw new IpcError("invalid", "Choose whether you did it from the list.");
+    if ([input.beforeRating, input.afterRating].some((r) => r != null && (r < 0 || r > 10 || !Number.isInteger(r)))) throw new IpcError("invalid", "Discomfort is rated from 0 to 10.");
+    if (input.outcome === "planned" && (input.beforeRating == null || input.afterRating != null)) throw new IpcError("invalid", "A plan has a before rating only.");
+    if (input.note.length > 1000) throw new IpcError("invalid", "Keep the note under 1,000 characters.");
+  };
   const BUCKETS: Record<S.PredictionKind, readonly string[]> = { hesitations: S.HesitationBucket.options, pace: S.PaceBucket.options };
   const activeProgramme = () => programmes.find((r) => !r.completedAt && !r.stoppedAt) ?? null;
   const programmeById = (id: string) => {
@@ -245,8 +269,12 @@ export function createMockClient(): IpcClient {
   const buildFacts = (): S.PracticeFacts => {
     const shown = sessions.filter((s) => !trash.has(s.id) && (s.attemptCount > 0 || s.status === "completed"));
     const filled = (text: string | undefined | null) => !!text && text.trim().length > 0;
+    const exposure = exposureSteps.map((s) => ({
+      stepId: s.id, position: s.position, deleted: s.deleted,
+      attempts: exposureAttempts.filter((a) => a.stepId === s.id && !a.deleted).map((a) => ({ localDate: a.localDate, before: a.beforeRating, after: a.afterRating, outcome: a.outcome, done: OUTCOME_DONE.has(a.outcome) })),
+    }));
     return S.PracticeFacts.parse({
-      factsVersion: 5,
+      factsVersion: 6,
       generatedAt: new Date().toISOString(),
       today: data.today(),
       transcriptionAvailable: false,
@@ -280,8 +308,8 @@ export function createMockClient(): IpcClient {
         };
       })),
       transferReviews: transferReviews.map((r) => ({
-        id: r.id, localDate: r.localDate, hasListenerWords: filled(r.listenerText), neededClarification: filled(r.clarification), hasSuccess: filled(r.success), hasNextFocus: filled(r.nextFocus),
-        flow: r.flow, tags: r.tags,
+        id: r.id, localDate: r.localDate, hasListenerWords: filled(r.listenerText), neededClarification: filled(r.clarification), hasSuccess: filled(r.success),
+        hasNextFocus: filled(r.nextFocus) || filled(r.extra?.nextTime), flow: r.flow, tags: r.tags, kind: r.kind,
       })),
       phrases: phrases.map((p) => ({ id: p.id, createdAt: new Date().toISOString(), starter: false, deleted: false })),
       phraseReviews: [],
@@ -289,6 +317,7 @@ export function createMockClient(): IpcClient {
       userPrompts: prompts.filter((p) => p.source === "user").length,
       blindComparisons: comparisons.filter((c) => c.blind).length,
       programme: activeProgramme(),
+      exposure,
     });
   };
 
@@ -379,6 +408,99 @@ export function createMockClient(): IpcClient {
       return S.CatchRun.parse(run);
     },
     listCatchRuns: (attemptId) => respond(S.CatchRun.array(), catchRuns.filter((r) => !attemptId || r.attemptId === attemptId).slice().reverse()),
+    listExposureSteps: () => respond(S.ExposureStep.array(), exposureSteps.filter((s) => !s.deleted).sort((a, b) => a.position - b.position).map(({ deleted: _, ...s }) => s)),
+    saveExposureSteps: async (steps) => {
+      if (steps.length > 30) throw new IpcError("invalid", "A ladder has up to 30 steps.");
+      if (steps.some((s) => s.title.trim().length < 3 || s.title.trim().length > 160)) throw new IpcError("invalid", "Give each step a short line of 3 to 160 characters.");
+      const ids = steps.flatMap((s) => (s.id ? [s.id] : []));
+      if (new Set(ids).size !== ids.length) throw new IpcError("invalid", "A step appears twice.");
+      const active = exposureSteps.filter((s) => !s.deleted);
+      if (ids.some((id) => !active.some((s) => s.id === id))) throw new IpcError("invalid", "This step no longer exists. Reopen the ladder and try again.");
+      steps.forEach((input, i) => {
+        const existing = input.id ? active.find((s) => s.id === input.id) : undefined;
+        if (existing) Object.assign(existing, { position: i + 1, title: input.title.trim() });
+        else exposureSteps.push({ id: `step-${Date.now()}-${i}`, position: i + 1, title: input.title.trim(), templateId: input.templateId ?? null, createdAt: new Date().toISOString(), deleted: false });
+      });
+      for (const s of active) if (!ids.includes(s.id)) s.deleted = true;
+      return S.ExposureStep.array().parse(exposureSteps.filter((s) => !s.deleted).sort((a, b) => a.position - b.position).map(({ deleted: _, ...s }) => s));
+    },
+    listExposureAttempts: (stepId) =>
+      respond(S.ExposureAttempt.array(), exposureAttempts.filter((a) => !a.deleted && (!stepId || a.stepId === stepId)).sort((a, b) => a.localDate.localeCompare(b.localDate) || a.createdAt.localeCompare(b.createdAt)).map(({ deleted: _, ...a }) => a)),
+    addExposureAttempt: async (input) => {
+      checkAttempt(input);
+      if (!exposureSteps.some((s) => s.id === input.stepId && !s.deleted)) throw new IpcError("not_found", "This step is no longer on your ladder.");
+      const attempt: S.ExposureAttempt = { ...input, note: input.note.trim(), id: `exposure-${Date.now()}-${exposureAttempts.length}`, createdAt: new Date().toISOString() };
+      exposureAttempts.push(attempt);
+      if (OUTCOME_DONE.has(attempt.outcome)) award("exposure_step", attempt.id, attempt.localDate);
+      return S.ExposureAttempt.parse(attempt);
+    },
+    updateExposureAttempt: async (id, input) => {
+      checkAttempt(input);
+      const attempt = exposureAttempts.find((a) => a.id === id && !a.deleted);
+      if (!attempt) throw new IpcError("not_found", "This attempt no longer exists.");
+      if (attempt.stepId !== input.stepId) throw new IpcError("invalid", "An attempt stays on its own step.");
+      Object.assign(attempt, { ...input, note: input.note.trim() });
+      if (OUTCOME_DONE.has(attempt.outcome)) award("exposure_step", attempt.id, attempt.localDate);
+      const { deleted: _, ...saved } = attempt;
+      return S.ExposureAttempt.parse(saved);
+    },
+    deleteExposureAttempt: async (id) => {
+      const attempt = exposureAttempts.find((a) => a.id === id && !a.deleted);
+      if (!attempt) throw new IpcError("not_found", "This attempt no longer exists.");
+      attempt.deleted = true;
+    },
+    saveRoutineRun: async (input) => {
+      const steps = [...new Set(input.steps)];
+      if (steps.length === 0) throw new IpcError("invalid", "Do at least one step of the routine.");
+      const note = input.keptNote?.trim() || null;
+      if (note && note.length > 4000) throw new IpcError("invalid", "Keep the note under 4,000 characters.");
+      const run: S.RoutineRun = { id: `routine-${Date.now()}-${routineRuns.length}`, localDate: toLocalDate(new Date()), steps, keptNote: note, eventId: input.eventId ?? null, createdAt: new Date().toISOString() };
+      routineRuns.unshift(run);
+      award("routine", run.id, run.localDate);
+      return S.RoutineRun.parse(run);
+    },
+    listRoutineRuns: () => respond(S.RoutineRun.array(), routineRuns),
+    deleteRoutineRun: async (id) => {
+      const at = routineRuns.findIndex((r) => r.id === id);
+      if (at < 0) throw new IpcError("not_found", "This routine is no longer listed.");
+      routineRuns.splice(at, 1);
+    },
+    setSegmentMark: async (revisionId, segment, liked) => {
+      const marks = segmentMarks.get(revisionId) ?? new Set<number>();
+      if (liked) marks.add(segment);
+      else marks.delete(segment);
+      segmentMarks.set(revisionId, marks);
+    },
+    listSegmentMarks: async (attemptId) =>
+      S.SegmentMark.array().parse([...segmentMarks.entries()].filter(([revisionId]) => revisionId.startsWith(`${attemptId}-`)).flatMap(([revisionId, marks]) => [...marks].sort((a, b) => a - b).map((segment) => ({ revisionId, segment, kind: "liked" as const })))),
+    bestMoments: async (weekStart) => {
+      // The preview applies the same rules to its sample transcripts (12.5).
+      const end = addLocalDays(weekStart, 6);
+      const candidates = sessions
+        .filter((s) => s.localDate >= weekStart && s.localDate <= end)
+        .flatMap((s, rank) => s.attempts.flatMap((a) => {
+          const revision = data.reviewForAttempt(a.id).revisions[0];
+          const liked = segmentMarks.get(revision.id) ?? new Set<number>();
+          return revision.segments.flatMap((seg, i) => {
+            const words = seg.text.toLowerCase().split(/\s+/).map((w) => w.replace(/[^a-z']/g, "")).filter(Boolean);
+            const hesitant = revision.annotations.some((n) => n.segmentId === seg.id && n.category === "filler_candidate");
+            const rule = words.length >= 8 && words.length <= 25 && !hesitant && !["and", "so"].includes(words[0]);
+            if (!liked.has(i) && !rule) return [];
+            const moment: S.Moment = { attemptId: a.id, sessionId: s.id, ordinal: a.ordinal, revisionId: revision.id, segment: i, text: seg.text, startMs: seg.startMs, endMs: seg.endMs, localDate: s.localDate, liked: liked.has(i) };
+            return [{ moment, words: words.length, rank }];
+          });
+        }))
+        .sort((x, y) => Number(y.moment.liked) - Number(x.moment.liked) || y.words - x.words || x.rank - y.rank || x.moment.segment - y.moment.segment);
+      const chosen: number[] = [];
+      const used = new Set<string>();
+      // The sample sessions share their transcripts, so the preview never repeats a sentence.
+      const texts = new Set<string>();
+      const fresh = (i: number) => !texts.has(candidates[i].moment.text);
+      const take = (i: number) => { chosen.push(i); used.add(candidates[i].moment.attemptId); texts.add(candidates[i].moment.text); };
+      candidates.forEach((c, i) => { if (chosen.length < 3 && !used.has(c.moment.attemptId) && fresh(i)) take(i); });
+      candidates.forEach((_, i) => { if (chosen.length < 3 && !chosen.includes(i) && fresh(i)) take(i); });
+      return S.Moment.array().parse(chosen.sort((a, b) => a - b).map((i) => candidates[i].moment));
+    },
     skipReanswer: async (promptId, step) => {
       if (![1, 7, 30].includes(step)) throw new IpcError("invalid", "That re-answer step doesn't exist.");
       award("reanswer_skipped", `${promptId}:${step}`, toLocalDate(new Date()));
@@ -573,11 +695,15 @@ export function createMockClient(): IpcClient {
     listTransferReviews: async () => [...transferReviews].sort((a, b) => b.localDate.localeCompare(a.localDate) || b.createdAt.localeCompare(a.createdAt)),
     addTransferReview: async (input) => {
       if (input.situation.trim().length < 3) throw new IpcError("invalid", "Describe the situation in a few words.");
-      const { flow = null, tags = [], ...text } = input;
-      const trimmed = Object.fromEntries(Object.entries(text).map(([k, v]) => [k, String(v).trim()])) as Omit<S.TransferInput, "flow" | "tags">;
-      const review: S.TransferReview = { ...trimmed, flow, tags: [...new Set(tags)], id: `transfer-${Date.now()}-${transferReviews.length}`, createdAt: new Date().toISOString() };
+      const { flow = null, tags = [], kind = "reflection", extra = null, ...text } = input;
+      if ((kind === "aar") !== (extra !== null)) throw new IpcError("invalid", "An after-action review needs its answers.");
+      if (extra && Object.values(extra).every((v) => !v.trim())) throw new IpcError("invalid", "Answer at least one of the four questions.");
+      const trimmed = Object.fromEntries(Object.entries(text).map(([k, v]) => [k, String(v).trim()])) as Omit<S.TransferInput, "flow" | "tags" | "kind" | "extra">;
+      const answers = extra && { planned: extra.planned.trim(), happened: extra.happened.trim(), why: extra.why.trim(), nextTime: extra.nextTime.trim() };
+      const review: S.TransferReview = { ...trimmed, flow, tags: [...new Set(tags)], kind, extra: answers, id: `transfer-${Date.now()}-${transferReviews.length}`, createdAt: new Date().toISOString() };
       transferReviews.push(review);
       award("transfer_review", review.id, review.localDate);
+      if (kind === "aar") award("after_action", review.id, review.localDate);
       return review;
     },
     deleteTransferReview: async (reviewId) => {

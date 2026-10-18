@@ -18,8 +18,9 @@ import { useProgress } from "@/lib/ipc/queries";
 import { useIpc } from "@/lib/ipc";
 import { ProgressView, type ProgressSummary, type TransferFlow, type TransferReview, type TransferTag } from "@/lib/ipc/schemas";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { toLocalDate } from "@/lib/phrase-schedule";
 import { SpeechProfile } from "@/features/insights/SpeechProfile";
+import { AAR_QUESTIONS, FLOWS, KINDS, RECENT_DAYS } from "./reflection-options";
+import { AfterActionForm } from "@/features/confidence/AfterActionForm";
 import { Trends } from "@/features/insights/Trends";
 
 /** Progress tabs: your speech profile first (8.7), then the evidence views. */
@@ -219,25 +220,7 @@ function Summary({ p }: { p: ProgressSummary }) {
   );
 }
 
-/** Today and the 13 days before it, newest first. */
-const RECENT_DAYS = () => Array.from({ length: 14 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return toLocalDate(d); });
-
 const EMPTY_REFLECTION = { situation: "", preparation: "", listenerText: "", clarification: "", success: "", selfReport: "", nextFocus: "" };
-/** The reflection fields used by levels (9.16): your own reading, Your note. */
-const FLOWS: { value: TransferFlow; label: string }[] = [
-  { value: "smooth", label: "Smoothly" },
-  { value: "mixed", label: "Mixed" },
-  { value: "hard", label: "With effort" },
-];
-const KINDS: { value: TransferTag; label: string }[] = [
-  { value: "story", label: "Story" },
-  { value: "meeting", label: "Meeting" },
-  { value: "presentation", label: "Presentation" },
-  { value: "interview", label: "Interview" },
-  { value: "small_talk", label: "Small talk" },
-  { value: "phone", label: "Phone call" },
-  { value: "other", label: "Other" },
-];
 
 /**
  * Real-conversation reflections (4.17, §7 Transfer). No recording of anyone
@@ -247,6 +230,18 @@ const KINDS: { value: TransferTag; label: string }[] = [
 function RealConversations() {
   const ipc = useIpc();
   const qc = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  // A reflection, or an after-action review after a real talk (12.4): ?form=aar opens it.
+  const formKind = params.get("form") === "aar" ? "aar" : "reflection";
+  const setFormKind = (kind: string) =>
+    setParams(
+      (p) => {
+        if (kind === "aar") p.set("form", "aar");
+        else p.delete("form");
+        return p;
+      },
+      { replace: true },
+    );
   const reviews = useQuery({ queryKey: ["transfer-reviews"], queryFn: () => ipc.listTransferReviews() });
   const [form, setForm] = useState(EMPTY_REFLECTION);
   const [flow, setFlow] = useState<TransferFlow | null>(null);
@@ -270,7 +265,20 @@ function RealConversations() {
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
       <div className="min-w-0 space-y-6">
         <Panel>
-          <SectionTitle>Reflect on a real conversation</SectionTitle>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-body font-semibold">{formKind === "aar" ? "After-action review" : "Reflect on a real conversation"}</h2>
+            <ToggleGroup type="single" variant="outline" aria-label="What to write" value={formKind} onValueChange={(v) => v && setFormKind(v)}>
+              <ToggleGroupItem value="reflection" size="sm" className="h-9 px-3">Reflection</ToggleGroupItem>
+              <ToggleGroupItem value="aar" size="sm" className="h-9 px-3">After-action review</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          {formKind === "aar" ? (
+            <>
+              <p className="mb-4 text-muted-foreground">Four questions after a real talk: what you planned, what happened, why, and what you'll do next time.</p>
+              <AfterActionForm />
+            </>
+          ) : (
+          <>
           <p className="mb-4 text-muted-foreground">
             No recording of anyone else is needed. If your listener answers a question, write their words in the listener
             field. Your own reading of it goes in its own field.
@@ -339,6 +347,8 @@ function RealConversations() {
             <Button type="submit" disabled={save.isPending || form.situation.trim().length < 3 || !date}>Save reflection</Button>
             {save.error && <p role="alert" className="text-meta text-destructive">{save.error.message}</p>}
           </form>
+          </>
+          )}
         </Panel>
         <QueryView query={reviews}>
           {(list) =>
@@ -380,7 +390,10 @@ function Reflection({ review: r }: { review: TransferReview }) {
     <li className="rounded-panel border bg-card p-4">
       <div className="flex flex-wrap items-start gap-2">
         <div className="min-w-0 flex-1">
-          <p className="font-medium">{r.situation}</p>
+          <p className="font-medium">
+            {r.situation}
+            {r.kind === "aar" && <span className="ml-2 rounded-md border px-1.5 py-0.5 text-meta font-medium text-muted-foreground">After-action</span>}
+          </p>
           <p className="text-meta text-muted-foreground">{formatDay(r.localDate)}{r.preparation && ` · prepared: ${r.preparation}`}</p>
         </div>
         <Button variant="ghost" size="icon-sm" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label={`Remove the reflection “${r.situation}”`} onClick={() => setConfirm(true)}><Trash2 aria-hidden /></Button>
@@ -392,6 +405,7 @@ function Reflection({ review: r }: { review: TransferReview }) {
         </div>
       )}
       <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+        {r.extra && AAR_QUESTIONS.map((q) => <div key={q.key} className="contents">{field(q.label, r.extra![q.key])}</div>)}
         {field("Asked for clarification", r.clarification)}
         {field("Went well", r.success)}
         {field("Your reading", r.selfReport)}
@@ -399,7 +413,7 @@ function Reflection({ review: r }: { review: TransferReview }) {
         {field("How your speaking flowed", FLOWS.find((f) => f.value === r.flow)?.label ?? "")}
         {field("Kind of conversation", r.tags.map((tag) => KINDS.find((k) => k.value === tag)?.label ?? tag).join(", "))}
       </dl>
-      {(r.flow || r.tags.length > 0 || r.selfReport) && <EvidenceLabel source="note" className="mt-2" />}
+      {(r.flow || r.tags.length > 0 || r.selfReport || r.extra) && <EvidenceLabel source="note" className="mt-2" />}
       {confirm && (
         <p className="mt-3 flex flex-wrap items-center gap-2 text-meta">
           Remove this reflection?

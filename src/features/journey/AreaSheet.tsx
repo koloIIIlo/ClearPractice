@@ -47,6 +47,7 @@ function evidenceLink(e: EvidenceRef, journey: Journey): { to: string | null; te
     return journey.facts.sessions.some((s) => s.id === e.id) ? { to: `/sessions/${e.id}`, text: `Session, ${date}` } : { to: null, text: "From a deleted session" };
   }
   if (e.kind === "transfer") return { to: "/progress?view=real", text: `Real conversation, ${date}` };
+  if (e.kind === "exposure") return { to: "/confidence", text: `Ladder step, ${date}` };
   return { to: "/phrases", text: `Phrase, ${date}` };
 }
 

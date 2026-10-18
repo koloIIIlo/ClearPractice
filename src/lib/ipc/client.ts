@@ -7,6 +7,14 @@ import type {
   ActivityContext,
   ActivityResult,
   CatchRun,
+  ExposureAttempt,
+  ExposureAttemptInput,
+  ExposureStep,
+  ExposureStepInput,
+  Moment,
+  RoutineInput,
+  RoutineRun,
+  SegmentMark,
   Prediction,
   PredictionKind,
   ProgrammeRun,
@@ -375,6 +383,25 @@ export interface IpcClient {
   listCatchRuns(attemptId?: string): Promise<CatchRun[]>;
   /** "Not this one" on a re-answer: it won't come back, and it earns nothing. */
   skipReanswer(promptId: string, step: number): Promise<void>;
+  /** Confidence pack (M12): your exposure ladder, lowest step first. */
+  listExposureSteps(): Promise<ExposureStep[]>;
+  /** Saves the whole ladder in order; steps left out are deleted softly and keep their attempts. */
+  saveExposureSteps(steps: ExposureStepInput[]): Promise<ExposureStep[]>;
+  listExposureAttempts(stepId?: string): Promise<ExposureAttempt[]>;
+  /** A plan or an attempt; done, fully or in part, earns effort once. */
+  addExposureAttempt(input: ExposureAttemptInput): Promise<ExposureAttempt>;
+  updateExposureAttempt(id: string, input: ExposureAttemptInput): Promise<ExposureAttempt>;
+  deleteExposureAttempt(id: string): Promise<void>;
+  /** A finished pre-talk routine; the worry note only when you kept it. */
+  saveRoutineRun(input: RoutineInput): Promise<RoutineRun>;
+  listRoutineRuns(): Promise<RoutineRun[]>;
+  /** Removes a routine run and the note kept with it (soft delete). */
+  deleteRoutineRun(id: string): Promise<void>;
+  /** Likes or unlikes one sentence of a machine transcript. */
+  setSegmentMark(revisionId: string, segment: number, liked: boolean): Promise<void>;
+  listSegmentMarks(attemptId: string): Promise<SegmentMark[]>;
+  /** The week's best moments from `weekStart` (local date), with stored segment times only. */
+  bestMoments(weekStart: string): Promise<Moment[]>;
   /** Insights (M8): where saved phrases turned up in takes (one phrase, or all). */
   listPhraseUses(phraseId?: string): Promise<PhraseUse[]>;
   /** Your yes/no note about a take; null clears it. */

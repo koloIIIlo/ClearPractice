@@ -28,7 +28,7 @@ it("rotates the focus daily and the new topic weekly, from real sessions and phr
   expect(next.weekly.newSituation.promptId).not.toBe(monday.weekly.newSituation.promptId);
   expect(next.weekly.realConversation.task).not.toBe(monday.weekly.realConversation.task);
   // A reflection saved this week (Monday to Sunday) marks the real-conversation row done (4.17).
-  const review = { id: "t", localDate: "2026-10-05", situation: "s", preparation: "", listenerText: "", clarification: "", success: "", selfReport: "", nextFocus: "", createdAt: "x", flow: null, tags: [] };
+  const review = { id: "t", localDate: "2026-10-05", situation: "s", preparation: "", listenerText: "", clarification: "", success: "", selfReport: "", nextFocus: "", createdAt: "x", flow: null, tags: [], kind: "reflection" as const, extra: null };
   const args = { length: "short" as const, sessions: [], phrases: [], latest: null, reviews: [review] };
   expect(buildTodayPlan({ ...args, localDate: "2026-10-11" }).weekly.realConversation.done).toBe(true);
   expect(buildTodayPlan({ ...args, localDate: "2026-10-12" }).weekly.realConversation.done).toBe(false);

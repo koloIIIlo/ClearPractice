@@ -4,7 +4,7 @@ import { isComeback } from "@/lib/engagement/fresh-start";
 import { toLocalDate } from "@/lib/phrase-schedule";
 import { usePracticeEvents, usePreferences } from "@/lib/ipc/queries";
 import { Link, useNavigate } from "react-router";
-import { ArrowRight, Compass, MessagesSquare, Mic, RotateCcw } from "lucide-react";
+import { ArrowRight, Compass, MessagesSquare, Mic, RotateCcw, Wind } from "lucide-react";
 import { EmptyState, LoadingBlock, Page, Panel, QueryView, SectionTitle } from "@/components/page";
 import { ServiceStatusLine } from "@/components/service-status";
 import { Badge } from "@/components/ui/badge";
@@ -282,6 +282,17 @@ function TodayContent({
                 </div>
                 <Button variant="outline" size="sm" asChild>
                   <Link to="/progress?view=real">{plan.weekly.realConversation.done ? "Add another" : "Add reflection"}</Link>
+                </Button>
+              </li>
+              {/* The pre-talk routine (12.3): always one click away before a real talk. */}
+              <li className="flex flex-wrap items-start gap-4 px-4 py-4">
+                <Wind aria-hidden className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1 space-y-1">
+                  <span className="font-medium">Before a real talk?</span>
+                  <p>Run the 3-minute routine: breathe, warm up, reframe, unload and encourage.</p>
+                </div>
+                <Button variant="outline" size="sm" asChild>
+                  <Link to="/confidence/routine">Start the routine</Link>
                 </Button>
               </li>
               {!firstRun && (

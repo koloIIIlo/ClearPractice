@@ -118,6 +118,9 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
       const { filled, total } = profileReadiness(i.facts);
       return count(filled, total);
     }) },
+  // The learning engine (M11).
+  { id: "prediction-10", title: "Self-aware", description: "Make 10 predictions before looking.", category: "craft", icon: Target,
+    criterion: custom("10 takes with a guess first", ({ facts }) => count(facts.takes.filter((tk) => Object.keys(tk.predictions).length > 0).length, 10)) },
   // Courage
   { id: "unfamiliar-first", title: "Into the unknown", description: "Answer an unfamiliar question.", category: "courage", icon: Zap,
     criterion: { kind: "sessions", label: "1 unfamiliar question", filter: { familiarity: "unfamiliar" }, atLeast: 1 } },
@@ -131,6 +134,14 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   boss("boss-qa", "Held the floor", "Finish the sceptical Q&A boss.", "skeptical-qa"),
   boss("boss-toast", "Raise a glass", "Finish the wedding toast boss.", "toast"),
   boss("boss-meeting", "Back on track", "Finish the interrupted meeting boss.", "meeting"),
+  // The confidence pack (M12).
+  { id: "ladder-3", title: "Three steps up", description: "Complete 3 steps of your exposure ladder.", category: "courage", icon: Footprints,
+    criterion: { kind: "exposure", label: "3 steps of your exposure ladder", steps: 3 } },
+  { id: "stretch", title: "Stretch", description: "Complete a step you rated 6 or more before.", category: "courage", icon: Flag,
+    criterion: { kind: "exposure", label: "A step you rated 6 or more before, done", steps: 1, minBefore: 6 } },
+  // Real world
+  { id: "aar", title: "Lessons learned", description: "Write an after-action review.", category: "real", icon: NotebookPen,
+    criterion: custom("1 after-action review", ({ facts }) => count(facts.transferReviews.filter((r) => r.kind === "aar").length, 1)) },
   // Explore
   { id: "all-exercises", title: "Well rounded", description: "Try all four exercises.", category: "explore", icon: Award,
     criterion: custom("All four exercises", ({ facts }) => count(new Set(facts.sessions.filter((s) => s.takeCount > 0 && CORE.has(s.exerciseType ?? "")).map((s) => s.exerciseType)).size, 4)) },
@@ -163,11 +174,18 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
     criterion: { kind: "phraseUses", label: "5 different saved phrases in your takes", distinctPhrases: 5 } },
   { id: "phrase-reviews-100", title: "Hundred reviews", description: "Review phrases 100 times.", category: "phrases", icon: Repeat,
     criterion: { kind: "phrases", label: "100 phrase reviews", reviews: 100 } },
+  { id: "say-it-10", title: "Out loud", description: "Say 10 phrases aloud during review.", category: "phrases", icon: Mic,
+    criterion: custom("10 phrases said aloud", ({ facts }) => {
+      const sayIt = new Set(facts.sessions.filter((s) => s.exerciseType === "phrase_say_it").map((s) => s.id));
+      return count(facts.takes.filter((tk) => sayIt.has(tk.sessionId)).length, 10);
+    }) },
   // Listening
   { id: "imitation-3-features", title: "Good ear", description: "Imitate emphasis, rhythm and endings.", category: "listening", icon: Ear,
     criterion: levelCriterion("listening", 2) },
   { id: "ab-blind", title: "Blind test", description: "Choose between two takes without knowing which is which.", category: "listening", icon: EyeOff,
     criterion: custom("A blind A/B choice", ({ facts }) => count(facts.blindComparisons, 1)) },
+  { id: "catch-it", title: "Caught it", description: "Catch 4 or more hesitations in one round of Catch it.", category: "listening", icon: Ear,
+    criterion: custom("A round of Catch it with 4 or more caught", ({ facts }) => count(facts.takes.some((tk) => tk.catchRuns.some((r) => r.caught >= 4)) ? 1 : 0, 1)) },
 ];
 
 /** Progress toward an achievement, with the evidence behind it. */

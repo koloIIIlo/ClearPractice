@@ -146,7 +146,7 @@ function ReviewBody({ session, review, durationMs }: { session: SessionDetail; r
             </TabsList>
             <TabsContent value="raw">
               {raw ? (
-                <Transcript revision={raw} positionMs={playback.positionMs} onSeek={playback.seek} onPlayRange={playFrom} />
+                <Transcript revision={raw} positionMs={playback.positionMs} onSeek={playback.seek} onPlayRange={playFrom} attemptId={review.attemptId} />
               ) : (
                 <ErrorState
                   title="No transcript for this take"

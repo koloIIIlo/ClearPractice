@@ -34,10 +34,14 @@ pub enum EventKind {
     ProgrammeStep,
     CatchRun,
     ReanswerSkipped,
+    // Confidence pack (M12).
+    ExposureStep,
+    Routine,
+    AfterAction,
 }
 
 impl EventKind {
-    pub const ALL: [EventKind; 19] = [
+    pub const ALL: [EventKind; 22] = [
         EventKind::TakeSaved,
         EventKind::Retake,
         EventKind::SequenceCompleted,
@@ -57,6 +61,9 @@ impl EventKind {
         EventKind::ProgrammeStep,
         EventKind::CatchRun,
         EventKind::ReanswerSkipped,
+        EventKind::ExposureStep,
+        EventKind::Routine,
+        EventKind::AfterAction,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -80,6 +87,9 @@ impl EventKind {
             EventKind::ProgrammeStep => "programme_step",
             EventKind::CatchRun => "catch_run",
             EventKind::ReanswerSkipped => "reanswer_skipped",
+            EventKind::ExposureStep => "exposure_step",
+            EventKind::Routine => "routine",
+            EventKind::AfterAction => "after_action",
         }
     }
 
@@ -109,6 +119,11 @@ impl EventKind {
             EventKind::CatchRun => 10,
             // Skipping a re-answer is recorded so it doesn't return; it earns nothing.
             EventKind::ReanswerSkipped => 0,
+            // A ladder attempt you did (fully or partly), the pre-talk routine, and an
+            // after-action review on top of its reflection (appendix B).
+            EventKind::ExposureStep => 30,
+            EventKind::Routine => 10,
+            EventKind::AfterAction => 20,
         }
     }
 
@@ -155,7 +170,7 @@ mod tests {
         assert_eq!(EventKind::parse("mission"), None, "added with M14");
         assert_eq!(EventKind::parse("level_reached").map(|k| k.xp()), Some(50));
         let total: u32 = EventKind::ALL.iter().map(|k| k.xp()).sum();
-        assert_eq!(total, 327, "update appendix B when amounts change");
+        assert_eq!(total, 387, "update appendix B when amounts change");
     }
 
     #[test]

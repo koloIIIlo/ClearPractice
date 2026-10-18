@@ -182,3 +182,34 @@ it("plays the take from a transcript line when it is clicked", async () => {
   act(() => link.publish(2_500));
   expect(second).toHaveAttribute("aria-current", "true");
 });
+
+it("likes a sentence for the week's best moments (12.5)", async () => {
+  const user = userEvent.setup();
+  const segment = (text: string, startMs: number, endMs: number) => ({ text, startMs, endMs, timingSource: "Estimated" as const, timingUnavailableReason: null });
+  const marks: { revisionId: string; segment: number; kind: "liked" }[] = [];
+  const client = setup({
+    getTranscriptionSetup: configured,
+    listSegmentMarks: async () => [...marks],
+    setSegmentMark: vi.fn(async (revisionId: string, index: number, liked: boolean) => {
+      if (liked) marks.push({ revisionId, segment: index, kind: "liked" });
+    }),
+    getAttemptTranscript: async () => ({
+      attemptId: "take-1", correction: null, job: null,
+      revision: {
+        id: "take-1--1", source: "local", provider: "whisper.cpp", modelId: "base", backend: "cpu", prompt: null, language: "en",
+        text: "First line. Second line.", workerElapsedMs: 1_000, createdAt: "2026-10-08T01:00:14.000Z",
+        segments: [segment(" First line.", 0, 2_000), segment(" Second line.", 2_000, 4_000)],
+        measures: {
+          definitionVersion: 1, source: "Estimated", wordCount: 4, speechSpanMs: 4_000, paceWpm: null, paceUnavailableReason: "Short.",
+          pauseThresholdMs: 700, pauses: [], pausesUnavailableReason: null, fillers: [], repeatedWords: [], untimedSegments: 0, voice: null,
+        },
+      },
+    }),
+  });
+  const like = await screen.findByRole("button", { name: "Like: Second line." });
+  await waitFor(() => expect(like).toBeEnabled());
+  expect(like).toHaveAttribute("aria-pressed", "false");
+  await user.click(like);
+  expect(client.setSegmentMark).toHaveBeenCalledWith("take-1--1", 1, true);
+  expect(await screen.findByRole("button", { name: "Unlike: Second line." })).toHaveAttribute("aria-pressed", "true");
+});

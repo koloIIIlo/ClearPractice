@@ -14,7 +14,7 @@ use std::collections::HashMap;
 /// app_settings key marking that history was turned into events once.
 const BACKFILL_KEY: &str = "engagement_backfill_v1";
 /// Bumped when facts gain fields, so the interface can tell what to expect.
-pub const FACTS_VERSION: u32 = 5;
+pub const FACTS_VERSION: u32 = 6;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -301,6 +301,29 @@ pub struct FactTransfer {
     /// Facts v3 (9.16): how your speaking flowed and the kinds of conversation, Your note.
     pub flow: Option<String>,
     pub tags: Vec<String>,
+    /// Facts v6 (12.4): "reflection" or "aar" (an after-action review).
+    pub kind: String,
+}
+
+/// Facts v6 (12.2): a ladder step, deleted or not, with its attempts (your ratings, Your note).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FactExposureStep {
+    pub step_id: String,
+    pub position: u32,
+    pub deleted: bool,
+    pub attempts: Vec<FactExposureAttempt>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FactExposureAttempt {
+    pub local_date: String,
+    pub before: Option<u8>,
+    pub after: Option<u8>,
+    pub outcome: String,
+    /// Done, fully or in part.
+    pub done: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -341,6 +364,8 @@ pub struct PracticeFacts {
     pub blind_comparisons: u32,
     /// Facts v5 (M11): the programme you are running, if any.
     pub programme: Option<super::learning::ProgrammeRun>,
+    /// Facts v6 (M12): your exposure ladder.
+    pub exposure: Vec<FactExposureStep>,
 }
 
 fn count_rows(conn: &Connection, sql: &str) -> Result<u32> {
@@ -582,7 +607,7 @@ impl DatabaseOwner {
             .map_err(db_error)?;
 
         let mut stmt = conn
-            .prepare("SELECT id,local_date,listener_text,clarification,success,next_focus,flow,tags FROM transfer_reviews WHERE deleted_at_ms IS NULL ORDER BY local_date,created_at_ms")
+            .prepare("SELECT id,local_date,listener_text,clarification,success,next_focus,flow,tags,kind,json_extract(extra,'$.nextTime') FROM transfer_reviews WHERE deleted_at_ms IS NULL ORDER BY local_date,created_at_ms")
             .map_err(db_error)?;
         let transfer_reviews = stmt
             .query_map([], |r| {
@@ -592,14 +617,38 @@ impl DatabaseOwner {
                     has_listener_words: filled(&r.get(2)?),
                     needed_clarification: filled(&r.get(3)?),
                     has_success: filled(&r.get(4)?),
-                    has_next_focus: filled(&r.get(5)?),
+                    // An after-action review's "next time" is its next focus.
+                    has_next_focus: filled(&r.get(5)?) || filled(&r.get(9)?),
                     flow: r.get(6)?,
                     tags: serde_json::from_str(&r.get::<_, String>(7)?).unwrap_or_default(),
+                    kind: r.get(8)?,
                 })
             })
             .map_err(db_error)?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(db_error)?;
+        let mut stmt = conn.prepare("SELECT id,position,deleted_at_ms IS NOT NULL FROM exposure_steps ORDER BY deleted_at_ms IS NOT NULL,position,created_at_ms").map_err(db_error)?;
+        let mut exposure = stmt
+            .query_map([], |r| Ok(FactExposureStep { step_id: r.get(0)?, position: r.get(1)?, deleted: r.get(2)?, attempts: Vec::new() }))
+            .map_err(db_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(db_error)?;
+        let mut stmt = conn
+            .prepare("SELECT step_id,local_date,before_rating,after_rating,outcome FROM exposure_attempts WHERE deleted_at_ms IS NULL ORDER BY local_date,created_at_ms,id")
+            .map_err(db_error)?;
+        let attempts = stmt
+            .query_map([], |r| {
+                let outcome: String = r.get(4)?;
+                Ok((r.get::<_, String>(0)?, FactExposureAttempt { local_date: r.get(1)?, before: r.get(2)?, after: r.get(3)?, done: matches!(outcome.as_str(), "yes" | "partly"), outcome }))
+            })
+            .map_err(db_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(db_error)?;
+        for (step, attempt) in attempts {
+            if let Some(s) = exposure.iter_mut().find(|s| s.step_id == step) {
+                s.attempts.push(attempt);
+            }
+        }
         let mut stmt = conn.prepare("SELECT id,created_at_ms,deleted_at_ms IS NOT NULL FROM phrase_cards ORDER BY created_at_ms,id").map_err(db_error)?;
         let phrases = stmt
             .query_map([], |r| {
@@ -629,6 +678,7 @@ impl DatabaseOwner {
             phrase_reviews,
             progression,
             programme,
+            exposure,
         })
     }
 }
@@ -781,6 +831,8 @@ pub(crate) mod tests {
                 next_focus: String::new(),
                 flow: None,
                 tags: Vec::new(),
+                kind: None,
+                extra: None,
             })
             .unwrap();
         assert!(db.record_sequence_completed(&["missing".into()], "2026-10-12").unwrap().is_none(), "no take, no event");
@@ -1007,7 +1059,7 @@ pub(crate) mod tests {
     }
 
     /// The interface parses facts with strict schemas; its fixture
-    /// (src/lib/ipc/fixtures/facts-v5.json) must have exactly these fields.
+    /// (src/lib/ipc/fixtures/facts-v6.json) must have exactly these fields.
     #[test]
     fn facts_serialize_with_the_same_fields_as_the_interface_fixture() {
         let root = TestRoot::new();
@@ -1017,18 +1069,22 @@ pub(crate) mod tests {
         db.add_transfer_review(&super::super::transfer::TransferInput {
             local_date: "2026-10-14".into(), situation: "Explained my job".into(), preparation: String::new(), listener_text: "Your job sounds fun".into(),
             clarification: String::new(), success: String::new(), self_report: String::new(), next_focus: String::new(), flow: Some("smooth".into()), tags: vec!["story".into()],
+            kind: None, extra: None,
         }).unwrap();
         let today = chrono::NaiveDate::from_ymd_opt(2026, 10, 16).unwrap();
         let card = db.add_phrase(&phrase_text(), None, today).unwrap();
         db.review_phrase(&card.id, "good", today).unwrap();
         db.record_progression("advance", "Three sessions").unwrap();
+        let step = db.save_exposure_steps(&[super::super::confidence::StepInput { id: None, title: "Ask one question in a meeting".into(), template_id: None }]).unwrap().remove(0);
+        db.add_exposure_attempt(&super::super::confidence::AttemptInput { step_id: step.id, local_date: "2026-10-15".into(), before_rating: Some(6), after_rating: Some(3), outcome: "yes".into(), note: String::new() }).unwrap();
         let actual = serde_json::to_value(db.practice_facts("2026-10-16").unwrap()).unwrap();
-        let fixture: Value = serde_json::from_str(include_str!("../../../src/lib/ipc/fixtures/facts-v5.json")).unwrap();
+        let fixture: Value = serde_json::from_str(include_str!("../../../src/lib/ipc/fixtures/facts-v6.json")).unwrap();
         let keys = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<std::collections::BTreeSet<_>>();
         assert_eq!(keys(&actual), keys(&fixture));
-        for list in ["sessions", "takes", "transferReviews", "phrases", "phraseReviews", "progression"] {
+        for list in ["sessions", "takes", "transferReviews", "phrases", "phraseReviews", "progression", "exposure"] {
             assert_eq!(keys(&actual[list][0]), keys(&fixture[list][0]), "{list}");
         }
+        assert_eq!(keys(&actual["exposure"][0]["attempts"][0]), keys(&fixture["exposure"][0]["attempts"][0]));
         assert_eq!(actual["factsVersion"], fixture["factsVersion"]);
         assert_eq!(actual["sessions"][0]["outline"], serde_json::json!([true, false, true]));
     }

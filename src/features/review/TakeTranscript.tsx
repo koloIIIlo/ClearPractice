@@ -1,3 +1,4 @@
+import { LikeButton, useLikedSentences } from "@/features/confidence/LikeSentence";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -130,8 +131,10 @@ type Revision = NonNullable<AttemptTranscript["revision"]>;
  * The transcript, one row per segment. With a player on the page, clicking a
  * row plays from its (estimated) start, and the row being heard is highlighted.
  */
-function Segments({ revision, link }: { revision: Revision; link?: PlayerLink }) {
+function Segments({ attemptId, revision, link }: { attemptId: string; revision: Revision; link?: PlayerLink }) {
   const position = useLinkedPosition(link);
+  // ♡ Like (12.5): sentences you like lead the week's best moments.
+  const likes = useLikedSentences(attemptId);
   const playable = !!link && position !== null;
   const current =
     position === null ? -1 : revision.segments.findIndex((s) => s.startMs != null && s.endMs != null && position >= s.startMs && position < s.endMs);
@@ -145,8 +148,18 @@ function Segments({ revision, link }: { revision: Revision; link?: PlayerLink })
             {segment.startMs != null ? formatClock(segment.startMs) : "–"}
           </span>
         );
+        const liked = likes.liked.has(`${revision.id}:${i}`);
+        const like = (
+          <LikeButton
+            liked={liked}
+            sentence={segment.text.trim()}
+            disabled={!likes.ready || likes.toggle.isPending}
+            onToggle={() => likes.toggle.mutate({ revisionId: revision.id, segment: i, liked: !liked })}
+          />
+        );
         return (
-          <li key={i}>
+          <li key={i} className="group flex items-start gap-1">
+            <div className="min-w-0 flex-1">
             {playable && segment.startMs != null ? (
               <button
                 type="button"
@@ -167,6 +180,8 @@ function Segments({ revision, link }: { revision: Revision; link?: PlayerLink })
                 <SegmentText text={segment.text.trim()} fillers={fillers} />
               </div>
             )}
+            </div>
+            {like}
           </li>
         );
       })}
@@ -372,7 +387,7 @@ export function TakeTranscript({ attemptId, link }: { attemptId: string; link?: 
 
       {revision && (
         <>
-          <Segments revision={revision} link={link} />
+          <Segments attemptId={attemptId} revision={revision} link={link} />
           <Measures m={revision.measures} />
           <FillerReview revisionId={revision.id} measures={revision.measures} link={link} onChanged={() => void qc.invalidateQueries({ queryKey: key })} />
           {data && <Corrections data={data} onSaved={() => void qc.invalidateQueries({ queryKey: key })} />}

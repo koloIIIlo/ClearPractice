@@ -232,7 +232,7 @@ export function progressOf(c: Criterion, facts: PracticeFacts, ctx: EvalContext)
     case "activity": {
       if (!isDrillType(c.type)) {
         return c.type === "upgrade"
-          ? unavailable(c.label, c.atLeast, "Arrives with the learning engine", "learning")
+          ? unavailable(c.label, c.atLeast, "Arrives with the conversation partner", "partner")
           : unavailable(c.label, c.atLeast, "Arrives with talks and events", "events");
       }
       const result = c.result;
@@ -244,8 +244,13 @@ export function progressOf(c: Criterion, facts: PracticeFacts, ctx: EvalContext)
       const evidence = plays.slice(0, MAX_EVIDENCE).map((p): EvidenceRef => ({ kind: p.takes.length === 1 && DRILL_UNITS[c.type as DrillType] === "take" ? "take" : "session", id: p.takes.length === 1 && DRILL_UNITS[c.type as DrillType] === "take" ? p.takes[0].id : p.session.id, date: p.session.localDate }));
       return progress(c.label, plays.length, c.atLeast, evidence, c.distinctDays ? { done: distinctCount(plays.map((p) => p.session.localDate)), needed: c.distinctDays, unit: "days" } : null);
     }
-    case "exposure":
-      return unavailable(c.label, c.steps, "Arrives with the confidence pack", "confidence");
+    case "exposure": {
+      // Steps of your ladder with an attempt done (12.2); with minBefore, one you rated that high beforehand.
+      const qualifying = (a: PracticeFacts["exposure"][number]["attempts"][number]) => a.done && (c.minBefore === undefined || (a.before ?? -1) >= c.minBefore);
+      const steps = facts.exposure.filter((s) => s.attempts.some(qualifying));
+      const evidence = steps.map((s): EvidenceRef => ({ kind: "exposure", id: s.stepId, date: s.attempts.filter(qualifying).at(-1)!.localDate }));
+      return progress(c.label, steps.length, c.steps, evidence);
+    }
     case "conversation":
       return unavailable(c.label, c.atLeast, "Arrives with the conversation partner", "partner");
     case "listenerAnswers":

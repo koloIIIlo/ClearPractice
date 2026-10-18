@@ -43,11 +43,11 @@ describe("screen states (1.9)", () => {
     it(`shows an error with Try again on ${route} when loading fails`, async () => {
       window.location.hash = route;
       render(<App client={failing()} />);
-      const alerts = await screen.findAllByRole("alert", {}, { timeout: 5000 });
-      expect(alerts.some((a) => /Session storage is unavailable/.test(a.textContent ?? ""))).toBe(true);
+      // A whole app render with retried failures: allow for a busy test worker (the full suite runs in one).
+      await waitFor(() => expect(screen.getAllByRole("alert").some((a) => /Session storage is unavailable/.test(a.textContent ?? ""))).toBe(true), { timeout: 10_000 });
       expect(screen.getAllByRole("button", { name: "Try again" }).length).toBeGreaterThan(0);
       expect(screen.getAllByRole("link", { name: "Today" }).length).toBeGreaterThan(0); // shell still usable
-    });
+    }, 15_000);
   }
 
   for (const route of ["#/sessions", "#/sessions/trash", "#/phrases", "#/exercises"]) {

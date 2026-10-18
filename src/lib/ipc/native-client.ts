@@ -162,6 +162,18 @@ export function createNativeClient(): IpcClient {
     saveCatchRun: (attemptId, presses, caught, total) => command("save_catch_run", S.CatchRun, { attemptId, presses, caught, total }),
     listCatchRuns: (attemptId) => command("list_catch_runs", S.CatchRun.array(), { attemptId: attemptId ?? null }),
     skipReanswer: async (promptId, step) => { await command("skip_reanswer", z.null(), { promptId, step }); },
+    listExposureSteps: () => command("list_exposure_steps", S.ExposureStep.array()),
+    saveExposureSteps: (steps) => command("save_exposure_steps", S.ExposureStep.array(), { steps: steps.map((s) => ({ id: s.id ?? null, title: s.title, templateId: s.templateId ?? null })) }),
+    listExposureAttempts: (stepId) => command("list_exposure_attempts", S.ExposureAttempt.array(), { stepId: stepId ?? null }),
+    addExposureAttempt: (input) => command("add_exposure_attempt", S.ExposureAttempt, { input }),
+    updateExposureAttempt: (id, input) => command("update_exposure_attempt", S.ExposureAttempt, { id, input }),
+    deleteExposureAttempt: async (id) => { await command("delete_exposure_attempt", z.null(), { id }); },
+    saveRoutineRun: (input) => command("save_routine_run", S.RoutineRun, { input: { steps: input.steps, keptNote: input.keptNote, eventId: input.eventId ?? null } }),
+    listRoutineRuns: () => command("list_routine_runs", S.RoutineRun.array()),
+    deleteRoutineRun: async (id) => { await command("delete_routine_run", z.null(), { id }); },
+    setSegmentMark: async (revisionId, segment, liked) => { await command("set_segment_mark", z.null(), { revisionId, segment, liked }); },
+    listSegmentMarks: (attemptId) => command("list_segment_marks", S.SegmentMark.array(), { attemptId }),
+    bestMoments: (weekStart) => command("best_moments", S.Moment.array(), { weekStart }),
     listPhraseUses: (phraseId) => command("list_phrase_uses", S.PhraseUse.array(), { cardId: phraseId ?? null }),
     setSelfCheck: async (attemptId, checkId, value) => {
       await command("set_self_check", z.null(), { attemptId, checkId, value });

@@ -56,6 +56,9 @@ export const QUEST_TEMPLATES: readonly QuestTemplate[] = [
     (d): QuestTemplate => ({ id: `drill-${d.id}`, title: d.type === "boss" ? "Play a boss level" : `Play ${d.title}`, area: d.areas[0], needed: 1, needs: always, count: (w) => sessionsWith(w, (s) => s.exerciseType === d.type) }),
   ),
   { id: "daily-3", title: "Play the daily prompt 3 times", area: "spontaneity", needed: 3, needs: always, count: (w) => sessionsWith(w, (s) => s.exerciseType === "daily") },
+  // The confidence pack (M12): offered once you have a ladder.
+  { id: "ladder-1", title: "Take one step on your ladder", area: "courage", needed: 1, needs: (f) => f.exposure.some((s) => !s.deleted),
+    count: (w) => w.facts.exposure.reduce((n, s) => n + s.attempts.filter((a) => a.done && inWeek(a.localDate, w.start)).length, 0) },
 ];
 
 export const questTemplate = (id: string) => QUEST_TEMPLATES.find((q) => q.id === id);

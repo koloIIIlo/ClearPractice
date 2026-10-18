@@ -50,7 +50,7 @@ mod tests {
         db.add_transfer_review(&crate::storage::database::transfer::TransferInput {
             local_date: "2026-10-09".into(), situation: "Talked to Anna about the Zurich office".into(), preparation: String::new(),
             listener_text: "secret words".into(), clarification: String::new(), success: String::new(), self_report: String::new(), next_focus: String::new(),
-            flow: None, tags: Vec::new(),
+            flow: None, tags: Vec::new(), kind: None, extra: None,
         }).unwrap();
         let text = report(&db, json!({"openAiKey": true})).unwrap();
         let value: Value = serde_json::from_str(&text).unwrap();

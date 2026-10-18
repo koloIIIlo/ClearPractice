@@ -1,7 +1,8 @@
 //! Real-conversation reflections (plan 4.17, §7 Transfer). No recording of
 //! anyone else: the user writes what happened. The listener's own words are
 //! stored apart from the user's reading of the conversation, and nothing is
-//! averaged into a score.
+//! averaged into a score. After-action reviews (roadmap 12.4) are a kind of
+//! reflection with four answers of their own.
 use super::{db_error, iso, DatabaseOwner, Result};
 use crate::storage::recording;
 use rusqlite::params;
@@ -27,6 +28,22 @@ pub struct TransferInput {
     /// What kind of conversation it was (9.16), from `TRANSFER_TAGS`.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// "reflection" (the default) or "aar", an after-action review (12.4).
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// An after-action review's four answers; only with `kind: "aar"`.
+    #[serde(default)]
+    pub extra: Option<AfterAction>,
+}
+
+/// The US Army's four debrief questions, in plain words (12.4).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
+pub struct AfterAction {
+    pub planned: String,
+    pub happened: String,
+    pub why: String,
+    pub next_time: String,
 }
 
 /// Kinds of conversation you can note (9.16).
@@ -46,6 +63,10 @@ pub struct TransferReview {
     pub next_focus: String,
     pub flow: Option<String>,
     pub tags: Vec<String>,
+    /// "reflection" or "aar" (12.4).
+    pub kind: String,
+    /// An after-action review's four answers, else null.
+    pub extra: Option<AfterAction>,
     pub created_at: String,
 }
 
@@ -67,11 +88,30 @@ impl TransferInput {
         if self.tags.len() > TRANSFER_TAGS.len() || self.tags.iter().any(|tag| !TRANSFER_TAGS.contains(&tag.as_str())) {
             return Err("Choose the kind of conversation from the list.".into());
         }
+        match (self.kind(), &self.extra) {
+            ("reflection", None) => {}
+            ("aar", Some(a)) => {
+                let answers = [&a.planned, &a.happened, &a.why, &a.next_time];
+                if answers.iter().any(|f| f.chars().count() > 2000 || f.contains('\0')) {
+                    return Err("Keep each answer under 2,000 characters.".into());
+                }
+                if answers.iter().all(|f| f.trim().is_empty()) {
+                    return Err("Answer at least one of the four questions.".into());
+                }
+            }
+            ("aar", None) => return Err("An after-action review needs its answers.".into()),
+            ("reflection", Some(_)) => return Err("Only an after-action review has these answers.".into()),
+            _ => return Err("Unknown kind of reflection.".into()),
+        }
         Ok(())
+    }
+
+    fn kind(&self) -> &str {
+        self.kind.as_deref().unwrap_or("reflection")
     }
 }
 
-const COLUMNS: &str = "id,local_date,situation,preparation,listener_text,clarification,success,self_report,next_focus,created_at_ms,flow,tags";
+const COLUMNS: &str = "id,local_date,situation,preparation,listener_text,clarification,success,self_report,next_focus,created_at_ms,flow,tags,kind,extra";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<TransferReview> {
     Ok(TransferReview {
@@ -87,6 +127,8 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<TransferReview> {
         created_at: iso(r.get(9)?),
         flow: r.get(10)?,
         tags: serde_json::from_str(&r.get::<_, String>(11)?).unwrap_or_default(),
+        extra: if r.get::<_, String>(12)? == "aar" { serde_json::from_str(&r.get::<_, String>(13)?).ok() } else { None },
+        kind: r.get(12)?,
     })
 }
 
@@ -125,14 +167,25 @@ impl DatabaseOwner {
             n += 1;
         };
         let tx = conn.transaction().map_err(db_error)?;
+        let extra = match &input.extra {
+            Some(a) => serde_json::to_string(&AfterAction { planned: a.planned.trim().into(), happened: a.happened.trim().into(), why: a.why.trim().into(), next_time: a.next_time.trim().into() }),
+            None => Ok("{}".into()),
+        }
+        .map_err(|e| e.to_string())?;
         tx.execute(
-            "INSERT INTO transfer_reviews(id,local_date,situation,preparation,listener_text,clarification,success,self_report,next_focus,created_at_ms,flow,tags) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+            "INSERT INTO transfer_reviews(id,local_date,situation,preparation,listener_text,clarification,success,self_report,next_focus,created_at_ms,flow,tags,kind,extra) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
             params![id, input.local_date, input.situation.trim(), input.preparation.trim(), input.listener_text.trim(), input.clarification.trim(),
-                input.success.trim(), input.self_report.trim(), input.next_focus.trim(), now as i64, input.flow, serde_json::to_string(&dedup(&input.tags)).map_err(|e| e.to_string())?],
+                input.success.trim(), input.self_report.trim(), input.next_focus.trim(), now as i64, input.flow, serde_json::to_string(&dedup(&input.tags)).map_err(|e| e.to_string())?,
+                input.kind(), extra],
         )
         .map_err(db_error)?;
-        // Effort points (roadmap 7.4) on the day of the conversation.
-        super::engagement::award(&tx, &crate::engagement::NewEvent { kind: crate::engagement::EventKind::TransferReview, ref_id: &id, local_date: &input.local_date, session_id: None, attempt_id: None, created_at_ms: now as i64, backfilled: false })?;
+        // Effort points (roadmap 7.4) on the day of the conversation; an
+        // after-action review earns its own event on top (12.4).
+        let event = |kind| crate::engagement::NewEvent { kind, ref_id: &id, local_date: &input.local_date, session_id: None, attempt_id: None, created_at_ms: now as i64, backfilled: false };
+        super::engagement::award(&tx, &event(crate::engagement::EventKind::TransferReview))?;
+        if input.kind() == "aar" {
+            super::engagement::award(&tx, &event(crate::engagement::EventKind::AfterAction))?;
+        }
         let review = tx.query_row(&format!("SELECT {COLUMNS} FROM transfer_reviews WHERE id=?1"), [&id], row).map_err(db_error)?;
         tx.commit().map_err(db_error)?;
         Ok(review)
@@ -168,6 +221,8 @@ mod tests {
             next_focus: "Give the reason in the first sentence".into(),
             flow: None,
             tags: Vec::new(),
+            kind: None,
+            extra: None,
         }
     }
 
@@ -202,5 +257,31 @@ mod tests {
         let facts = db.practice_facts("2026-10-16").unwrap();
         let story = facts.transfer_reviews.iter().find(|r| r.id == saved.id).unwrap();
         assert_eq!((story.flow.as_deref(), story.tags.clone()), (Some("smooth"), vec!["story".to_string(), "meeting".to_string()]));
+    }
+
+    #[test]
+    fn aar_reviews_store_extra_fields_and_award_both_events() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        let answers = AfterAction { planned: " Open with the decision ".into(), happened: "I opened with the history".into(), why: String::new(), next_time: "Decision first".into() };
+        let aar = TransferInput { kind: Some("aar".into()), extra: Some(answers), next_focus: String::new(), listener_text: "You want to wait.".into(), ..input("2026-10-16") };
+        let saved = db.add_transfer_review(&aar).unwrap();
+        assert_eq!(saved.kind, "aar");
+        assert_eq!(saved.extra.as_ref().map(|a| (a.planned.as_str(), a.next_time.as_str())), Some(("Open with the decision", "Decision first")));
+        assert_eq!(saved.listener_text, "You want to wait.", "the listener's words stay apart");
+        let plain = db.add_transfer_review(&input("2026-10-16")).unwrap();
+        assert_eq!((plain.kind.as_str(), plain.extra.is_none()), ("reflection", true));
+        let kinds: Vec<String> = db.connection.lock().unwrap().prepare("SELECT kind FROM practice_events WHERE ref_id=?1 ORDER BY kind").unwrap()
+            .query_map([&saved.id], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap();
+        assert_eq!(kinds, ["after_action", "transfer_review"]);
+        assert!(db.add_transfer_review(&TransferInput { kind: Some("aar".into()), extra: None, ..input("2026-10-16") }).is_err());
+        assert!(db.add_transfer_review(&TransferInput { kind: Some("aar".into()), extra: Some(AfterAction::default()), ..input("2026-10-16") }).is_err(), "at least one answer");
+        assert!(db.add_transfer_review(&TransferInput { kind: Some("aar".into()), extra: Some(AfterAction { why: "x".repeat(2001), ..AfterAction::default() }), ..input("2026-10-16") }).is_err());
+        assert!(db.add_transfer_review(&TransferInput { kind: Some("debrief".into()), ..input("2026-10-16") }).is_err());
+        assert!(db.add_transfer_review(&TransferInput { extra: Some(AfterAction { happened: "x".into(), ..AfterAction::default() }), ..input("2026-10-16") }).is_err());
+        // An after-action review's next time counts as a next focus for the engines.
+        let facts = db.practice_facts("2026-10-16").unwrap();
+        let fact = facts.transfer_reviews.iter().find(|r| r.id == saved.id).unwrap();
+        assert_eq!((fact.kind.as_str(), fact.has_next_focus), ("aar", true));
     }
 }

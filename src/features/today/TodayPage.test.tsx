@@ -37,6 +37,13 @@ describe("Today and the learning engine (M11)", () => {
     expect(await screen.findByText("Warm-up: Just a Minute")).toBeInTheDocument();
   });
 
+  it("offers the pre-talk routine under This week (12.1)", async () => {
+    renderWithApp(<TodayPage />);
+    const link = await screen.findByRole("link", { name: "Start the routine" });
+    expect(link).toHaveAttribute("href", "/confidence/routine");
+    expect(link.closest("li")).toHaveTextContent("Before a real talk?");
+  });
+
   it("starts the sprint as a sequence", async () => {
     const { router } = renderWithRouter(
       [

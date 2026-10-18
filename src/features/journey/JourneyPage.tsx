@@ -15,6 +15,7 @@ import { AreaSheet } from "./AreaSheet";
 import { Companion } from "./Companion";
 import { QuestList } from "./QuestList";
 import { RecordsList } from "./RecordsList";
+import { BestMoments } from "@/features/confidence/BestMoments";
 import { SkillMap } from "./SkillMap";
 import { useJourney } from "./useJourney";
 import { WeekGoal } from "./WeekGoal";
@@ -114,6 +115,12 @@ export function JourneyPage() {
               <RecordsList journey={journey} />
             </Panel>
           </div>
+
+          {/* Your own best sentences of the week (12.5), the same as on Confidence. */}
+          <Panel aria-labelledby="journey-moments">
+            <SectionTitle id="journey-moments">Your best moments this week</SectionTitle>
+            <BestMoments />
+          </Panel>
 
           <Panel>
             <SectionTitle>Effort</SectionTitle>

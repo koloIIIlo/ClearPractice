@@ -107,13 +107,22 @@ export type TransferFlow = z.infer<typeof TransferFlow>;
 /** What kind of conversation it was (9.16). */
 export const TransferTag = z.enum(["story", "meeting", "presentation", "interview", "small_talk", "phone", "other"]);
 export type TransferTag = z.infer<typeof TransferTag>;
+/** An after-action review's four answers (12.4): what you planned, what happened, why, and what next time. */
+export const AfterAction = z.object({ planned: z.string(), happened: z.string(), why: z.string(), nextTime: z.string() }).strict();
+export type AfterAction = z.infer<typeof AfterAction>;
+export const TransferKind = z.enum(["reflection", "aar"]);
+export type TransferKind = z.infer<typeof TransferKind>;
 export const TransferReview = z.object({
   id: Id, localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), situation: z.string().min(1), preparation: z.string(),
   listenerText: z.string(), clarification: z.string(), success: z.string(), selfReport: z.string(), nextFocus: z.string(), createdAt: z.string(),
   flow: TransferFlow.nullable().default(null), tags: z.array(TransferTag).default([]),
+  /** A reflection, or an after-action review with its four answers (12.4). */
+  kind: TransferKind.default("reflection"), extra: AfterAction.nullable().default(null),
 }).strict();
 export type TransferReview = z.infer<typeof TransferReview>;
-export type TransferInput = Omit<TransferReview, "id" | "createdAt" | "flow" | "tags"> & { flow?: TransferFlow | null; tags?: TransferTag[] };
+export type TransferInput = Omit<TransferReview, "id" | "createdAt" | "flow" | "tags" | "kind" | "extra"> & {
+  flow?: TransferFlow | null; tags?: TransferTag[]; kind?: TransferKind; extra?: AfterAction | null;
+};
 /** What you write for your own prompt (4.13). */
 export type PromptInput = { text: string; tags: PromptTag[]; conditions: TaskConditions };
 /** Your prompts and favourite marks, stored natively; bundled prompts come from the content pack. */
@@ -840,6 +849,8 @@ export const Preferences = z
     /** Guess hesitations and pace before seeing a take's measures (11.5). */
     predictFirst: z.boolean(),
     predictTipSeen: z.boolean(),
+    /** The name the pre-talk routine encourages you with (12.3); empty says "you". */
+    displayName: z.string().max(40),
   })
   .strict();
 export type Preferences = z.infer<typeof Preferences>;
@@ -852,6 +863,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   livePace: false, watchWords: [],
   weeklyGoalDays: 3, weekStartsOn: "monday", companion: true, accent: "green",
   challengeBias: 0, warmUp: false, measuresTiming: "always", predictFirst: false, predictTipSeen: false,
+  displayName: "",
 };
 
 export const TranscriptionPreference = z.object({ mode: z.enum(["local", "api", "off"]), provider: AudioProvider }).strict();
@@ -1124,6 +1136,42 @@ export const CatchRun = z
   .strict();
 export type CatchRun = z.infer<typeof CatchRun>;
 
+// ── Confidence pack (roadmap M12) ───────────────────────────────────────────
+/** A step of your exposure ladder (12.2). */
+export const ExposureStep = z.object({ id: Id, position: z.number().int().min(1).max(30), title: z.string().min(1), templateId: z.string().nullable(), createdAt: z.string() }).strict();
+export type ExposureStep = z.infer<typeof ExposureStep>;
+/** A step as you save the ladder: an existing one keeps its ID. */
+export type ExposureStepInput = { id?: string | null; title: string; templateId?: string | null };
+/** Planned (a before rating only), done, done in part, or not this time. */
+export const ExposureOutcome = z.enum(["planned", "yes", "partly", "not_this_time"]);
+export type ExposureOutcome = z.infer<typeof ExposureOutcome>;
+const Rating = z.number().int().min(0).max(10);
+/** An attempt with your discomfort before and after, 0 to 10 (Your note). */
+export const ExposureAttempt = z
+  .object({ id: Id, stepId: Id, localDate: z.string(), beforeRating: Rating.nullable(), afterRating: Rating.nullable(), outcome: ExposureOutcome, note: z.string(), createdAt: z.string() })
+  .strict();
+export type ExposureAttempt = z.infer<typeof ExposureAttempt>;
+export type ExposureAttemptInput = { stepId: string; localDate: string; beforeRating: number | null; afterRating: number | null; outcome: ExposureOutcome; note: string };
+/** The pre-talk routine's steps (12.3). */
+export const RoutineStepId = z.enum(["breathe", "warm_up", "reframe", "unload", "encourage"]);
+export type RoutineStepId = z.infer<typeof RoutineStepId>;
+export const RoutineRun = z
+  .object({ id: Id, localDate: z.string(), steps: z.array(RoutineStepId), keptNote: z.string().nullable(), eventId: z.string().nullable(), createdAt: z.string() })
+  .strict();
+export type RoutineRun = z.infer<typeof RoutineRun>;
+export type RoutineInput = { steps: RoutineStepId[]; keptNote: string | null; eventId?: string | null };
+/** A sentence you liked in a transcript (12.5). */
+export const SegmentMark = z.object({ revisionId: Id, segment: z.number().int().nonnegative(), kind: z.literal("liked") }).strict();
+export type SegmentMark = z.infer<typeof SegmentMark>;
+/** A sentence for the week's reel, with its stored segment times (12.5). */
+export const Moment = z
+  .object({
+    attemptId: Id, sessionId: Id, ordinal: z.number().int().positive(), revisionId: Id, segment: z.number().int().nonnegative(), text: z.string(),
+    startMs: z.number().int().nonnegative(), endMs: z.number().int().nonnegative(), localDate: z.string(), liked: z.boolean(),
+  })
+  .strict();
+export type Moment = z.infer<typeof Moment>;
+
 // ── Drills (roadmap M10) ─────────────────────────────────────────────────────
 /** A mark made during a take (10.1): the time into the take, a kind, and keys or numbers. Never words you said. */
 export const TakeMarkKind = z.enum(["word_shown", "self_flag", "card_advanced", "cue_shown"]);
@@ -1221,9 +1269,18 @@ export const FactTransfer = z
     id: Id, localDate: z.string(), hasListenerWords: z.boolean(), neededClarification: z.boolean(), hasSuccess: z.boolean(), hasNextFocus: z.boolean(),
     // Facts v3 (9.16): Your note.
     flow: TransferFlow.nullable(), tags: z.array(TransferTag),
+    /** Facts v6 (12.4). */
+    kind: TransferKind,
   })
   .strict();
 export type FactTransfer = z.infer<typeof FactTransfer>;
+/** Facts v6 (12.2): a ladder step, deleted or not, with its attempts (your own ratings). */
+export const FactExposureAttempt = z
+  .object({ localDate: z.string(), before: z.number().int().min(0).max(10).nullable(), after: z.number().int().min(0).max(10).nullable(), outcome: z.enum(["planned", "yes", "partly", "not_this_time"]), done: z.boolean() })
+  .strict();
+export type FactExposureAttempt = z.infer<typeof FactExposureAttempt>;
+export const FactExposureStep = z.object({ stepId: Id, position: z.number().int().min(1).max(30), deleted: z.boolean(), attempts: z.array(FactExposureAttempt) }).strict();
+export type FactExposureStep = z.infer<typeof FactExposureStep>;
 export const FactPhrase = z.object({ id: Id, createdAt: z.string(), starter: z.boolean(), deleted: z.boolean() }).strict();
 export type FactPhrase = z.infer<typeof FactPhrase>;
 export const FactPhraseReview = z.object({ cardId: Id, localDate: z.string(), rating: PhraseRating }).strict();
@@ -1247,6 +1304,8 @@ export const PracticeFacts = z
     blindComparisons: z.number().int().nonnegative(),
     /** Facts v5 (M11): the programme you are running, if any. */
     programme: ProgrammeRun.nullable(),
+    /** Facts v6 (M12): your exposure ladder. */
+    exposure: z.array(FactExposureStep),
   })
   .strict();
 export type PracticeFacts = z.infer<typeof PracticeFacts>;

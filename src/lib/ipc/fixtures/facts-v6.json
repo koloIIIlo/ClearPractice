@@ -1,5 +1,5 @@
 {
-  "factsVersion": 5,
+  "factsVersion": 6,
   "generatedAt": "2026-10-16T18:00:00.000Z",
   "today": "2026-10-16",
   "transcriptionAvailable": true,
@@ -168,7 +168,8 @@
       "flow": "smooth",
       "tags": [
         "story"
-      ]
+      ],
+      "kind": "reflection"
     }
   ],
   "phrases": [
@@ -213,5 +214,21 @@
         "doneAt": "2026-10-13T08:00:00.000Z"
       }
     ]
-  }
+  },
+  "exposure": [
+    {
+      "stepId": "step-1760600000000",
+      "position": 1,
+      "deleted": false,
+      "attempts": [
+        {
+          "localDate": "2026-10-15",
+          "before": 6,
+          "after": 3,
+          "outcome": "yes",
+          "done": true
+        }
+      ]
+    }
+  ]
 }
