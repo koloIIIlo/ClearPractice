@@ -291,6 +291,7 @@ mod planner_tests {
                 engagement::fact_takes_sql(),
                 vec!["a", "st", "s", "r", "ar"],
             ),
+            (engagement::FACT_METRICS_SQL.to_string(), vec!["ar", "mv"]),
             (game::journey_levels(), vec!["skill_levels"]),
             (game::journey_achievements(), vec!["achievements"]),
             (game::journey_records(), vec!["personal_records"]),

@@ -16,6 +16,27 @@ const BACKFILL_KEY: &str = "engagement_backfill_v1";
 /// Bumped when facts gain fields, so the interface can tell what to expect.
 pub const FACTS_VERSION: u32 = 8;
 
+// Stream revisions in index order so Rust allocates each revision ID only once.
+pub(crate) const FACT_METRICS_SQL: &str = "SELECT ar.revision_id,mv.metric,mv.value \
+    FROM analysis_runs ar JOIN metric_values mv ON mv.run_id=ar.id \
+    WHERE ar.kind='transcript-measures' AND ar.definition_version=?1 ORDER BY ar.revision_id";
+
+#[derive(Clone, Copy, Default)]
+struct StoredMeasures {
+    word_count: Option<f64>,
+    pace_wpm: Option<f64>,
+    speech_span_ms: Option<f64>,
+    filler_candidates: Option<f64>,
+    pauses_over_threshold: Option<f64>,
+    mean_run_words: Option<f64>,
+    longest_run_words: Option<f64>,
+    mid_clause_pauses: Option<f64>,
+    boundary_pauses: Option<f64>,
+    watch_words_per_100: Option<f64>,
+    hedges_per_100: Option<f64>,
+    different_words_per_50: Option<f64>,
+}
+
 // Shared with the seeded EXPLAIN QUERY PLAN review in maintenance.rs.
 pub(crate) const FACT_SESSIONS_SQL: &str = "SELECT s.id,s.local_date,s.started_at_ms,e.type,s.content_id,s.tags,s.ease,s.focus,s.takeaway,s.status,s.outline_snapshot,s.preferred_take,\
              (SELECT COUNT(*) FROM attempts a WHERE a.step_id=st.id AND a.capture_state='saved' AND a.deleted_at_ms IS NULL),\
@@ -586,18 +607,42 @@ impl DatabaseOwner {
             .collect();
 
         // Measures of every take's newest machine revision, by revision.
-        let mut metrics: HashMap<String, HashMap<String, Option<f64>>> = HashMap::new();
+        let mut metrics: HashMap<String, StoredMeasures> = HashMap::new();
         {
             let mut stmt = conn
-                .prepare("SELECT ar.revision_id,mv.metric,mv.value FROM analysis_runs ar JOIN metric_values mv ON mv.run_id=ar.id WHERE ar.kind='transcript-measures' AND ar.definition_version=?1")
+                .prepare(FACT_METRICS_SQL)
                 .map_err(db_error)?;
-            let rows = stmt
-                .query_map([crate::analysis::DEFINITION_VERSION], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<f64>>(2)?)))
-                .map_err(db_error)?;
-            for row in rows {
-                let (revision, metric, value) = row.map_err(db_error)?;
-                metrics.entry(revision).or_default().insert(metric, value);
+            let mut rows = stmt.query([crate::analysis::DEFINITION_VERSION]).map_err(db_error)?;
+            let mut previous = String::new();
+            let mut values = StoredMeasures::default();
+            while let Some(row) = rows.next().map_err(db_error)? {
+                let revision = row.get_ref(0).map_err(db_error)?.as_str().map_err(|_| "Invalid measure revision.")?;
+                if previous != revision {
+                    if !previous.is_empty() { metrics.insert(std::mem::take(&mut previous), values); }
+                    previous = revision.to_owned();
+                    values = StoredMeasures::default();
+                }
+                // Borrow metric keys from SQLite; only fields used by facts are
+                // retained. NULL and absent values both stay None.
+                let metric = row.get_ref(1).map_err(db_error)?.as_str().map_err(|_| "Invalid measure key.")?;
+                let field = match metric {
+                    "word_count" => &mut values.word_count,
+                    "pace_wpm" => &mut values.pace_wpm,
+                    "speech_span_ms" => &mut values.speech_span_ms,
+                    "filler_candidates" => &mut values.filler_candidates,
+                    "pauses_over_threshold" => &mut values.pauses_over_threshold,
+                    "mean_run_words" => &mut values.mean_run_words,
+                    "longest_run_words" => &mut values.longest_run_words,
+                    "mid_clause_pauses" => &mut values.mid_clause_pauses,
+                    "boundary_pauses" => &mut values.boundary_pauses,
+                    "watch_words_per_100" => &mut values.watch_words_per_100,
+                    "hedges_per_100" => &mut values.hedges_per_100,
+                    "different_words_per_50" => &mut values.different_words_per_50,
+                    _ => continue,
+                };
+                *field = row.get(2).map_err(db_error)?;
             }
+            if !previous.is_empty() { metrics.insert(previous, values); }
         }
         let mut decisions: HashMap<String, (u32, u32)> = HashMap::new();
         {
@@ -656,18 +701,17 @@ impl DatabaseOwner {
                 let id: String = r.get(0)?;
                 let challenge: Option<String> = r.get(6)?;
                 let revision: Option<String> = r.get(7)?;
-                let measures = revision.as_ref().and_then(|id| metrics.get(id));
-                let value = |key: &str| measures.and_then(|m| m.get(key).copied().flatten());
-                let candidates = count(value("filler_candidates"));
+                let measures = revision.as_ref().and_then(|id| metrics.get(id)).copied().unwrap_or_default();
+                let candidates = count(measures.filler_candidates);
                 let (confirmed, decided) = revision.as_ref().and_then(|id| decisions.get(id).copied()).unwrap_or((0, 0));
                 Ok(FactTake {
-                    mean_run: value("mean_run_words"),
-                    longest_run: count(value("longest_run_words")),
-                    mid_clause_pauses: count(value("mid_clause_pauses")),
-                    boundary_pauses: count(value("boundary_pauses")),
-                    watch_per_100: value("watch_words_per_100"),
-                    hedges_per_100: value("hedges_per_100"),
-                    different_per_50: value("different_words_per_50"),
+                    mean_run: measures.mean_run_words,
+                    longest_run: count(measures.longest_run_words),
+                    mid_clause_pauses: count(measures.mid_clause_pauses),
+                    boundary_pauses: count(measures.boundary_pauses),
+                    watch_per_100: measures.watch_words_per_100,
+                    hedges_per_100: measures.hedges_per_100,
+                    different_per_50: measures.different_words_per_50,
                     phrase_ids: phrase_uses.get(&id).cloned().unwrap_or_default(),
                     checks: checks.get(&id).cloned().unwrap_or_default(),
                     pitch_range_st: r.get(10)?,
@@ -683,13 +727,13 @@ impl DatabaseOwner {
                     duration_ms: u64::try_from(r.get::<_, i64>(5)?).unwrap_or(0),
                     step_key: challenge.and_then(|c| serde_json::from_str::<Value>(&c).ok()).and_then(|c| c["key"].as_str().map(String::from)),
                     transcribed: revision.is_some(),
-                    words: count(value("word_count")),
-                    pace_wpm: value("pace_wpm"),
-                    speech_span_ms: value("speech_span_ms").filter(|v| *v >= 0.0).map(|v| v as u64),
+                    words: count(measures.word_count),
+                    pace_wpm: measures.pace_wpm,
+                    speech_span_ms: measures.speech_span_ms.filter(|v| *v >= 0.0).map(|v| v as u64),
                     filler_candidates: candidates,
                     fillers_confirmed: revision.as_ref().map(|_| confirmed),
                     fillers_reviewed: revision.is_some() && candidates.is_some_and(|c| decided >= c),
-                    pauses_over_threshold: count(value("pauses_over_threshold")),
+                    pauses_over_threshold: count(measures.pauses_over_threshold),
                     revision_id: revision,
                     prosody_viewed: r.get(8)?,
                     has_ai_feedback: r.get(9)?,
@@ -1129,14 +1173,19 @@ pub(crate) mod tests {
     /// performance tests: one session a day with `takes_per_day` saved takes,
     /// each transcribed with stored measures. The audio files don't exist.
     pub(crate) fn seed_history(db: &DatabaseOwner, days: u32, takes_per_day: u32) {
+        seed_history_size(db, days, days * takes_per_day, days);
+    }
+
+    fn seed_history_size(db: &DatabaseOwner, sessions: u32, takes: u32, days: u32) {
         let mut conn = db.connection.lock().unwrap();
         let tx = conn.transaction().unwrap();
         tx.execute("INSERT OR IGNORE INTO exercise_definitions(id,version,type) VALUES ('ex-repeat',1,'repeat')", []).unwrap();
         let start = chrono::NaiveDate::from_ymd_opt(2024, 10, 1).unwrap();
-        for day in 0..days {
+        for session_index in 0..sessions {
+            let day = session_index * days / sessions;
             let date = (start + chrono::Duration::days(i64::from(day))).format("%Y-%m-%d").to_string();
             let at = 1_727_740_800_000_i64 + i64::from(day) * 86_400_000;
-            let session = format!("seed-{day}");
+            let session = format!("seed-{session_index}");
             let outline = r#"{"point":"P","reason":"","example":"E"}"#;
             tx.execute(
                 "INSERT INTO sessions(id,profile_id,title,local_date,timezone_offset_seconds,started_at_ms,status,prompt_snapshot,outline_snapshot,ease) VALUES (?1,'local','Seeded',?2,0,?3,'completed','Prompt',?4,3)",
@@ -1144,8 +1193,9 @@ pub(crate) mod tests {
             )
             .unwrap();
             tx.execute("INSERT INTO session_steps(id,session_id,exercise_id,exercise_version,position,status) VALUES (?1,?2,'ex-repeat',1,1,'completed')", params![format!("step-{session}"), session]).unwrap();
-            for n in 1..=takes_per_day {
-                let take = format!("seed-{day}-{n}");
+            let session_takes = takes / sessions + u32::from(session_index < takes % sessions);
+            for n in 1..=session_takes {
+                let take = format!("seed-{session_index}-{n}");
                 let revision = format!("{take}--1");
                 tx.execute(
                     "INSERT INTO audio_assets(id,relative_path,sha256,bytes,sample_rate,channels,duration_ms) VALUES (?1,?2,?3,96044,48000,1,60000)",
@@ -1191,22 +1241,36 @@ pub(crate) mod tests {
         assert_eq!((facts.sessions.len(), facts.takes.len()), (5, 15));
         assert!(facts.takes.iter().all(|t| t.transcribed && t.pace_wpm == Some(134.5) && t.filler_candidates == Some(4)));
         assert_eq!(facts.sessions[0].outline, [true, false, true]);
+        let take = &facts.takes[0];
+        assert_eq!((take.words, take.speech_span_ms, take.pauses_over_threshold), (Some(130), Some(58_000), Some(3)));
+        assert_eq!((take.mean_run, take.longest_run, take.mid_clause_pauses, take.boundary_pauses), (Some(7.5), Some(18), Some(1), Some(2)));
+        assert_eq!((take.watch_per_100, take.hedges_per_100, take.different_per_50), (Some(1.5), Some(2.3), Some(36.2)));
+        // A stored NULL and an absent metric both remain unavailable; another
+        // revision must keep its own values when the rows are grouped.
+        {
+            let conn = db.connection.lock().unwrap();
+            conn.execute("UPDATE metric_values SET value=NULL,unavailable_reason='test missing' WHERE metric='pace_wpm' AND run_id IN (SELECT id FROM analysis_runs WHERE attempt_id='seed-0-1')", []).unwrap();
+            conn.execute("DELETE FROM metric_values WHERE metric='mean_run_words' AND run_id IN (SELECT id FROM analysis_runs WHERE attempt_id='seed-0-1')", []).unwrap();
+        }
+        let facts = db.practice_facts("2026-10-12").unwrap();
+        assert_eq!((facts.takes[0].pace_wpm, facts.takes[0].mean_run), (None, None));
+        assert_eq!((facts.takes[1].pace_wpm, facts.takes[1].mean_run), (Some(134.5), Some(7.5)));
     }
 
-    /// A-36: two years of daily practice (730 sessions, 4 takes a day).
+    /// A-36 / roadmap §8.8: 1,500 sessions and 4,000 takes over two years.
     #[test]
     #[ignore = "benchmark: cargo test --lib --release -- --ignored practice_facts_two_years"]
     fn practice_facts_two_years_under_80ms() {
         let root = TestRoot::new();
         let db = DatabaseOwner::open(&root.0).unwrap();
-        seed_history(&db, 730, 4);
+        seed_history_size(&db, 1_500, 4_000, 730);
         let _ = db.practice_facts("2026-10-12").unwrap();
         let started = std::time::Instant::now();
         let facts = db.practice_facts("2026-10-12").unwrap();
         let elapsed = started.elapsed();
         println!("practice_facts: {} sessions, {} takes in {elapsed:?}", facts.sessions.len(), facts.takes.len());
-        assert_eq!(facts.takes.len(), 2920);
-        assert!(elapsed.as_millis() <= 80, "{elapsed:?}");
+        assert_eq!((facts.sessions.len(), facts.takes.len()), (1_500, 4_000));
+        assert!(elapsed <= std::time::Duration::from_millis(80), "{elapsed:?}");
     }
 
     /// The interface parses facts with strict schemas; its fixture

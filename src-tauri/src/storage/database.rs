@@ -53,6 +53,8 @@ pub mod social;
 pub mod content_packs;
 #[path = "maintenance.rs"]
 pub mod maintenance;
+#[path = "session_export.rs"]
+mod session_export;
 const VERSION: i64 = 25;
 /// Database schema this build reads and writes; newer backups are refused.
 pub const SCHEMA_VERSION: i64 = VERSION;

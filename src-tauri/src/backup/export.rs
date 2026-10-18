@@ -1,6 +1,7 @@
 //! Readable session export (§13, plan 2.22): one ZIP with the session as
 //! Markdown, measurements as CSV, the original WAV of every available take,
-//! and a JSON manifest with checksums. Any program can read it.
+//! structured session data as JSON, and a manifest with checksums. Any program
+//! can read it.
 use super::{add_file, hex, io_error, Entry, Result};
 use crate::storage::database::DatabaseOwner;
 use serde::Serialize;
@@ -64,6 +65,7 @@ fn csv(field: &str) -> String {
 
 /// What one take adds to the export: its transcript view (with measures) and
 /// its latest AI feedback, both as the app shows them.
+#[derive(Serialize)]
 struct TakeDetail {
     ordinal: i64,
     transcript: Value,
@@ -234,7 +236,24 @@ pub fn export_session(owner: &DatabaseOwner, session_id: &str, target: &Path, no
             add_bytes(&mut zip, "session.md", markdown(&session, &details).as_bytes())?,
             add_bytes(&mut zip, "measures.csv", measures(&session, &details).as_bytes())?,
         ];
+        let structured = serde_json::json!({
+            "format": "clearpractice-session-data",
+            "formatVersion": 1,
+            "session": session,
+            "takes": details,
+            "tables": owner.session_export_tables(session_id)?,
+            "provenance": {
+                "audio_measures": "Estimated", "phrase_uses": "Estimated",
+                "activity_results": "Estimated", "rehearsals": "Estimated",
+                "self_checks": "Your note", "self_predictions": "Your note",
+                "segment_marks": "Your note", "comparisons": "Your note",
+                "listener_feedback": "Your note", "upgrade_runs": "AI suggestion",
+                "conversation_feedback": "AI suggestion"
+            }
+        });
+        entries.push(add_bytes(&mut zip, "session.json", &serde_json::to_vec_pretty(&structured).map_err(|e| e.to_string())?)?);
         let mut unavailable = Vec::new();
+        let mut recordings = 0;
         for a in session["attempts"].as_array().into_iter().flatten() {
             let id = text(&a["id"]);
             let name = format!("take-{}.wav", a["ordinal"]);
@@ -249,8 +268,8 @@ pub fn export_session(owner: &DatabaseOwner, session_id: &str, target: &Path, no
                 return Err(format!("Take {} changed while exporting. Nothing was exported.", a["ordinal"]));
             }
             entries.push(entry);
+            recordings += 1;
         }
-        let recordings = entries.len() - 2;
         let manifest = ExportManifest {
             format: "clearpractice-session-export",
             format_version: 1,
