@@ -326,7 +326,10 @@ fn parse_phrase_suggestions(raw: &Value, model: CoachingModel, selected_text: &s
     if raw["status"] != "completed" || !response_model_matches(raw, model) {
         return Err("The provider returned an incomplete answer or a different model. No phrases were suggested.".into());
     }
-    let text = output_text(raw).ok_or("The provider returned no suggestions.")?;
+    parse_phrase_suggestions_text(output_text(raw).ok_or("The provider returned no suggestions.")?, selected_text)
+}
+
+fn parse_phrase_suggestions_text(text: &str, selected_text: &str) -> Result<Vec<PhraseSuggestion>> {
     #[derive(Deserialize)]
     struct Answer { suggestions: Vec<PhraseSuggestion> }
     let answer: Answer = serde_json::from_str(text).map_err(|_| "The provider's suggestions did not match the expected format.")?;
@@ -477,6 +480,103 @@ impl PreviewOwner {
         }
         Ok(pending)
     }
+    /// Compatibility entry points above remain API-only. These variants select
+    /// a local target explicitly, using exactly the same input and JSON schema.
+    pub fn preview_phrase_suggestions_with_target(&self, sessions: &[(String, String)], model: CoachingModel, local: Option<super::local_llm::LocalTarget>) -> Result<Preview> {
+        let local = Self::validated_target(local)?;
+        let preview = self.preview_phrase_suggestions(sessions, model)?;
+        self.small_text_target(preview, local)
+    }
+
+    pub fn preview_clip_names_with_target(&self, texts: &[String], model: CoachingModel, local: Option<super::local_llm::LocalTarget>) -> Result<Preview> {
+        let local = Self::validated_target(local)?;
+        let preview = self.preview_clip_names(texts, model)?;
+        self.small_text_target(preview, local)
+    }
+
+    pub fn preview_clip_picks_with_target(&self, annotated: &str, sentences: usize, wanted: usize, model: CoachingModel, tone_hint: bool, local: Option<super::local_llm::LocalTarget>) -> Result<Preview> {
+        let local = Self::validated_target(local)?;
+        let preview = self.preview_clip_picks(annotated, sentences, wanted, model, tone_hint)?;
+        self.small_text_target(preview, local)
+    }
+
+    fn validated_target(local: Option<super::local_llm::LocalTarget>) -> Result<Option<super::local_llm::LocalTarget>> {
+        local.map(|mut target| {
+            target.base = super::local_llm::validate_endpoint(&target.base)?;
+            Ok(target)
+        }).transpose()
+    }
+
+    fn small_text_target(&self, preview: Preview, local: Option<super::local_llm::LocalTarget>) -> Result<Preview> {
+        let Some(target) = local else { return Ok(preview) };
+        let mut all = self.pending.lock().map_err(|_| "Coaching preview owner failed.")?;
+        let pending = all.get_mut(&preview.request_id).ok_or("This preview is missing. Preview again.")?;
+        let format = &pending.payload["text"]["format"];
+        pending.payload = super::local_llm::chat_body(&target.model, &preview.instructions, &preview.selected_text,
+            format["name"].as_str().ok_or("The request schema is missing.")?, format["schema"].clone(), preview.maximum_output_tokens);
+        let p = &mut pending.preview;
+        p.payload_sha256 = fingerprint(&pending.payload)?;
+        p.recipient = format!("{}/v1/chat/completions", target.base);
+        p.model = if target.model.is_empty() { "local".into() } else { target.model.clone() };
+        p.estimated_maximum_cost_micro_usd = 0;
+        p.price_date.clear(); p.price_source.clear();
+        p.input_usd_per_million_tokens = "0".into(); p.output_usd_per_million_tokens = "0".into();
+        p.cost_explanation = "Recipient: local model on this computer · free. Only the previewed text is sent; never audio.".into();
+        pending.local = Some(target);
+        Ok(p.clone())
+    }
+
+    /// A changed coaching mode, endpoint or model requires a fresh preview.
+    pub fn ensure_local_target(&self, id: &str, target: &super::local_llm::LocalTarget) -> Result<()> {
+        let all = self.pending.lock().map_err(|_| "Coaching preview owner failed.")?;
+        if !all.get(id).is_some_and(|p| p.local.as_ref() == Some(target)) {
+            return Err("The local model settings changed. Preview the request again.".into());
+        }
+        Ok(())
+    }
+
+    /// Bind clip picks to the staged source and its transcript, not a caller's count.
+    pub fn bind_small_text(&self, id: &str, binding: Binding) -> Result<()> {
+        let mut all = self.pending.lock().map_err(|_| "Coaching preview owner failed.")?;
+        let pending = all.get_mut(id).ok_or("This preview is missing. Preview again.")?;
+        pending.binding = Some(binding);
+        Ok(())
+    }
+
+    pub fn ensure_small_text_binding(&self, id: &str, binding: &Binding) -> Result<()> {
+        let all = self.pending.lock().map_err(|_| "Coaching preview owner failed.")?;
+        if !all.get(id).is_some_and(|p| p.binding.as_ref() == Some(binding)) {
+            return Err("The source changed after preview. Preview the request again.".into());
+        }
+        Ok(())
+    }
+
+    async fn dispatch_small_text_local(&self, id: &str, hash: &str, kind: Kind) -> Result<(Pending, String)> {
+        let pending = self.consume(id, hash)?;
+        let target = pending.local.as_ref().ok_or("This approval belongs to an API request. Preview again.")?;
+        if pending.kind != kind {
+            return Err("This approval belongs to a different request. Preview again.".into());
+        }
+        let (_, text) = super::local_llm::chat(target, &pending.payload).await?;
+        Ok((pending, text))
+    }
+
+    pub async fn send_phrase_suggestions_local(&self, id: &str, hash: &str) -> Result<Vec<PhraseSuggestion>> {
+        let (pending, text) = self.dispatch_small_text_local(id, hash, Kind::PhraseSuggestions).await?;
+        parse_phrase_suggestions_text(&text, &pending.preview.selected_text)
+    }
+
+    pub async fn send_clip_names_local(&self, id: &str, hash: &str) -> Result<Vec<ClipName>> {
+        let (pending, text) = self.dispatch_small_text_local(id, hash, Kind::ClipNames).await?;
+        parse_names_text(&text, pending.preview.selected_text.lines().count())
+    }
+
+    pub async fn send_clip_picks_local(&self, id: &str, hash: &str, sentences: usize) -> Result<(String, bool, Vec<ClipPick>)> {
+        let (pending, text) = self.dispatch_small_text_local(id, hash, Kind::ClipPicks).await?;
+        let tone_hint = pending.preview.instructions.contains(TONE_HINT);
+        Ok((pending.preview.model, tone_hint, parse_picks_text(&text, sentences)?))
+    }
+
     /// Previews an AI naming request for proposed clips (4.4c): only the
     /// numbered transcripts are sent, with a strict schema. Nothing is sent here.
     pub fn preview_clip_names(&self, texts: &[String], model: CoachingModel) -> Result<Preview> {
@@ -893,7 +993,7 @@ impl PreviewOwner {
         kind: Kind,
     ) -> Result<(Pending, Value, Option<String>, Option<u64>, Option<u64>, Option<u64>)> {
         let pending = self.consume(id, hash)?; // consumed even on error, never replayed
-        if pending.kind != kind {
+        if pending.kind != kind || pending.local.is_some() {
             return Err("This approval belongs to a different request. Preview it again.".into());
         }
         let key = credentials::read()?
@@ -934,11 +1034,11 @@ impl PreviewOwner {
         };
         // Mark uncertain before parsing/saving; even invalid/refused output may
         // be billed. Keep the full reservation when usage/price is unavailable.
-        let raw: Value = match serde_json::from_slice(&response.bytes) {
+        let raw: Value = match super::transport::response_json(&response.bytes, "Provider") {
             Ok(value) => value,
-            Err(_) => {
+            Err(error) => {
                 owner.settle(id, None, None, response.request_id)?;
-                return Err("Provider returned invalid JSON; saved practice is preserved. Charge is uncertain.".into());
+                return Err(format!("{error} Charge is uncertain."));
             }
         };
         let usage = raw.get("usage");
@@ -1342,9 +1442,13 @@ fn parse_picks(raw: &Value, model: CoachingModel, sentences: usize) -> Result<Ve
     if raw["status"] != "completed" || !response_model_matches(raw, model) {
         return Err("The provider returned an incomplete answer or a different model. Nothing was chosen.".into());
     }
+    parse_picks_text(output_text(raw).ok_or("The provider returned no passages.")?, sentences)
+}
+
+fn parse_picks_text(text: &str, sentences: usize) -> Result<Vec<ClipPick>> {
     #[derive(Deserialize)]
     struct Picks { picks: Vec<ClipPick> }
-    let picks: Picks = serde_json::from_str(output_text(raw).ok_or("The provider returned no passages.")?)
+    let picks: Picks = serde_json::from_str(text)
         .map_err(|_| "The provider's passages did not match the expected format.")?;
     let out: Vec<ClipPick> = picks.picks.into_iter().filter_map(|mut p| {
         p.title = p.title.trim().trim_matches(['"', '\u{201c}', '\u{201d}']).to_string();
@@ -1364,11 +1468,10 @@ fn parse_names(raw: &Value, model: CoachingModel, count: usize) -> Result<Vec<Cl
     if raw["status"] != "completed" || !response_model_matches(raw, model) {
         return Err("The provider returned an incomplete answer or a different model. No names were applied.".into());
     }
-    let text = raw["output"].as_array().into_iter().flatten()
-        .flat_map(|o| o["content"].as_array().into_iter().flatten())
-        .find(|c| c["type"] == "output_text")
-        .and_then(|c| c["text"].as_str())
-        .ok_or("The provider returned no names.")?;
+    parse_names_text(output_text(raw).ok_or("The provider returned no names.")?, count)
+}
+
+fn parse_names_text(text: &str, count: usize) -> Result<Vec<ClipName>> {
     #[derive(Deserialize)]
     struct Names { clips: Vec<ClipName> }
     let names: Names = serde_json::from_str(text).map_err(|_| "The provider's names did not match the expected format.")?;
@@ -1718,6 +1821,88 @@ mod tests {
     /// 5.4 contract: a local approval goes to the loopback server with the same
     /// validation as the hosted adapter, costs nothing and is single-use.
     #[test]
+    fn phrase_suggestions_local_validate_like_api() {
+        use std::io::{Read, Write};
+        use super::super::local_llm::LocalTarget;
+        // One request per server; read the whole body, then validate its schema.
+        fn server(answer: Value, schema: Value) -> (LocalTarget, std::thread::JoinHandle<()>) {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let base = format!("http://{}", listener.local_addr().unwrap());
+            let thread = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+                let mut bytes = Vec::new();
+                let mut buf = [0u8; 4096];
+                let (header_end, size) = loop {
+                    let n = stream.read(&mut buf).unwrap(); assert!(n > 0);
+                    bytes.extend_from_slice(&buf[..n]);
+                    if let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&bytes[..end]).to_lowercase();
+                        assert!(headers.starts_with("post /v1/chat/completions "));
+                        assert!(!headers.contains("authorization:"));
+                        let size = headers.lines().find_map(|l| l.strip_prefix("content-length:").and_then(|v| v.trim().parse::<usize>().ok())).unwrap();
+                        break (end + 4, size);
+                    }
+                };
+                while bytes.len() < header_end + size {
+                    let n = stream.read(&mut buf).unwrap(); assert!(n > 0);
+                    bytes.extend_from_slice(&buf[..n]);
+                }
+                let request: Value = serde_json::from_slice(&bytes[header_end..header_end + size]).unwrap();
+                assert_eq!(request["response_format"]["json_schema"]["schema"], schema);
+                assert_eq!(request["model"], "stand-in");
+                assert_eq!(request["stream"], false);
+                let body = json!({"choices":[{"finish_reason":"stop","message":{"content":answer.to_string()}}]}).to_string();
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            });
+            (LocalTarget { base, model: "stand-in".into() }, thread)
+        }
+        let sessions = vec![("Example".into(), "I want to be more clear.".into())];
+        let suggestion = |quote: &str, expression: String| json!({"session":1,"original":quote,"expression":expression,"explanation":"A shorter alternative.","example":"That is clearer."});
+        let owner = PreviewOwner::default();
+        for answer in [json!({"suggestions":[suggestion("more clear", "clearer".into()), suggestion("invented words", "a better phrase".into()), suggestion("more clear", "x".repeat(121))]}),
+            json!({"suggestions":[suggestion("invented words", "a better phrase".into())]}), json!({"suggestions":[suggestion("more clear", "x".repeat(121))]}), json!({"wrong":true})] {
+            let (target, thread) = server(answer.clone(), phrase_schema());
+            let p = owner.preview_phrase_suggestions_with_target(&sessions, CoachingModel::Luna, Some(target.clone())).unwrap();
+            assert_eq!(p.estimated_maximum_cost_micro_usd, 0);
+            assert!(p.cost_explanation.contains("local model on this computer · free"));
+            assert!(owner.is_local(&p.request_id));
+            owner.ensure_local_target(&p.request_id, &target).unwrap();
+            assert!(owner.ensure_local_target(&p.request_id, &LocalTarget { model: "changed".into(), ..target }).is_err());
+            let local = tauri::async_runtime::block_on(owner.send_phrase_suggestions_local(&p.request_id, &p.payload_sha256));
+            let raw = json!({"status":"completed","model":"gpt-6-luna","output":[{"type":"message","content":[{"type":"output_text","text":answer.to_string()}]}]});
+            assert_eq!(local, parse_phrase_suggestions(&raw, CoachingModel::Luna, &p.selected_text));
+            assert!(tauri::async_runtime::block_on(owner.send_phrase_suggestions_local(&p.request_id, &p.payload_sha256)).is_err(), "single-use approval");
+            thread.join().unwrap();
+        }
+        let answer = json!({"clips":[{"index":1,"title":"A clear point","description":"Listen for the ending.","feature":"endings"},{"index":2,"title":"x".repeat(81),"description":"Too long","feature":"rhythm"}]});
+        let (target, thread) = server(answer.clone(), names_schema());
+        let p = owner.preview_clip_names_with_target(&["One point.".into(), "Another point.".into()], CoachingModel::Luna, Some(target)).unwrap();
+        let names = tauri::async_runtime::block_on(owner.send_clip_names_local(&p.request_id, &p.payload_sha256)).unwrap();
+        assert_eq!(names, parse_names_text(&answer.to_string(), 2).unwrap());
+        assert_eq!(names.len(), 1);
+        thread.join().unwrap();
+        let answer = json!({"picks":[{"first":1,"last":2,"title":"A clear point","description":"Listen.","feature":"endings","reason":"Complete thought."},{"first":1,"last":3,"title":"Outside","description":"No","feature":"rhythm","reason":"No"}]});
+        let (target, thread) = server(answer.clone(), picks_schema());
+        let p = owner.preview_clip_picks_with_target("1. One point.\n2. Another point.", 2, 1, CoachingModel::Luna, false, Some(target)).unwrap();
+        let (model, tone, picks) = tauri::async_runtime::block_on(owner.send_clip_picks_local(&p.request_id, &p.payload_sha256, 2)).unwrap();
+        assert_eq!(model, "stand-in"); assert!(!tone);
+        assert_eq!(picks, parse_picks_text(&answer.to_string(), 2).unwrap());
+        assert_eq!(picks.len(), 1);
+        thread.join().unwrap();
+        let remote = LocalTarget { base: "http://192.168.1.2:8080".into(), model: "remote".into() };
+        assert!(owner.preview_phrase_suggestions_with_target(&sessions, CoachingModel::Luna, Some(remote)).is_err());
+        let local = LocalTarget { base: "http://127.0.0.1:9".into(), model: "stand-in".into() };
+        let p = owner.preview_clip_names_with_target(&["A point.".into()], CoachingModel::Luna, Some(local.clone())).unwrap();
+        assert!(tauri::async_runtime::block_on(owner.send_phrase_suggestions_local(&p.request_id, &p.payload_sha256)).is_err(), "wrong kind never connects");
+        let p = owner.preview_phrase_suggestions_with_target(&sessions, CoachingModel::Luna, Some(local.clone())).unwrap();
+        assert!(tauri::async_runtime::block_on(owner.send_phrase_suggestions_local(&p.request_id, &"0".repeat(64))).is_err(), "changed approval never connects");
+        let p = owner.preview_phrase_suggestions_with_target(&sessions, CoachingModel::Luna, Some(local)).unwrap();
+        owner.pending.lock().unwrap().get_mut(&p.request_id).unwrap().preview.expires_at_ms = 0;
+        assert!(tauri::async_runtime::block_on(owner.send_phrase_suggestions_local(&p.request_id, &p.payload_sha256)).is_err(), "expired approval never connects");
+    }
+
+    #[test]
     fn local_take_feedback_uses_the_same_checks_and_costs_nothing() {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1793,3 +1978,7 @@ mod tests {
         assert_eq!(CoachingModel::Luna.settle(1_001), Some(501));
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/providers/mod.rs"]
+mod providers;

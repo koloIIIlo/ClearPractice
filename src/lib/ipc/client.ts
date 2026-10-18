@@ -222,6 +222,12 @@ export interface IpcClient {
   cancelClipWork(): Promise<void>;
   saveClipSections(stagingId: string, sections: { startMs: number; endMs: number; title: string; source: string; transcript: string | null; description?: string | null; feature?: "emphasis" | "rhythm" | "endings" | null }[], folderId?: string | null): Promise<ReferenceClip[]>;
   /** Optional AI titles for proposed clips: previews a text-only request (transcripts only). */
+  previewPhraseSuggestionsLocal(sessionIds: string[], model?: CoachingModel): Promise<CoachingPreview>;
+  sendPhraseSuggestionsLocal(requestId: string, payloadSha256: string): Promise<PhraseSuggestion[]>;
+  previewClipNamesLocal(texts: string[], model?: CoachingModel): Promise<CoachingPreview>;
+  sendClipNamesLocal(requestId: string, payloadSha256: string): Promise<ClipName[]>;
+  previewClipPicksLocal(stagingId: string, options: { model?: CoachingModel; toneHint: boolean; wanted: number }): Promise<CoachingPreview>;
+  sendClipPicksLocal(stagingId: string, requestId: string, payloadSha256: string): Promise<PickedClip[]>;
   previewClipNames(texts: string[], model?: CoachingModel): Promise<CoachingPreview>;
   requestClipNames(requestId: string, payloadSha256: string): Promise<ClipName[]>;
   /** AI chooses the best passages (4.4e): previews the transcript annotated with measured delivery (text only). */
@@ -254,6 +260,8 @@ export interface IpcClient {
   /** Opens the native Save dialog and writes a readable session ZIP; null when cancelled. */
   exportSession(sessionId: string): Promise<ExportSummary | null>;
   getTranscriptionSetup(): Promise<TranscriptionSetup>;
+  requestNotificationPermission(): Promise<boolean>;
+  showSurpriseNotification(prompt: string): Promise<void>;
   getPreferences(): Promise<Preferences>;
   /** Data folder (2.25). `moveDataFolder` asks for a folder (or uses the default) and returns the new folder, or null when cancelled. */
   getDataLocation(): Promise<DataLocation>;

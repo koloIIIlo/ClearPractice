@@ -97,12 +97,7 @@ impl ApiTransport {
         let status = response.status().as_u16();
         if !(200..=299).contains(&status) {
             owner.settle(id, None, None, request_id)?;
-            return Err(match status {
-                401 | 403 => "The provider rejected the credentials or model access. Check Settings.",
-                429 => "The provider rate or account limit was reached. Retry only after a new preview.",
-                300..=399 => "The provider attempted a redirect. The request was stopped.",
-                _ => "The provider could not complete the request. Check Settings and retry deliberately.",
-            }.into());
+            return Err(status_error(status, false).into());
         }
         match bounded_response(response).await {
             Ok(bytes) => Ok(ApiResponse {
@@ -192,14 +187,7 @@ impl ApiTransport {
         let status = response.status().as_u16();
         if !(200..=299).contains(&status) {
             owner.settle(id, None, None, request_id)?;
-            return Err(match status {
-                401 | 403 => "The provider rejected the credentials or model access. Check Settings.",
-                413 => "The provider refused the audio size.",
-                429 => "The provider rate or account limit was reached. Retry only after a new preview.",
-                300..=399 => "The provider attempted a redirect. The request was stopped.",
-                _ => "The provider could not complete the request. The recording is unchanged; retry deliberately.",
-            }
-            .into());
+            return Err(status_error(status, true).into());
         }
         match bounded(response, MAX_AUDIO_RESPONSE).await {
             Ok(bytes) => Ok(ApiResponse { status, request_id, bytes }),
@@ -209,6 +197,23 @@ impl ApiTransport {
             }
         }
     }
+}
+
+/// Shared by both transports and offline provider contracts; never echo an error body.
+pub(super) fn status_error(status: u16, audio: bool) -> &'static str {
+    match status {
+        401 | 403 => "The provider rejected the credentials or model access. Check Settings.",
+        429 => "The provider rate or account limit was reached. Retry only after a new preview.",
+        413 if audio => "The provider refused the audio size.",
+        300..=399 => "The provider attempted a redirect. The request was stopped.",
+        _ if audio => "The provider could not complete the request. The recording is unchanged; retry deliberately.",
+        _ => "The provider could not complete the request. Check Settings and retry deliberately.",
+    }
+}
+
+/// Decode provider JSON without including possibly private response text in errors.
+pub(super) fn response_json(bytes: &[u8], provider: &str) -> Result<serde_json::Value> {
+    serde_json::from_slice(bytes).map_err(|_| format!("{provider} returned invalid JSON; saved practice is preserved."))
 }
 
 fn header_id(response: &Response, name: &str) -> Option<String> {

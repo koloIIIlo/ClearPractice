@@ -1,3 +1,4 @@
+import { WHATS_NEW_EVENT } from "@/lib/app-version";
 import { Fragment, type ReactNode } from "react";
 import { Link, useLocation, useMatches, useNavigate, useNavigation, type Params } from "react-router";
 import { ArrowLeft, CircleHelp, Compass, Keyboard, Search } from "lucide-react";
@@ -66,6 +67,9 @@ function HelpMenu({ onOpenShortcuts }: { onOpenShortcuts: () => void }) {
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuItem onSelect={() => tour.start()}>
           <Compass aria-hidden /> Guided tour
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => window.dispatchEvent(new Event(WHATS_NEW_EVENT))}>
+          What's new
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onOpenShortcuts}>
           <Keyboard aria-hidden /> Keyboard shortcuts <span className="ml-auto text-muted-foreground">?</span>

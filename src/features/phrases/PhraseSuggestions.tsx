@@ -28,6 +28,7 @@ export function PhraseSuggestions({ onDone, preselect }: { onDone: () => void; p
   const ipc = useIpc();
   const qc = useQueryClient();
   const { preferences } = usePreferences();
+  const local = preferences.coachingMode === "local";
   const sessions = useSessions({});
   const saved = usePhrases();
   const known = useMemo(() => new Set((saved.data ?? []).map((p) => p.expression.trim().toLowerCase())), [saved.data]);
@@ -47,11 +48,11 @@ export function PhraseSuggestions({ onDone, preselect }: { onDone: () => void; p
   const order = transcribed.filter((s) => chosen.has(s.id));
 
   const prepare = useMutation({
-    mutationFn: () => ipc.previewPhraseSuggestions(order.map((s) => s.id), model),
+    mutationFn: () => local ? ipc.previewPhraseSuggestionsLocal(order.map((s) => s.id), model) : ipc.previewPhraseSuggestions(order.map((s) => s.id), model),
     onSuccess: setPreview,
   });
   const send = useMutation({
-    mutationFn: (p: CoachingPreview) => ipc.requestPhraseSuggestions(p.requestId, p.payloadSha256),
+    mutationFn: (p: CoachingPreview) => p.recipient === "https://api.openai.com/v1/responses" ? ipc.requestPhraseSuggestions(p.requestId, p.payloadSha256) : ipc.sendPhraseSuggestionsLocal(p.requestId, p.payloadSha256),
     onSuccess: (items) => {
       setPreview(null);
       setResults({ items, sessions: order });
@@ -78,15 +79,12 @@ export function PhraseSuggestions({ onDone, preselect }: { onDone: () => void; p
     setPreview(null);
   };
 
-  // Never a silent switch of provider: suggestions use your OpenAI account (Coaching → API) only.
-  if (preferences.coachingMode !== "api")
+  if (preferences.coachingMode === "off")
     return (
       <Panel className="space-y-2">
         <SectionTitle>Suggest phrases with AI</SectionTitle>
         <p className="text-muted-foreground">
-          {preferences.coachingMode === "off"
-            ? "AI suggestions are turned off. "
-            : "Phrase suggestions use your OpenAI account, and Coaching is set to your local model, so nothing is sent. "}
+          AI suggestions are turned off. {" "}
           <Link className="text-primary hover:underline" to="/settings/coaching">Choose in Settings → Coaching</Link>.
         </p>
         <Button variant="ghost" onClick={onDone}>Close</Button>
@@ -148,8 +146,9 @@ export function PhraseSuggestions({ onDone, preselect }: { onDone: () => void; p
       ) : preview ? (
         <div className="space-y-3 rounded-lg border p-3" role="group" aria-label="Request preview">
           <p className="text-meta">
-            <span className="font-medium">Recipient:</span> OpenAI · {preview.model} · at most {money(preview.estimatedMaximumCostMicroUsd)}
+            {preview.recipient === "https://api.openai.com/v1/responses" ? `Recipient: OpenAI · ${preview.model} · at most ${money(preview.estimatedMaximumCostMicroUsd)}` : "Recipient: local model on this computer · free"}
           </p>
+          <p className="text-meta">Model: {preview.model}</p>
           <p className="text-meta text-muted-foreground">{preview.costExplanation}</p>
           <details className="text-meta">
             <summary>Exactly what will be sent ({order.length} {order.length === 1 ? "session" : "sessions"})</summary>
@@ -157,7 +156,7 @@ export function PhraseSuggestions({ onDone, preselect }: { onDone: () => void; p
           </details>
           <div className="flex flex-wrap gap-2">
             <Button disabled={send.isPending} onClick={() => send.mutate(preview)}>
-              <Send aria-hidden /> {send.isPending ? "Waiting for the answer…" : "Send · may be billed"}
+              <Send aria-hidden /> {send.isPending ? "Waiting for the answer…" : (preview.recipient === "https://api.openai.com/v1/responses" ? "Send · may be billed" : "Send to the local model")}
             </Button>
             <Button variant="ghost" disabled={send.isPending} onClick={cancelPreview}>Cancel</Button>
           </div>
@@ -192,12 +191,12 @@ export function PhraseSuggestions({ onDone, preselect }: { onDone: () => void; p
               </ul>
             </fieldset>
           )}
-          <div className="flex flex-wrap items-center gap-2">
+          {!local && <div className="flex flex-wrap items-center gap-2">
             <Label htmlFor="suggest-model" className="text-meta">Model</Label>
             <NativeSelect id="suggest-model" compact value={model} onChange={(e) => setModel(e.target.value as CoachingModel)}>
               {COACHING_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} · {m.note}</option>)}
             </NativeSelect>
-          </div>
+          </div>}
           <Button disabled={chosen.size === 0 || chosen.size > 12 || prepare.isPending} onClick={() => prepare.mutate()}>
             <Sparkles aria-hidden /> {prepare.isPending ? "Preparing…" : "Preview the request"}
           </Button>

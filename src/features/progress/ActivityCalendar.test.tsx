@@ -1,8 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it } from "vitest";
-import { IpcContext, type IpcClient } from "@/lib/ipc";
+import { describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { IpcContext, IpcError, type IpcClient } from "@/lib/ipc";
+import { renderWithApp } from "@/test/render";
 import { createMockClient } from "@/lib/ipc/mock-client";
 import type { SessionSummary } from "@/lib/ipc/schemas";
 import { toLocalDate } from "@/lib/phrase-schedule";
@@ -38,4 +40,18 @@ it("shows the whole year, and a practised day opens that day's sessions", async 
   expect(day).toHaveAttribute("href", `/sessions?date=${today}`);
   expect(screen.getByText(new RegExp(`1 day practised in ${today.slice(0, 4)}`))).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Next year" })).toBeDisabled();
+});
+
+it("shows storage failure instead of an empty year and reloads on Try again", async () => {
+  const user = userEvent.setup();
+  const listSessions = vi.fn<() => Promise<SessionSummary[]>>()
+    .mockRejectedValueOnce(new IpcError("storage_unavailable", "Session storage is unavailable."))
+    .mockResolvedValueOnce([]);
+  renderWithApp(<ActivityCalendar />, { client: { ...createMockClient(), listSessions } });
+  expect(screen.queryByRole("region", { name: "Activity" })).not.toBeInTheDocument();
+  expect(await screen.findByRole("alert")).toHaveTextContent("Session storage is unavailable.");
+  expect(screen.queryByText(/No practice recorded/)).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Try again" }));
+  expect(await screen.findByRole("region", { name: "Activity" })).toHaveTextContent("No practice recorded");
+  expect(listSessions).toHaveBeenCalledTimes(2);
 });

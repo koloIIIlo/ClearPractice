@@ -29,6 +29,23 @@
 | 16.8 | Updates and code signing | M |
 | 16.9 | Performance and storage pass | M |
 
+**As built so far (18 Oct): 16.2, 16.4, 16.5, 16.6, 16.7.** 16.1 waits for its feasibility gate (a phone), 16.3 and 16.9 are next, and 16.8 waits for a certificate and an updater key.
+- **16.2 Surprise prompts.**
+  - **Preferences:** `surpriseEnabled` (off), `surpriseStart` and `surpriseEnd` (09:00 to 18:00, 30-minute steps), `surpriseDays` (Monday to Friday) and `surpriseNotifications` (off). Missing fields in an older profile take these defaults.
+  - **Scheduling:** `src/app/SurpriseScheduler.tsx` checks once a minute only while the prompt is switched on, and loads the prompt's screen only when one is due. The day's time comes from `surpriseMinute(date, …)`. "Already practised" means a practice event or a session with a take that day.
+  - **Once a day:** the day a prompt was shown is kept in the WebView's local storage (`cp-surprise-on`), so it shows once even across restarts. Start opens the Studio with the prompt; Not now just closes it.
+  - **Windows notification:** goes straight to `tauri-plugin-notification` 2.7.0 (Rust, pinned) through `invoke` in `src/lib/ipc/notifications.ts`, so no JS package was added. Permission is asked when you tick it; it needs `notification:default` in the main window's capability.
+- **16.4 First-language tips.** `firstLanguage` (null is Prefer not to say) offers 12 languages: Arabic, French, German, Hindi, Japanese, Korean, Mandarin Chinese, Polish, Portuguese, Russian, Spanish and Ukrainian. `src/content/first-language-tips.ts` has six tips for each, each with an example and a practice link. They show in Exercises → Guides and, one line now and then, in the emphasis drill and the imitation exercise. Every language still needs a speaker's review before release (`docs/CONTENT_REVIEW.md`).
+- **16.5 Local models for small text tasks.**
+  - **Commands:** six in `commands/small_text.rs`: `preview_phrase_suggestions_local` and `send_phrase_suggestions_local`, and the same for clip names and clip picks.
+  - **Rules:** they mirror the follow-up questions' local path: a preview that says the local model on this computer is free, a single-use send bound to the previewed payload, the endpoint checked by `local_llm::validate_endpoint` (loopback only), and the API path's validation.
+  - **Front end:** the IPC loads lazily (`small-text-client.ts`, `schemas-small-text.ts`, `mock-small-text.ts`). PhraseSuggestions and ClipImport offer Send to the local model when Coaching is Local LLM.
+- **16.6 Provider contract tests.** `src-tauri/tests/fixtures/providers/` holds scrubbed responses: OpenAI take feedback, follow-up questions, phrases and a partner turn; Deepgram; AssemblyAI; 401, 429 and a malformed body. `src-tauri/tests/providers/mod.rs` is compiled into the library from `api/coaching.rs`, so `cargo test --lib providers::fixtures_parse` runs them. `live_contract` is ignored and runs only with your OK: about USD 0.008 in total, keys from Credential Manager, synthetic silence only, and the desktop app closed first.
+- **16.7 User docs, changelog and What's new.**
+  - **Docs:** `README.md` is now for users (what the app is, install, privacy, features, keyboard shortcuts, where data lives, backups). The developer notes are in `docs/DEVELOPING.md`, and `CHANGELOG.md` uses Keep a Changelog.
+  - **What's new:** `src/content/whats-new.ts` has six highlights for 0.1.0. The dialog opens after an update and from Help → What's new. A new profile's `lastSeenVersion` is the current version, so a fresh install doesn't show it. An older profile has none, so it shows once after the update.
+- **Start-up:** the waveform player now loads when a saved recording is opened rather than with Today, so start-up JS fell from 318.8 to about 289 kB gzip.
+
 ---
 
 ## 16.1 Mobile companion and LAN sync (gated)

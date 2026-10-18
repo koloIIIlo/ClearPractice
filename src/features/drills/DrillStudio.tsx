@@ -15,6 +15,7 @@ import { RecorderPanel, useRecorderGuard } from "@/features/practice/RecorderPan
 import { RecordingLibrary } from "@/features/practice/RecordingLibrary";
 import { SequenceBar } from "@/features/practice/SequenceBar";
 import { ShareChallenge } from "@/features/social/ShareChallenge";
+import { FirstLanguageTipLine } from "@/features/exercises/FirstLanguageTips";
 import { CountdownRing, lightAt } from "./CountdownRing";
 import { DRILL_MODULES, type DrillModule, type DrillParams, type DrillPlan } from "./drill-module";
 import { newSeed } from "./plan-helpers";
@@ -51,6 +52,7 @@ export function DrillStudioPage() {
   const seed = search.get("seed");
   return (
     <Page className="max-w-4xl">
+      {drill.id === "emphasis" && <FirstLanguageTipLine href="/drill/emphasis" />}
       <DrillLoader key={`${drill.id}:${seed ?? ""}`} drill={drill} seed={seed} />
     </Page>
   );

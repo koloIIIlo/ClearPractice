@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "react-router/dom";
 import { Toaster } from "@/components/ui/sonner";
@@ -20,14 +20,22 @@ export default function App({ client = defaultClient }: { client?: IpcClient }) 
         },
       }),
   );
-  const [router] = useState(createRouter);
+  const [router, setRouter] = useState<ReturnType<typeof createRouter> | null>(null);
+  useLayoutEffect(() => {
+    // Hash listeners belong to this mounted app. Creating the router in a layout
+    // effect (before the first paint, so no blank frame) also lets StrictMode
+    // dispose its first setup before recreating it.
+    const next = createRouter();
+    setRouter(next);
+    return () => next.dispose();
+  }, []);
 
   return (
     <ThemeProvider>
       <IpcContext.Provider value={client}>
         <QueryClientProvider client={queryClient}>
           <TooltipProvider delayDuration={400}>
-            <RouterProvider router={router} />
+            {router && <RouterProvider router={router} />}
             <Toaster position="bottom-right" />
           </TooltipProvider>
         </QueryClientProvider>

@@ -41,6 +41,18 @@ pub struct Preferences {
     /// Your own warning level for the shared monthly API spending (3.17), in
     /// micro-USD; the USD 5 stop is fixed (D-7, D-22).
     pub budget_warning_micro_usd: u64,
+    /// Missing on an existing JSON profile means an update. A brand-new profile
+    /// uses Default (the current version), so it never opens release notes.
+    #[serde(default)]
+    pub last_seen_version: Option<String>,
+    /// Optional language for practice ideas; never used to assess a speaker.
+    pub first_language: Option<String>,
+    /// Surprise prompts and OS delivery are separate opt-ins (D-37).
+    pub surprise_enabled: bool,
+    pub surprise_start: String,
+    pub surprise_end: String,
+    pub surprise_days: Vec<String>,
+    pub surprise_notifications: bool,
     /// Daily reminder time ("HH:MM", local), or `None` for no reminder.
     pub reminder_time: Option<String>,
     /// Coaching prices you entered (5.9), by model ID; others use the built-in prices.
@@ -92,7 +104,9 @@ pub const ACCENTS: [&str; 6] = ["green", "ocean", "amber", "violet", "rose", "gr
 
 impl Default for Preferences {
     fn default() -> Self {
-        Self { recording_sounds: true, recording_shortcuts: true, level_before_recording: true, auto_transcribe: true, input_device_id: None, session_length: "standard".into(),
+        Self { last_seen_version: Some(env!("CARGO_PKG_VERSION").into()), first_language: None, surprise_enabled: false, surprise_start: "09:00".into(), surprise_end: "18:00".into(),
+            surprise_days: ["monday", "tuesday", "wednesday", "thursday", "friday"].map(String::from).to_vec(), surprise_notifications: false,
+            recording_sounds: true, recording_shortcuts: true, level_before_recording: true, auto_transcribe: true, input_device_id: None, session_length: "standard".into(),
             coaching_mode: "api".into(), coaching_model: CoachingModel::default(), delivery_impressions: false,
             onboarded: false, tour_done: false, goals: Vec::new(), goal_note: String::new(), difficulty_language: None,
             local_endpoint: "http://127.0.0.1:8080".into(), local_model: String::new(), budget_warning_micro_usd: 4_000_000, reminder_time: None,
@@ -115,6 +129,21 @@ fn validate(mut p: Preferences) -> Result<Preferences, String> {
     }
     if !matches!(p.celebrations.as_str(), "full" | "subtle" | "off") {
         return Err("Choose full, subtle or no celebrations.".into());
+    }
+    if p.last_seen_version.as_ref().is_some_and(|v| v.is_empty() || v.len() > 40 || v.chars().any(char::is_control)) {
+        return Err("Invalid release version.".into());
+    }
+    if p.first_language.as_deref().is_some_and(|l| !matches!(l, "russian" | "ukrainian" | "polish" | "german" | "french" | "spanish" | "portuguese" | "arabic" | "hindi" | "mandarin" | "japanese" | "korean")) {
+        return Err("Choose your first language from the list, or Prefer not to say.".into());
+    }
+    let half_hour = |t: &str| t.len() == 5 && t.as_bytes()[0].is_ascii_digit() && t.as_bytes()[1].is_ascii_digit() && t.as_bytes()[2] == b':' &&
+        t[..2].parse::<u8>().is_ok_and(|h| h < 24) && matches!(&t[3..], "00" | "30");
+    if !p.surprise_start.is_ascii() || !p.surprise_end.is_ascii() ||
+        !half_hour(&p.surprise_start) || !half_hour(&p.surprise_end) || p.surprise_start >= p.surprise_end {
+        return Err("Choose a surprise window ending after it starts, in half-hour steps.".into());
+    }
+    if p.surprise_days.len() > 7 || p.surprise_days.iter().any(|d| !matches!(d.as_str(), "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday")) {
+        return Err("Choose surprise days from the list.".into());
     }
     p.local_endpoint = crate::api::local_llm::validate_endpoint(&p.local_endpoint)?;
     for (id, price) in &p.coaching_prices {
@@ -215,6 +244,49 @@ pub fn save(db: &DatabaseOwner, preferences: Preferences) -> Result<Preferences,
 mod tests {
     use super::*;
     use crate::storage::recording::tests::TestRoot;
+
+    #[test]
+    fn preferences_distinguish_fresh_profiles_from_updates() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        assert_eq!(load(&db).unwrap().last_seen_version.as_deref(), Some(env!("CARGO_PKG_VERSION")));
+        db.set_setting(KEY, r#"{"recordingSounds":false}"#).unwrap();
+        let old = load(&db).unwrap();
+        assert_eq!(old.last_seen_version, None);
+        let seen = Preferences { last_seen_version: Some(env!("CARGO_PKG_VERSION").into()), ..old };
+        assert_eq!(save(&db, seen.clone()).unwrap(), seen);
+        assert_eq!(load(&db).unwrap(), seen);
+        assert!(save(&db, Preferences { last_seen_version: Some("bad\nversion".into()), ..Default::default() }).is_err());
+    }
+
+    #[test]
+    fn first_language_preferences_are_optional_and_checked() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        db.set_setting(KEY, r#"{"recordingSounds":false}"#).unwrap();
+        assert_eq!(load(&db).unwrap().first_language, None);
+        let chosen = Preferences { first_language: Some("russian".into()), ..Default::default() };
+        assert_eq!(save(&db, chosen.clone()).unwrap(), chosen);
+        assert_eq!(load(&db).unwrap(), chosen);
+        assert!(save(&db, Preferences { first_language: Some("other".into()), ..Default::default() }).is_err());
+        assert_eq!(save(&db, Preferences::default()).unwrap().first_language, None);
+    }
+
+    #[test]
+    fn surprise_preferences_default_and_round_trip() {
+        let root = TestRoot::new();
+        let db = DatabaseOwner::open(&root.0).unwrap();
+        db.set_setting(KEY, r#"{"recordingSounds":false}"#).unwrap();
+        let old = load(&db).unwrap();
+        assert!(!old.recording_sounds && !old.surprise_enabled && !old.surprise_notifications);
+        let chosen = Preferences { surprise_enabled: true, surprise_notifications: true, surprise_start: "10:30".into(), surprise_end: "16:00".into(), surprise_days: vec!["sunday".into()], ..old.clone() };
+        assert_eq!(save(&db, chosen.clone()).unwrap(), chosen);
+        assert_eq!(load(&db).unwrap(), chosen);
+        for (start, end) in [("10:15", "18:00"), ("18:00", "09:00"), ("09:00", "24:00"), ("xx:00", "18:00"), ("+1:00", "18:00")] {
+            assert!(save(&db, Preferences { surprise_start: start.into(), surprise_end: end.into(), ..old.clone() }).is_err());
+        }
+        assert!(save(&db, Preferences { surprise_days: vec!["holiday".into()], ..old }).is_err());
+    }
 
     #[test]
     fn preferences_default_round_trip_and_reject_unknown_lengths() {

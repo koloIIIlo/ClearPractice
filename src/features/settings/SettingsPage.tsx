@@ -12,6 +12,8 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { useQuery } from "@tanstack/react-query";
 import { useIpc } from "@/lib/ipc";
 import { formatClock } from "@/lib/format";
+import { FIRST_LANGUAGES } from "@/content/first-languages";
+import { SurpriseSettings } from "./SurpriseSettings";
 import { useInputDevices, usePreferences } from "@/lib/ipc/queries";
 import type { CoachingModel, Preferences } from "@/lib/ipc/schemas";
 import { Button } from "@/components/ui/button";
@@ -195,10 +197,21 @@ function PracticeSettings() {
         <SwitchRow id="rec-shortcuts" label="Recording keyboard shortcuts" hint="Ctrl+Enter starts or stops a take in the studio." checked={preferences.recordingShortcuts} onCheckedChange={(on) => update({ recordingShortcuts: on })} />
         <SwitchRow id="live-pace" label="Show live pace while recording" hint="An estimate from the audio. There's no right speed; it shows your range." checked={preferences.livePace} onCheckedChange={(on) => update({ livePace: on })} />
       </Section>
+      <SurpriseSettings />
       <LearningSettings />
       <WordsToWatch />
       <PracticeStyleSettings />
       <Section title="Languages">
+        <div className="space-y-1">
+          <Label htmlFor="first-language">Your first language (optional)</Label>
+          <Select value={preferences.firstLanguage ?? "none"} onValueChange={(v) => update({ firstLanguage: v === "none" ? null : v as Preferences["firstLanguage"] })}>
+            <SelectTrigger id="first-language" className="h-10 w-64"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="none">Prefer not to say</SelectItem>
+              {FIRST_LANGUAGES.map((l) => <SelectItem key={l.id} value={l.id}>{l.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <p className="text-meta text-muted-foreground">Optional practice ideas in Exercises → Guides. Choose only if useful to you.</p>
+        </div>
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1">
           <dt className="text-muted-foreground">Interface</dt><dd>English (dates in British format)</dd>
           <dt className="text-muted-foreground">Practice</dt><dd>English</dd>

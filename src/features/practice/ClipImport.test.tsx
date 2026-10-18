@@ -267,3 +267,43 @@ it("reopens a recording from the import history without transcribing, marks part
   expect(client.saveClipSections).toHaveBeenCalledWith("stage-9", [expect.objectContaining({ title: "Not yet kept." })], "folder-k");
   expect(client.createClipFolder).not.toHaveBeenCalled();
 });
+
+it("names and picks clips with the local model without a key or a charge", async () => {
+  const user = userEvent.setup();
+  const local = createMockClient();
+  await local.setPreferences({ ...await local.getPreferences(), coachingMode: "local", localModel: "local-test" });
+  const { client } = setup({
+    getPreferences: local.getPreferences,
+    getApiKeyStatus: vi.fn(async () => ({ provider: "OpenAI" as const, present: false })),
+    chooseClipFile: async () => ({ stagingId: "local-stage", fileName: "talk.wav", durationMs: 120_000 }),
+    splitClipSource: async () => [{ startMs: 0, endMs: 12_000, text: "First whole sentence here.", title: "First whole sentence here." }],
+    previewClipNamesLocal: vi.fn(local.previewClipNamesLocal),
+    sendClipNamesLocal: vi.fn(local.sendClipNamesLocal),
+    previewClipPicksLocal: vi.fn(local.previewClipPicksLocal),
+    sendClipPicksLocal: vi.fn(local.sendClipPicksLocal),
+    previewClipNames: vi.fn(local.previewClipNames), requestClipNames: vi.fn(local.requestClipNames),
+    previewClipPicks: vi.fn(local.previewClipPicks), requestClipPicks: vi.fn(local.requestClipPicks),
+    measureClipSource: vi.fn(async () => 1),
+  });
+  await user.click(screen.getByRole("button", { name: "Choose an audio file…" }));
+  await user.click(await screen.findByRole("button", { name: "Transcribe and split" }));
+  await user.click(await screen.findByRole("button", { name: "Suggest titles with AI…" }));
+  const naming = await screen.findByRole("group", { name: "AI naming request preview" });
+  expect(naming).toHaveTextContent("Recipient: local model on this computer · free");
+  expect(naming).not.toHaveTextContent("$");
+  expect(client.sendClipNamesLocal).not.toHaveBeenCalled();
+  await user.click(within(naming).getByRole("button", { name: "Send to the local model" }));
+  await waitFor(() => expect(screen.getByLabelText("Title of clip 1")).toHaveValue("Practice passage 1"));
+  await user.click(screen.getByRole("checkbox", { name: /Let AI choose the best parts/ }));
+  await user.click(await screen.findByRole("button", { name: "Ask AI to choose…" }));
+  const picks = await screen.findByRole("group", { name: "AI clip choice request preview" });
+  expect(picks).toHaveTextContent("Recipient: local model on this computer · free");
+  expect(picks).not.toHaveTextContent("$");
+  expect(client.sendClipPicksLocal).not.toHaveBeenCalled();
+  await user.click(within(picks).getByRole("button", { name: "Send to the local model" }));
+  await waitFor(() => expect(screen.getByLabelText("Title of clip 1")).toHaveValue("A sample passage"));
+  expect(client.requestClipNames).not.toHaveBeenCalled();
+  expect(client.requestClipPicks).not.toHaveBeenCalled();
+  expect(client.previewClipNames).not.toHaveBeenCalled();
+  expect(client.previewClipPicks).not.toHaveBeenCalled();
+});

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatClock } from "@/lib/format";
 import { useIpc } from "@/lib/ipc";
+import { usePreferences } from "@/lib/ipc/queries";
 import type { ClipCandidate, ClipName, ClipSource, ClipStaged, CoachingModel, CoachingPreview, OpenedSource, PickedClip, PickRun, ReferenceClip, SavedRange } from "@/lib/ipc/schemas";
 import { FEATURE_LABELS, type Feature } from "./ClipLibrary";
 import { COACHING_MODELS } from "@/features/settings/CoachingSpike";
@@ -158,7 +159,10 @@ function AiPick({ stagingId, active, settings, onSettings, onPicked }: {
   onPicked: (picks: PickedClip[]) => void;
 }) {
   const ipc = useIpc();
-  const key = useQuery({ queryKey: ["api-key-status"], queryFn: () => ipc.getApiKeyStatus(), retry: false });
+  const { preferences } = usePreferences();
+  const local = preferences.coachingMode === "local";
+  const off = preferences.coachingMode === "off";
+  const key = useQuery({ queryKey: ["api-key-status"], queryFn: () => ipc.getApiKeyStatus(), retry: false, enabled: !local && !off });
   const [stage, setStage] = useState<PickStage>({ kind: "idle" });
   const [error, setError] = useState<string | null>(null);
   const measuredFor = useRef<string | null>(null);
@@ -194,18 +198,20 @@ function AiPick({ stagingId, active, settings, onSettings, onPicked }: {
   };
   // Measuring is local and free, so it starts as soon as the option is on.
   useEffect(() => {
-    if (active && key.data?.present && measuredFor.current !== stagingId) void measure();
-  }, [active, stagingId, key.data?.present]);
+    if (active && !off && (local || key.data?.present) && measuredFor.current !== stagingId) void measure();
+  }, [active, stagingId, local, off, key.data?.present]);
 
-  if (!key.data?.present) {
+  if (off) return <p className="text-meta text-muted-foreground">AI suggestions are turned off. Choose in Settings → Coaching.</p>;
+  if (!local && !key.data?.present) {
     return <p className="text-meta text-muted-foreground">Letting AI choose needs an OpenAI key (Settings → Coaching). The automatic proposals below still work.</p>;
   }
   const sentences = "sentences" in stage ? stage.sentences : 0;
+  const approvalLocal = stage.kind === "approval" && stage.preview.recipient !== "https://api.openai.com/v1/responses";
   const prepare = async () => {
     setError(null);
     setStage({ kind: "previewing", sentences });
     try {
-      setStage({ kind: "approval", sentences, preview: await ipc.previewClipPicks(stagingId, { model, toneHint, wanted }) });
+      setStage({ kind: "approval", sentences, preview: await (local ? ipc.previewClipPicksLocal(stagingId, { model, toneHint, wanted }) : ipc.previewClipPicks(stagingId, { model, toneHint, wanted })) });
     } catch (e) {
       setStage({ kind: "measured", sentences });
       setError(e instanceof Error ? e.message : "Could not prepare the request.");
@@ -217,12 +223,12 @@ function AiPick({ stagingId, active, settings, onSettings, onPicked }: {
     setError(null);
     setStage({ kind: "waiting", sentences, since: Date.now() });
     try {
-      const picks = await ipc.requestClipPicks(stagingId, approved.requestId, approved.payloadSha256);
+      const picks = await (approved.recipient === "https://api.openai.com/v1/responses" ? ipc.requestClipPicks(stagingId, approved.requestId, approved.payloadSha256) : ipc.sendClipPicksLocal(stagingId, approved.requestId, approved.payloadSha256));
       onPicked(picks);
       setStage({ kind: "done", sentences, clips: picks.length });
     } catch (e) {
       setStage({ kind: "measured", sentences });
-      setError(e instanceof Error ? e.message : "The request did not finish; the charge may be uncertain.");
+      setError(e instanceof Error ? e.message : (local ? "The local model request did not finish." : "The request did not finish; the charge may be uncertain."));
     }
   };
   const working = stage.kind === "preparing" || stage.kind === "measuring" || stage.kind === "previewing" || stage.kind === "waiting";
@@ -236,7 +242,7 @@ function AiPick({ stagingId, active, settings, onSettings, onPicked }: {
       case "measured": return `Measured ${stage.sentences} sentences. Ready to prepare the request.`;
       case "previewing": return "Preparing the request text…";
       case "approval": return "Waiting for your approval. Nothing has been sent.";
-      case "waiting": return "Sent to OpenAI. Waiting for the answer";
+      case "waiting": return `Sent to ${local ? "the local model" : "OpenAI"}. Waiting for the answer`;
       case "done": return `Done: the AI chose ${stage.clips} ${stage.clips === 1 ? "part" : "parts"}. They replace the automatic list below.`;
     }
   })();
@@ -244,10 +250,11 @@ function AiPick({ stagingId, active, settings, onSettings, onPicked }: {
   return (
     <div className="space-y-3 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2 text-meta">
-        <Label htmlFor="pick-model" className="text-meta">AI model</Label>
+        {!local && <><Label htmlFor="pick-model" className="text-meta">AI model</Label>
         <NativeSelect id="pick-model" compact value={model} disabled={working} onChange={(e) => change({ model: e.target.value as CoachingModel })}>
           {COACHING_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} · {m.note}</option>)}
         </NativeSelect>
+        </>}
         <Label htmlFor="pick-wanted" className="text-meta">Up to</Label>
         <NativeSelect id="pick-wanted" compact value={wanted} disabled={working} onChange={(e) => change({ wanted: Number(e.target.value) })}>
           {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
@@ -293,11 +300,12 @@ function AiPick({ stagingId, active, settings, onSettings, onPicked }: {
 
       {stage.kind === "approval" && (
         <div className="space-y-2 text-meta" role="group" aria-label="AI clip choice request preview">
-          <p className="font-medium">Recipient: OpenAI · {stage.preview.model}</p>
-          <p>Estimated upper reservation: {money(stage.preview.estimatedMaximumCostMicroUsd)} within the shared monthly limit. Only the transcript and its measured numbers are sent, never audio. This approval expires in 5 minutes.</p>
+          <p className="font-medium">{approvalLocal ? "Recipient: local model on this computer · free" : `Recipient: OpenAI · ${stage.preview.model}`}</p>
+          <p>{approvalLocal ? "Runs on this computer for free." : `Estimated upper reservation: ${money(stage.preview.estimatedMaximumCostMicroUsd)} within the shared monthly limit.`} Only the transcript and its measured numbers are sent, never audio. This approval expires in 5 minutes.</p>
+          <p>Model: {stage.preview.model}</p>
           <details><summary className="cursor-pointer">Text that will be sent ({sentences} sentences)</summary><pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap">{stage.preview.selectedText}</pre></details>
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => void send()}>Send transcript · may be billed</Button>
+            <Button size="sm" onClick={() => void send()}>{approvalLocal ? "Send to the local model" : "Send transcript · may be billed"}</Button>
             <Button size="sm" variant="ghost" onClick={() => setStage({ kind: "measured", sentences })}>Cancel</Button>
           </div>
         </div>
@@ -313,40 +321,47 @@ function AiPick({ stagingId, active, settings, onSettings, onPicked }: {
  */
 function AiNaming({ proposals, onNames }: { proposals: Proposal[]; onNames: (names: ClipName[]) => void }) {
   const ipc = useIpc();
-  const key = useQuery({ queryKey: ["api-key-status"], queryFn: () => ipc.getApiKeyStatus(), retry: false });
+  const { preferences } = usePreferences();
+  const local = preferences.coachingMode === "local";
+  const off = preferences.coachingMode === "off";
+  const key = useQuery({ queryKey: ["api-key-status"], queryFn: () => ipc.getApiKeyStatus(), retry: false, enabled: !local && !off });
   const [model, setModel] = useState<CoachingModel>("gpt-6-luna");
   const [preview, setPreview] = useState<CoachingPreview | null>(null);
+  const previewLocal = preview?.recipient !== "https://api.openai.com/v1/responses";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  if (!key.data?.present) {
+  if (off) return <p className="text-meta text-muted-foreground">AI suggestions are turned off. Choose in Settings → Coaching.</p>;
+  if (!local && !key.data?.present) {
     return <p className="text-meta text-muted-foreground">AI titles and descriptions need an OpenAI key (Settings → Coaching). You can name the clips yourself.</p>;
   }
   const prepare = async () => {
     setBusy(true); setError(null);
-    try { setPreview(await ipc.previewClipNames(proposals.map((p) => p.text), model)); } catch (e) { setError(e instanceof Error ? e.message : "Could not prepare the request."); } finally { setBusy(false); }
+    try { setPreview(await (local ? ipc.previewClipNamesLocal(proposals.map((p) => p.text), model) : ipc.previewClipNames(proposals.map((p) => p.text), model))); } catch (e) { setError(e instanceof Error ? e.message : "Could not prepare the request."); } finally { setBusy(false); }
   };
   const send = async () => {
     if (!preview) return;
     const approved = preview;
     setPreview(null); setBusy(true); setError(null);
-    try { onNames(await ipc.requestClipNames(approved.requestId, approved.payloadSha256)); } catch (e) { setError(e instanceof Error ? e.message : "The request did not finish; the charge may be uncertain."); } finally { setBusy(false); }
+    try { onNames(await (approved.recipient === "https://api.openai.com/v1/responses" ? ipc.requestClipNames(approved.requestId, approved.payloadSha256) : ipc.sendClipNamesLocal(approved.requestId, approved.payloadSha256))); } catch (e) { setError(e instanceof Error ? e.message : (local ? "The local model request did not finish." : "The request did not finish; the charge may be uncertain.")); } finally { setBusy(false); }
   };
   return (
     <div className="space-y-2 rounded-md border p-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Label htmlFor="naming-model" className="text-meta">AI model</Label>
+        {!local && <><Label htmlFor="naming-model" className="text-meta">AI model</Label>
         <NativeSelect id="naming-model" compact value={model} disabled={busy} onChange={(e) => { setModel(e.target.value as CoachingModel); setPreview(null); }}>
           {COACHING_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} · {m.note}</option>)}
         </NativeSelect>
+        </>}
         <Button variant="outline" size="sm" disabled={busy} onClick={() => void prepare()}>Suggest titles with AI…</Button>
       </div>
       {preview && (
         <div className="space-y-2 text-meta" role="group" aria-label="AI naming request preview">
-          <p className="font-medium">Recipient: OpenAI · {preview.model}</p>
-          <p>Estimated upper reservation: {money(preview.estimatedMaximumCostMicroUsd)} within the shared monthly limit. Only the transcripts below are sent, never audio.</p>
+          <p className="font-medium">{previewLocal ? "Recipient: local model on this computer · free" : `Recipient: OpenAI · ${preview.model}`}</p>
+          <p>{previewLocal ? "Runs on this computer for free." : `Estimated upper reservation: ${money(preview.estimatedMaximumCostMicroUsd)} within the shared monthly limit.`} Only the transcripts below are sent, never audio.</p>
+          <p>Model: {preview.model}</p>
           <details><summary className="cursor-pointer">Text that will be sent</summary><pre className="mt-1 whitespace-pre-wrap">{preview.selectedText}</pre></details>
           <div className="flex gap-2">
-            <Button size="sm" disabled={busy} onClick={() => void send()}>Send transcripts · may be billed</Button>
+            <Button size="sm" disabled={busy} onClick={() => void send()}>{previewLocal ? "Send to the local model" : "Send transcripts · may be billed"}</Button>
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => setPreview(null)}>Cancel</Button>
           </div>
         </div>

@@ -11,6 +11,8 @@ import { TopBar } from "./TopBar";
 import { useIpc } from "@/lib/ipc";
 import { usePreferences } from "@/lib/ipc/queries";
 import { RecoveryNotice } from "./RecoveryNotice";
+import { WhatsNewHost } from "@/features/help/WhatsNewHost";
+import { SurpriseScheduler } from "./SurpriseScheduler";
 import { DailyReminder } from "./DailyReminder";
 import { EngagementProvider } from "@/features/engagement/EngagementProvider";
 import { CelebrationHost } from "@/features/engagement/CelebrationHost";
@@ -120,6 +122,7 @@ export function AppShell() {
               )}
               <RecoveryNotice />
               <DailyReminder />
+              <SurpriseScheduler />
               <Outlet />
             </main>
           </SidebarInset>
@@ -130,6 +133,7 @@ export function AppShell() {
             </Suspense>
           )}
           <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+          {!setup && <WhatsNewHost />}
           <CelebrationHost />
           <ScrollRestoration />
         </SidebarProvider>

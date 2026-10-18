@@ -1,0 +1,38 @@
+{
+  "metadata": {
+    "transaction_key": "scrubbed",
+    "request_id": "request_scrubbed",
+    "sha256": "scrubbed",
+    "created": "2026-10-18T00:00:00Z",
+    "duration": 1.0,
+    "channels": 1
+  },
+  "results": {
+    "channels": [
+      {
+        "alternatives": [
+          {
+            "transcript": "Hello there.",
+            "confidence": 0.99,
+            "words": [
+              {
+                "word": "hello",
+                "punctuated_word": "Hello",
+                "start": 0.1,
+                "end": 0.4,
+                "confidence": 0.99
+              },
+              {
+                "word": "there",
+                "punctuated_word": "there.",
+                "start": 0.5,
+                "end": 0.9,
+                "confidence": 0.99
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

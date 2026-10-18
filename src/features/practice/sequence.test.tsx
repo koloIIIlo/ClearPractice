@@ -41,7 +41,8 @@ describe("today's sequence (4.10)", () => {
     window.location.hash = "#/";
     render(<App client={createMockClient()} />);
     await user.click(await screen.findByRole("button", { name: "Start practice" }, { timeout: 5000 }));
-    const bar = await screen.findByRole("region", { name: "Today's practice" });
+    // The Studio route loads on first visit, including its optional review UI.
+    const bar = await screen.findByRole("region", { name: "Today's practice" }, { timeout: 5_000 });
     expect(bar).toHaveTextContent("step 1 of 4");
     await user.click(within(bar).getByRole("button", { name: /Next step/ }));
     expect(await screen.findByRole("region", { name: "Today's practice" })).toHaveTextContent("step 2 of 4 · Thought groups");
@@ -49,7 +50,7 @@ describe("today's sequence (4.10)", () => {
     await user.click(within(screen.getByRole("region", { name: "Today's practice" })).getByRole("button", { name: /Finish/ }));
     expect(await screen.findByRole("heading", { name: "Practice complete" })).toBeInTheDocument();
     expect(screen.getByText(/No takes were saved in this sequence/)).toBeInTheDocument();
-  });
+  }, 10_000);
 });
 
 it("stores the ease rating and takeaway on every session of the sequence (4.11)", async () => {

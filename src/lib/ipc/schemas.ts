@@ -1,3 +1,4 @@
+import { APP_VERSION } from "@/lib/app-version";
 /**
  * Data contracts between the UI and the native core (blueprint §15).
  * Every value crossing the IPC boundary is parsed with these schemas,
@@ -798,6 +799,10 @@ export type DataLocation = z.infer<typeof DataLocation>;
 export const CoachingModel = z.enum(["gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"]);
 export type CoachingModel = z.infer<typeof CoachingModel>;
 
+export const FirstLanguage = z.enum(["russian", "ukrainian", "polish", "german", "french", "spanish", "portuguese", "arabic", "hindi", "mandarin", "japanese", "korean"]);
+export const SurpriseDay = z.enum(["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]);
+export const HalfHour = z.string().regex(/^(?:[01]\d|2[0-3]):(?:00|30)$/);
+
 export const Preferences = z
   .object({
     recordingSounds: z.boolean(),
@@ -821,6 +826,13 @@ export const Preferences = z
     localEndpoint: z.string().min(1),
     localModel: z.string(),
     budgetWarningMicroUsd: z.number().int().min(100_000).max(5_000_000),
+    lastSeenVersion: z.string().min(1).max(40).nullable().default(null),
+    firstLanguage: FirstLanguage.nullable().default(null),
+    surpriseEnabled: z.boolean().default(false),
+    surpriseStart: HalfHour.default("09:00"),
+    surpriseEnd: HalfHour.default("18:00"),
+    surpriseDays: z.array(SurpriseDay).max(7).default(["monday", "tuesday", "wednesday", "thursday", "friday"]),
+    surpriseNotifications: z.boolean().default(false),
     reminderTime: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
     /** Coaching prices you entered (5.9), USD per million tokens; other models use the built-in prices. */
     coachingPrices: z.record(z.string(), z.object({ input: z.string(), output: z.string(), checkedOn: z.string() }).strict()),
@@ -862,9 +874,13 @@ export const Preferences = z
     /** The cost limit a new OpenAI conversation starts with (13.1). */
     partnerMaxCostMicroUsd: z.number().int().min(10_000).max(5_000_000),
   })
-  .strict();
+  .strict()
+  .refine((p) => p.surpriseStart < p.surpriseEnd, { message: "Choose a window ending after it starts.", path: ["surpriseEnd"] });
 export type Preferences = z.infer<typeof Preferences>;
 export const DEFAULT_PREFERENCES: Preferences = {
+  lastSeenVersion: APP_VERSION,
+  firstLanguage: null,
+  surpriseEnabled: false, surpriseStart: "09:00", surpriseEnd: "18:00", surpriseDays: ["monday", "tuesday", "wednesday", "thursday", "friday"], surpriseNotifications: false,
   recordingSounds: true, recordingShortcuts: true, levelBeforeRecording: true, autoTranscribe: true, inputDeviceId: null, sessionLength: "standard",
   coachingMode: "api", coachingModel: "gpt-6-luna", deliveryImpressions: false,
   onboarded: false, tourDone: false, goals: [], goalNote: "", difficultyLanguage: null,

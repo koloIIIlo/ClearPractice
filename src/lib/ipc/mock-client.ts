@@ -375,6 +375,9 @@ export function createMockClient(): IpcClient {
     });
   };
 
+  let smallText: Promise<import("./small-text-client").SmallTextClient> | undefined;
+  const localText = () => smallText ??= import("./mock-small-text").then(({ createMockSmallText }) => createMockSmallText({ preferences: () => preferences, sessions: () => sessions }));
+
   return {
     recordingMode: "simulated",
     getApiKeyStatus: async () => S.CredentialStatus.parse({ provider: "OpenAI", present: false }),
@@ -914,6 +917,12 @@ export function createMockClient(): IpcClient {
     requestSplitTranscription: async () => { throw new IpcError("desktop_required", "Cloud transcription runs in the desktop app."); },
     cancelClipWork: async () => {},
     saveClipSections: async () => { throw new IpcError("desktop_required", "Clips can be saved in the desktop app."); },
+    previewPhraseSuggestionsLocal: async (sessionIds, model) => (await localText()).previewPhraseSuggestionsLocal(sessionIds, model),
+    sendPhraseSuggestionsLocal: async (requestId, payloadSha256) => (await localText()).sendPhraseSuggestionsLocal(requestId, payloadSha256),
+    previewClipNamesLocal: async (texts, model) => (await localText()).previewClipNamesLocal(texts, model),
+    sendClipNamesLocal: async (requestId, payloadSha256) => (await localText()).sendClipNamesLocal(requestId, payloadSha256),
+    previewClipPicksLocal: async (stagingId, options) => (await localText()).previewClipPicksLocal(stagingId, options),
+    sendClipPicksLocal: async (stagingId, requestId, payloadSha256) => (await localText()).sendClipPicksLocal(stagingId, requestId, payloadSha256),
     previewClipNames: async () => { throw new IpcError("desktop_required", "AI suggestions run in the desktop app."); },
     // Sample data so the preview can show the whole flow; nothing is sent anywhere.
     previewPhraseSuggestions: async (sessionIds, model = "gpt-6-luna") => {
@@ -985,13 +994,15 @@ export function createMockClient(): IpcClient {
     getTakeProsody: async () => { throw new IpcError("desktop_required", "Intonation runs in the desktop app."); },
     getClipProsody: async () => { throw new IpcError("desktop_required", "Intonation runs in the desktop app."); },
     importModelPack: async () => { throw new IpcError("desktop_required", "Model packs are managed in the desktop app."); },
+    requestNotificationPermission: async () => false,
+    showSurpriseNotification: async () => {},
     getPreferences: async () => ({ ...preferences }),
     getDataLocation: async () => ({ current: "%LOCALAPPDATA%\\com.clearpractice.app", default: "%LOCALAPPDATA%\\com.clearpractice.app", custom: false, problem: null, previous: null, previousBytes: 0 }),
     moveDataFolder: async () => { throw new IpcError("desktop_required", "The data folder can be moved in the desktop app."); },
     onDataMoveProgress: async () => () => {},
     removeOldDataCopy: async () => { throw new IpcError("desktop_required", "Available in the desktop app."); },
     restartApp: async () => {},
-    setPreferences: async (next) => (preferences = { ...next }),
+    setPreferences: async (next) => (preferences = S.Preferences.parse(next)),
     getTranscriptionPreference: async () => ({ ...transcriptionPreference }),
     setTranscriptionPreference: async (preference) => (transcriptionPreference = { ...preference }),
     getTranscriptionSetup: () => respond(S.TranscriptionSetup, { configured: false, modelId: null, backend: null, prompt: null, unavailableReason: "Local transcription runs in the desktop app." }),

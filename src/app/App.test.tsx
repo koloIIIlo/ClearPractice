@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { StrictMode } from "react";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "@/App";
@@ -7,6 +8,27 @@ import { createMockClient } from "@/lib/ipc/mock-client";
 const renderApp = () => render(<App client={createMockClient()} />);
 
 describe("app shell", () => {
+  it("keeps navigation working in StrictMode and releases history listeners on unmount", async () => {
+    const add = vi.spyOn(window, "addEventListener");
+    const remove = vi.spyOn(window, "removeEventListener");
+    try {
+      const user = userEvent.setup();
+      const app = render(<StrictMode><App client={createMockClient()} /></StrictMode>);
+      await screen.findByRole("button", { name: "Start practice" });
+      await user.click(screen.getAllByRole("link", { name: "Sessions" })[0]);
+      expect(await screen.findByRole("heading", { name: "Sessions" }, { timeout: 5_000 })).toBeInTheDocument();
+      app.unmount();
+      const listeners = add.mock.calls.filter(([event]) => event === "popstate");
+      expect(listeners.length).toBeGreaterThan(0);
+      for (const [event, listener] of listeners) {
+        expect(remove.mock.calls.some(([removedEvent, removedListener]) => removedEvent === event && removedListener === listener)).toBe(true);
+      }
+    } finally {
+      add.mockRestore();
+      remove.mockRestore();
+    }
+  }, 10_000);
+
   it("shows the five destinations and Settings in the sidebar", async () => {
     renderApp();
     await screen.findByRole("button", { name: "Start practice" });

@@ -10,3 +10,4 @@ pub mod insights;
 pub mod learning;
 pub mod partner;
 pub mod social;
+pub mod small_text;

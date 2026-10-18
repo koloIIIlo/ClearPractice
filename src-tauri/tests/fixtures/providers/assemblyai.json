@@ -1,0 +1,24 @@
+{
+  "id": "job_scrubbed",
+  "status": "completed",
+  "audio_url": "https://cdn.assemblyai.com/upload/scrubbed",
+  "audio_duration": 1,
+  "text": "Hello there.",
+  "confidence": 0.99,
+  "words": [
+    {
+      "text": "Hello",
+      "start": 100,
+      "end": 400,
+      "confidence": 0.99,
+      "speaker": null
+    },
+    {
+      "text": "there.",
+      "start": 500,
+      "end": 900,
+      "confidence": 0.99,
+      "speaker": null
+    }
+  ]
+}

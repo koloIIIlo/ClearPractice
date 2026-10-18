@@ -95,6 +95,12 @@ export function createNativeClient(): IpcClient {
     onClipSplitProgress: (listener) => listen<number>("clip_split_progress", (e) => listener(z.number().int().min(0).max(100).parse(e.payload))),
     cancelClipWork: async () => { await command("cancel_clip_work", z.null()); },
     saveClipSections: (stagingId, sections, folderId) => command("save_clip_sections", S.ReferenceClip.array(), { stagingId, sections, folderId: folderId ?? null }),
+    previewPhraseSuggestionsLocal: async (sessionIds, model) => (await import("./small-text-client")).nativeSmallText.previewPhraseSuggestionsLocal(sessionIds, model),
+    sendPhraseSuggestionsLocal: async (requestId, payloadSha256) => (await import("./small-text-client")).nativeSmallText.sendPhraseSuggestionsLocal(requestId, payloadSha256),
+    previewClipNamesLocal: async (texts, model) => (await import("./small-text-client")).nativeSmallText.previewClipNamesLocal(texts, model),
+    sendClipNamesLocal: async (requestId, payloadSha256) => (await import("./small-text-client")).nativeSmallText.sendClipNamesLocal(requestId, payloadSha256),
+    previewClipPicksLocal: async (stagingId, options) => (await import("./small-text-client")).nativeSmallText.previewClipPicksLocal(stagingId, options),
+    sendClipPicksLocal: async (stagingId, requestId, payloadSha256) => (await import("./small-text-client")).nativeSmallText.sendClipPicksLocal(stagingId, requestId, payloadSha256),
     previewClipNames: (texts, model) => command("preview_clip_names", S.CoachingPreview, { texts, model: model ?? null }),
     requestClipNames: (requestId, payloadSha256) => command("request_clip_names", S.ClipName.array(), { requestId, payloadSha256 }),
     previewPhraseSuggestions: (sessionIds, model) => command("preview_phrase_suggestions", S.CoachingPreview, { sessionIds, model: model ?? null }),
@@ -127,6 +133,16 @@ export function createNativeClient(): IpcClient {
     listModelPacks: () => command("list_model_packs", S.ModelPack.array()),
     importModelPack: () => command("import_model_pack", S.ModelPack.array()),
     getTranscriptionSetup: () => command("get_transcription_setup", S.TranscriptionSetup),
+    requestNotificationPermission: async () => {
+      const n = await import("./notifications");
+      return n.requestNotificationPermission();
+    },
+    showSurpriseNotification: async (prompt) => {
+      const preferences = await command("get_preferences", S.Preferences);
+      if (!preferences.surpriseEnabled || !preferences.surpriseNotifications) return;
+      const n = await import("./notifications");
+      await n.showSurpriseNotification(prompt);
+    },
     getPreferences: () => command("get_preferences", S.Preferences),
     // Bundled prompts with your favourite marks, then your own prompts (4.13).
     listPrompts: async () => {

@@ -38,3 +38,38 @@ it("previews exactly what would be sent, sends only on Send, and keeps the sugge
   );
   await waitFor(() => expect(onDone).toHaveBeenCalled());
 });
+
+it("offers local suggestions without cost when coaching is local", async () => {
+  const user = userEvent.setup();
+  const base = createMockClient();
+  await base.setPreferences({ ...await base.getPreferences(), coachingMode: "local", localModel: "my-local-model" });
+  const client: IpcClient = {
+    ...base,
+    previewPhraseSuggestionsLocal: vi.fn(base.previewPhraseSuggestionsLocal),
+    sendPhraseSuggestionsLocal: vi.fn(base.sendPhraseSuggestionsLocal),
+    previewPhraseSuggestions: vi.fn(base.previewPhraseSuggestions),
+    requestPhraseSuggestions: vi.fn(base.requestPhraseSuggestions),
+  };
+  renderWithApp(<PhraseSuggestions onDone={vi.fn()} />, { client });
+  await screen.findByRole("checkbox", { name: /A habit I want to change/ });
+  await user.click(screen.getByRole("button", { name: "Preview the request" }));
+  const preview = await screen.findByRole("group", { name: "Request preview" });
+  expect(preview).toHaveTextContent("Recipient: local model on this computer · free");
+  expect(preview).not.toHaveTextContent("$");
+  expect(screen.queryByText(/Choose in Settings/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+  expect(client.sendPhraseSuggestionsLocal).not.toHaveBeenCalled();
+  expect(client.previewPhraseSuggestions).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Send to the local model" }));
+  expect(await screen.findByRole("checkbox", { name: /the moment I wake up/ })).toBeChecked();
+  expect(client.sendPhraseSuggestionsLocal).toHaveBeenCalledOnce();
+  expect(client.requestPhraseSuggestions).not.toHaveBeenCalled();
+});
+
+it("shows the Coaching settings note only when coaching is off", async () => {
+  const base = createMockClient();
+  await base.setPreferences({ ...await base.getPreferences(), coachingMode: "off" });
+  renderWithApp(<PhraseSuggestions onDone={vi.fn()} />, { client: base });
+  expect(await screen.findByRole("link", { name: "Choose in Settings → Coaching" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Preview the request" })).not.toBeInTheDocument();
+});

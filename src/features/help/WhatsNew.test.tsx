@@ -1,0 +1,40 @@
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { expect, it } from "vitest";
+import { renderWithRouter } from "@/test/render";
+import { createMockClient } from "@/lib/ipc/mock-client";
+import { usePreferences } from "@/lib/ipc/queries";
+import { DEFAULT_PREFERENCES, Preferences } from "@/lib/ipc/schemas";
+import { APP_VERSION } from "@/lib/app-version";
+import { TopBar } from "@/app/TopBar";
+import { WhatsNewHost } from "./WhatsNewHost";
+function Shell() {
+  const { loaded } = usePreferences();
+  return <><TopBar showNavToggle={false} onOpenSearch={() => {}} onOpenShortcuts={() => {}} /><WhatsNewHost />{loaded && <p>Preferences loaded</p>}</>;
+}
+it("shows once per version and from Help", async () => {
+  const user = userEvent.setup();
+  const client = createMockClient();
+  const { lastSeenVersion, ...legacy } = DEFAULT_PREFERENCES;
+  expect(Preferences.parse(legacy).lastSeenVersion).toBeNull();
+  await client.setPreferences({ ...DEFAULT_PREFERENCES, lastSeenVersion: "0.0.9" });
+  const first = renderWithRouter([{ path: "/", element: <Shell /> }], { client });
+  expect(await screen.findByRole("dialog", { name: "What's new" })).toHaveTextContent(APP_VERSION);
+  await waitFor(async () => expect((await client.getPreferences()).lastSeenVersion).toBe(APP_VERSION));
+  await user.click(screen.getByRole("button", { name: "Done" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  first.unmount();
+  const next = renderWithRouter([{ path: "/", element: <Shell /> }, { path: "/exercises", element: <p>Drills</p> }], { client });
+  await screen.findByText("Preferences loaded");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Help" }));
+  await user.click(await screen.findByRole("menuitem", { name: "What's new" }));
+  expect(await screen.findByRole("dialog", { name: "What's new" })).toBeInTheDocument();
+  await user.click(screen.getByRole("link", { name: "Explore drills" }));
+  expect(next.router.state.location.pathname + next.router.state.location.search).toBe("/exercises?tab=drills");
+  next.unmount();
+  const fresh = renderWithRouter([{ path: "/", element: <Shell /> }], { client: createMockClient() });
+  await screen.findByText("Preferences loaded");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  fresh.unmount();
+});

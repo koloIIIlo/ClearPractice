@@ -1,0 +1,26 @@
+{
+  "id": "resp_scrubbed",
+  "object": "response",
+  "status": "completed",
+  "model": "gpt-6-luna",
+  "output": [
+    {
+      "id": "msg_scrubbed",
+      "type": "message",
+      "status": "completed",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "{\"suggestions\": [{\"session\": 1, \"original\": \"more clear\", \"expression\": \"clearer\", \"explanation\": \"A shorter alternative.\", \"example\": \"That makes it clearer.\"}]}",
+          "annotations": []
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 100,
+    "output_tokens": 40,
+    "total_tokens": 140
+  }
+}

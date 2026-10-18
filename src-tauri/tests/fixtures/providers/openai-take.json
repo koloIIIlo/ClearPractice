@@ -1,0 +1,26 @@
+{
+  "id": "resp_scrubbed",
+  "object": "response",
+  "status": "completed",
+  "model": "gpt-6-luna",
+  "output": [
+    {
+      "id": "msg_scrubbed",
+      "type": "message",
+      "status": "completed",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "{\"summary\": \"Your point is clear.\", \"oneImprovement\": \"Give one example.\", \"nextAttempt\": \"Explain the example first.\", \"corrections\": [{\"kind\": \"style\", \"quote\": \"more clear\", \"suggestion\": \"clearer\", \"reason\": \"A shorter alternative.\"}], \"phrases\": [], \"deliveryNotes\": []}",
+          "annotations": []
+        }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 100,
+    "output_tokens": 40,
+    "total_tokens": 140
+  }
+}

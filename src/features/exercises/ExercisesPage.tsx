@@ -13,6 +13,7 @@ import { EXERCISE_IDS, EXERCISE_TYPE_INFO } from "@/content/exercises";
 import { cn } from "@/lib/utils";
 import { useIpc } from "@/lib/ipc";
 import { TAG_LABELS, describeDemands } from "./describe";
+import { FirstLanguageTips } from "./FirstLanguageTips";
 import { PromptForm } from "./PromptForm";
 import { DrillsTab } from "@/features/drills/DrillsTab";
 import { ProgrammesTab } from "@/features/learning/ProgrammesTab";
@@ -59,6 +60,7 @@ export function ExercisesPage() {
           <PromptCollection />
         </TabsContent>
         <TabsContent value="guides">
+          <FirstLanguageTips />
           <GuideList highlight={params.get("guide")} />
         </TabsContent>
       </Tabs>

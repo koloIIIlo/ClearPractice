@@ -1,0 +1,20 @@
+import { screen } from "@testing-library/react";
+import { expect, it } from "vitest";
+import { renderWithApp } from "@/test/render";
+import { createMockClient } from "@/lib/ipc/mock-client";
+import { FirstLanguageTipLine, FirstLanguageTips } from "./FirstLanguageTips";
+import { occasionalLanguageTip } from "@/content/first-language-tips";
+import { toLocalDate } from "@/lib/phrase-schedule";
+it("shows only the selected language's tips and respects Prefer not to say", async () => {
+  const client = createMockClient();
+  const a = renderWithApp(<FirstLanguageTips />, { client });
+  expect(screen.queryByRole("heading", { name: /Practice ideas/ })).not.toBeInTheDocument();
+  a.unmount();
+  await client.setPreferences({ ...await client.getPreferences(), firstLanguage: "russian" });
+  const b = renderWithApp(<><FirstLanguageTips /><FirstLanguageTipLine href="/drill/emphasis" /></>, { client });
+  expect(await screen.findByRole("heading", { name: "Practice ideas · Russian" })).toBeInTheDocument();
+  expect(screen.getAllByRole("link", { name: "Practise this" })).toHaveLength(6);
+  const pick = occasionalLanguageTip("russian", toLocalDate(new Date()), "/drill/emphasis");
+  expect(!!screen.queryByText(/^Practice idea:/)).toBe(!!pick);
+  b.unmount();
+});

@@ -281,7 +281,7 @@ impl AudioPreviewOwner {
                 );
                 let request = transport.audio_request(reqwest::Method::POST, &url, "Token ", &key, "audio/wav", Some(audio))?;
                 let response = transport.send_reserved_audio(budget, request_id, payload_sha256, request).await?;
-                let raw: Value = serde_json::from_slice(&response.bytes).map_err(|_| uncertain(budget, request_id, "Deepgram returned invalid JSON."))?;
+                let raw: Value = super::transport::response_json(&response.bytes, "Deepgram").map_err(|e| uncertain(budget, request_id, &e))?;
                 let id = response.request_id.or_else(|| raw["metadata"]["request_id"].as_str().map(String::from));
                 (raw, id)
             }
@@ -365,7 +365,7 @@ fn uncertain(budget: &BudgetOwner, id: &str, message: &str) -> String {
 
 /// Upload → submit → poll. Every step after the first runs on the already
 /// dispatched reservation; a failure anywhere keeps the charge Uncertain.
-async fn assemblyai(
+pub(super) async fn assemblyai(
     transport: &ApiTransport,
     budget: &BudgetOwner,
     id: &str,
@@ -389,8 +389,8 @@ async fn assemblyai(
     loop {
         tauri::async_runtime::spawn_blocking(|| std::thread::sleep(Duration::from_secs(3))).await.map_err(|e| e.to_string())?;
         let poll = transport.audio_request(reqwest::Method::GET, &format!("https://api.assemblyai.com/v2/transcript/{job_id}"), "", key, "", None)?;
-        let status: Value = serde_json::from_slice(&transport.send_dispatched(budget, id, poll).await?.bytes)
-            .map_err(|_| uncertain(budget, id, "AssemblyAI returned an invalid status response."))?;
+        let status: Value = super::transport::response_json(&transport.send_dispatched(budget, id, poll).await?.bytes, "AssemblyAI")
+            .map_err(|e| uncertain(budget, id, &e))?;
         match status["status"].as_str() {
             Some("completed") => return Ok((status, Some(job_id))),
             Some("error") => {

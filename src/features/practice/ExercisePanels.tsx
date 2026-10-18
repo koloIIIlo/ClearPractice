@@ -1,3 +1,4 @@
+import { FirstLanguageTipLine } from "@/features/exercises/FirstLanguageTips";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { ChevronLeft, ChevronRight, Pencil } from "lucide-react";
@@ -260,6 +261,7 @@ export function ImitationPanel({ sessionId, hasTake, locked, native, lastTakeAss
   }, [hasTake]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Panel className="space-y-3" aria-labelledby="imitation-heading">
+      <FirstLanguageTipLine href="/practice/ex-imitate" />
       <h2 id="imitation-heading" className="font-semibold">Choose one feature to imitate</h2>
       <fieldset disabled={locked} className="space-y-2">
         <legend className="sr-only">Feature</legend>

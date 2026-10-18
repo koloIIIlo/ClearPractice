@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Panel } from "@/components/page";
+import { Panel, QueryView } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { formatDuration, formatLongDay, parseLocalDate, UI_LOCALE } from "@/lib/format";
 import { useSessions } from "@/lib/ipc/queries";
@@ -57,9 +57,14 @@ function yearWeeks(year: number): (string | null)[][] {
  */
 export function ActivityCalendar() {
   const sessions = useSessions({});
+  return <QueryView query={sessions}>{(data) => <Calendar sessions={data} />}</QueryView>;
+}
+
+/** Build the year only after storage loads; failure must not look like an empty year. */
+function Calendar({ sessions }: { sessions: SessionSummary[] }) {
   const today = toLocalDate(new Date());
   const thisYear = Number(today.slice(0, 4));
-  const days = useMemo(() => activityByDay(sessions.data ?? []), [sessions.data]);
+  const days = useMemo(() => activityByDay(sessions), [sessions]);
   const firstYear = useMemo(() => {
     const years = [...days.keys()].map((d) => Number(d.slice(0, 4)));
     return years.length ? Math.min(...years, thisYear) : thisYear;
@@ -72,7 +77,7 @@ export function ActivityCalendar() {
   useEffect(() => {
     const el = scroller.current;
     if (el) el.scrollLeft = year === thisYear ? el.scrollWidth : 0;
-  }, [year, thisYear, sessions.data]);
+  }, [year, thisYear, sessions]);
 
   const inYear = [...days.entries()].filter(([d]) => d.startsWith(`${year}-`));
   const totals = inYear.reduce((t, [, d]) => ({ takes: t.takes + d.takes, speakingMs: t.speakingMs + d.speakingMs }), { takes: 0, speakingMs: 0 });

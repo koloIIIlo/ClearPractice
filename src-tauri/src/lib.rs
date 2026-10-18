@@ -2528,6 +2528,7 @@ pub fn run() {
         .manage(Arc::new(audio::monitor::LevelMonitor::default()))
         .manage(Arc::new(WhisperDownload::default()))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // The data may live in a folder the user chose (2.25); WebView data
@@ -2735,6 +2736,12 @@ pub fn run() {
             start_recording,
             start_level_monitor,
             stop_level_monitor,
+            commands::small_text::preview_phrase_suggestions_local,
+            commands::small_text::send_phrase_suggestions_local,
+            commands::small_text::preview_clip_names_local,
+            commands::small_text::send_clip_names_local,
+            commands::small_text::preview_clip_picks_local,
+            commands::small_text::send_clip_picks_local,
             preview_phrase_suggestions,
             request_phrase_suggestions,
             preview_drill_comparison,
